@@ -1,0 +1,4158 @@
+:root {
+  --bg: #0a0c12;
+  --bg-elevated: #111521;
+  --bg-card: #141a26;
+  --bg-card-2: #192132;
+  --bg-hover: #20293b;
+  --border: #263144;
+  --text: #f1f5fb;
+  --text-mid: #c3cfe0;
+  --text-dim: #9aa8bf;
+  --accent: #ff8a3d;
+  --accent-dark: #e66d22;
+  --accent-soft: rgba(255, 138, 61, 0.14);
+  --success: #33c96f;
+  --danger: #ff5b5b;
+  --danger-dark: #e04747;
+  --radius: 16px;
+  --radius-sm: 12px;
+  /* Larguras fluidas: acompanham a largura real da janela (não a do monitor).
+     --sidebar-w encolhe em janelas reduzidas para o player manter espaço. */
+  --sidebar-w: clamp(260px, 24vw, 340px);
+  --app-pad-x: clamp(8px, 2.5vw, 22px);
+  --app-pad-y: clamp(10px, 2vw, 20px);
+  --gap-col: clamp(10px, 1.6vw, 14px);
+  --shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  /* Fundo sem banding: elipses de tamanho explícito (em vez de
+     farthest-corner, que criava anéis visíveis), várias paradas de cor
+     para um fade suave e uma camada de ruído fino (dithering) que
+     quebra as faixas de gradiente em telas de 8 bits. */
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(
+      ellipse 90% 70% at 12% -15%,
+      rgba(255, 138, 61, 0.1),
+      rgba(255, 138, 61, 0.05) 25%,
+      rgba(255, 138, 61, 0.02) 45%,
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse 70% 60% at 100% -10%,
+      rgba(58, 87, 140, 0.12),
+      rgba(58, 87, 140, 0.05) 30%,
+      rgba(58, 87, 140, 0.02) 50%,
+      transparent 70%
+    ),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat, repeat;
+  background-size: auto, auto, 140px 140px;
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  height: 100%;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: clamp(6px, 1.3vw, 14px);
+  padding: clamp(6px, 1.3vw, 14px) var(--app-pad-x);
+  /* Safe-areas (notch/barra inferior) — env() é 0 no desktop, então o
+     visual atual não muda; só celulares com notch ganham respiro. */
+  padding-left: max(var(--app-pad-x), env(safe-area-inset-left));
+  padding-right: max(var(--app-pad-x), env(safe-area-inset-right));
+  background: rgba(10, 12, 18, 0.88);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-brand-minimal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+  /* É um link real (href): sem sublinhado/cor de link; o navegador permite
+     arrastá-lo para a barra de abas para abrir a Home em uma nova aba. */
+  text-decoration: none;
+  color: inherit;
+  white-space: nowrap;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.topbar-brand-minimal:hover {
+  border-color: rgba(255, 138, 61, 0.5);
+  background: rgba(255, 138, 61, 0.08);
+}
+
+.topbar-brand-minimal:focus-visible {
+  outline: 2px solid rgba(255, 138, 61, 0.65);
+  outline-offset: 2px;
+}
+
+.logo-mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #ffd5b7);
+  box-shadow: 0 0 14px rgba(255, 138, 61, 0.45);
+}
+
+.topbar-search {
+  flex: 1;
+  /* Sem min-width:0 o input não encolhe abaixo do min-content do
+     placeholder e o topbar sticky estoura horizontalmente em telas
+     estreitas (flex item tem min-width:auto por padrão). */
+  min-width: 0;
+  max-width: 520px;
+}
+
+.topbar-search input {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  outline: none;
+  font-size: 14px;
+}
+
+.topbar-search input:focus {
+  border-color: var(--accent);
+}
+
+.btn-ghost {
+  margin-left: auto;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  padding: 9px 13px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  box-shadow: 0 8px 18px rgba(255, 138, 61, 0.2);
+}
+.btn-ghost:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(255, 138, 61, 0.24);
+}
+
+/* Botão de engrenagem da topbar (Configurações): quadrado neutro, na mesma
+   proporção do .topbar-brand-minimal, mas discreto até o hover. */
+.topbar-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-mid);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+.topbar-icon-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+}
+.topbar-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.app {
+  padding: var(--app-pad-y) var(--app-pad-x) 40px;
+  max-width: 1480px;
+  margin: 0 auto;
+}
+
+.secondary-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.secondary-btn:hover {
+  border-color: var(--accent);
+}
+
+/* Botão destrutivo (limpar progresso) */
+.btn-danger {
+  background: linear-gradient(135deg, var(--danger), var(--danger-dark));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  padding: 9px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.btn-danger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(255, 91, 91, 0.22);
+}
+.btn-danger:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+}
+
+/* ---------- Configurações ---------- */
+.settings-header {
+  margin-bottom: 22px;
+}
+.settings-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+.settings-subtitle {
+  font-size: 13.5px;
+  color: var(--text-mid);
+  margin: 0;
+}
+
+/* Navegação interna por categoria: sidebar no desktop, pills com scroll no
+   mobile. O link ativo usa aria-current + .is-active (mesma leitura visual). */
+.settings-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+}
+.settings-nav {
+  flex-shrink: 0;
+  width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-nav-item {
+  display: block;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  color: var(--text-mid);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.settings-nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.settings-nav-item.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent-dark);
+  color: var(--accent);
+}
+.settings-nav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.settings-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Sistema de botões das Configurações (não toca no .btn-ghost da topbar nem
+   nos botões do diálogo). Variantes por hierarquia de ação: primário = ação
+   principal (salvar/testar); secundário = ação comum; ghost = leve; danger =
+   destrutiva (nunca com o mesmo peso de salvar/testar). */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    filter 0.15s ease;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn--primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.btn--primary:hover {
+  filter: brightness(1.06);
+}
+.btn--secondary {
+  background: var(--bg-card-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+.btn--secondary:hover {
+  background: var(--bg-hover);
+}
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-mid);
+}
+.btn--ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.btn--danger {
+  background: transparent;
+  border-color: rgba(255, 91, 91, 0.35);
+  color: var(--danger);
+}
+.btn--danger:hover {
+  background: rgba(255, 91, 91, 0.12);
+}
+.btn--sm {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.settings-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  max-width: 640px;
+}
+.settings-section-heading {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+.settings-section-desc {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin: 0 0 14px;
+}
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.settings-actions:not(:first-of-type) {
+  margin-top: 10px;
+}
+.settings-subsection {
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  padding-top: 14px;
+}
+.settings-subsection-heading {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 2px;
+}
+.settings-select {
+  background: var(--bg-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  height: 36px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Uso de armazenamento (grupo Dados e armazenamento) */
+.storage-status {
+  margin: 4px 0 14px;
+}
+.storage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.storage-item {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.storage-value {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.storage-label {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* Workspace de legendas */
+.workspace-fields {
+  margin: 0 0 12px;
+}
+.ws-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.ws-mode input {
+  accent-color: var(--accent, #4f8cff);
+}
+.workspace-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.workspace-dir-row .ai-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Painel de Diagnóstico: status, fila e logs de transcrição */
+.log-summary {
+  margin: 4px 0 14px;
+}
+.log-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+}
+.log-summary-item {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  text-align: center;
+}
+.log-summary-num {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.log-summary-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.log-queue {
+  margin: 4px 0 14px;
+}
+.log-queue-item {
+  font-size: 12.5px;
+  color: var(--text-mid);
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-queue-item:last-child {
+  border-bottom: none;
+}
+.log-queue-state {
+  font-size: 11px;
+  color: var(--text-dim);
+  float: right;
+  margin-left: 8px;
+}
+.log-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 10px;
+}
+.log-filter {
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.log-filter:hover {
+  color: var(--text);
+}
+.log-filter.active {
+  background: var(--accent, #4f8cff);
+  border-color: transparent;
+  color: #fff;
+}
+.log-view {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.log-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.log-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px dashed rgba(127, 127, 127, 0.12);
+}
+.log-line:last-child {
+  border-bottom: none;
+}
+.log-time {
+  color: var(--text-dim);
+  flex: none;
+}
+.log-level {
+  flex: none;
+  font-weight: 700;
+  min-width: 44px;
+  text-align: center;
+}
+.log-level-info { color: var(--text-mid); }
+.log-level-warn { color: #d9a441; }
+.log-level-error { color: var(--danger); }
+.log-msg {
+  color: var(--text);
+  word-break: break-word;
+}
+
+/* Linha de preferência: texto à esquerda, switch à direita */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  margin: 0 -4px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.settings-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.settings-row-text {
+  min-width: 0;
+  flex: 1;
+}
+.settings-row-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.settings-row-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+/* Switch: track + thumb, estado "on" com accent. O botão em si é o controle
+   (role="switch"); o clique na linha também alterna (área de toque maior). */
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+}
+.switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text-mid);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+.switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch.on .switch-thumb {
+  transform: translateX(20px);
+  background: #fff;
+}
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- Atalhos de teclado (Settings) ---------- */
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.shortcut-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.shortcut-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.shortcut-name {
+  font-size: 13px;
+}
+.shortcut-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  max-width: 58%;
+}
+.shortcut-key {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    monospace;
+  font-size: 12.5px;
+  color: var(--text-mid);
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px 10px;
+  min-width: 44px;
+  text-align: center;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+/* Modo de captura: chip acende no accent com um leve pulsar. */
+.shortcut-row.capturing .shortcut-key {
+  border-color: var(--accent);
+  animation: shortcut-pulse 1.1s ease-in-out infinite;
+}
+.shortcut-msg {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+.shortcut-msg.error {
+  color: var(--danger);
+}
+@keyframes shortcut-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(255, 138, 61, 0.32);
+  }
+}
+
+/* ---------- Diálogo de confirmação (modal) ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.62);
+  animation: fade-in 0.15s ease;
+}
+.modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  width: 100%;
+  max-width: 420px;
+}
+.modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+.modal-message {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-mid);
+  margin: 0;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+.btn-confirm {
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 9px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.btn-confirm.danger {
+  background: linear-gradient(135deg, var(--danger), var(--danger-dark));
+  box-shadow: 0 8px 18px rgba(255, 91, 91, 0.22);
+}
+.btn-confirm:focus-visible,
+.btn-cancel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---------- Home / grid de cursos ---------- */
+.section-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-title .count {
+  color: var(--text-dim);
+  font-weight: 400;
+  font-size: 14px;
+}
+
+.course-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: clamp(14px, 1.8vw, 20px);
+  margin-bottom: 40px;
+}
+
+.course-card {
+  background: linear-gradient(180deg, var(--bg-card), var(--bg-card-2));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
+  position: relative;
+}
+
+/* O card é um <a href> real (navegação nativa). Mantém o mesmo layout do
+   card: ocupa toda a altura e preserva a coluna flex da thumb/body. */
+.course-card-link {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  color: inherit;
+  text-decoration: none;
+}
+/* Foco visível por teclado. Outline interno (offset negativo) porque o
+   .course-card tem overflow:hidden e cortaria um outline externo. */
+.course-card-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.fav-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+  backdrop-filter: blur(3px);
+}
+.fav-btn:hover {
+  transform: scale(1.12);
+  background: rgba(0, 0, 0, 0.55);
+}
+.fav-btn.on {
+  color: #ffb703;
+  text-shadow: 0 0 8px rgba(255, 183, 3, 0.55);
+}
+
+.course-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.course-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 138, 61, 0.48);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+}
+
+.course-card-thumb {
+  height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.85);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  overflow: hidden;
+}
+
+.course-card-thumb.has-image {
+  padding: 0;
+  background: var(--bg-card-2);
+}
+
+.course-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.course-card-body {
+  padding: 14px 16px 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.course-card-title {
+  font-weight: 600;
+  font-size: 14.5px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.course-card-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.progress-bar {
+  height: 6px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+  margin-top: auto;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-dark), var(--accent));
+  border-radius: 4px;
+}
+
+/* ---------- Seções da Home: Continuar assistindo / Seu progresso ---------- */
+.home-section {
+  margin-bottom: clamp(24px, 5vw, 44px);
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.section-heading {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.section-subtitle {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+/* Botão expandir/recolher da seção "Seu progresso" */
+.progress-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+.progress-toggle:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border);
+  color: var(--text);
+}
+.progress-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.progress-toggle-icon {
+  transition: transform 0.22s ease;
+}
+.progress-section[data-progress-mode="expanded"] .progress-toggle-icon {
+  transform: rotate(180deg);
+}
+
+.continue-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: clamp(12px, 1.8vw, 18px);
+}
+.continue-card {
+  background: linear-gradient(180deg, var(--bg-card), var(--bg-card-2));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
+  outline: none;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+  animation: card-in 0.45s cubic-bezier(0.22, 0.8, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+.continue-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255, 138, 61, 0.45);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+}
+.continue-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.continue-card .lesson-name {
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.continue-card .course-name {
+  margin-top: 5px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.continue-card-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+}
+.continue-progress-bar {
+  flex: 1;
+  height: 8px;
+}
+.continue-progress-bar .progress-bar-fill {
+  animation: fill-bar 1s cubic-bezier(0.22, 0.8, 0.3, 1) both;
+}
+.continue-pct {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  text-align: right;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes fill-bar {
+  from {
+    width: 0;
+  }
+}
+
+/* Resumo compacto (uma linha): visível apenas no modo compacto.
+   Altura animada via max-height (transições de grid-template-rows com
+   unidades fr ficam presas no Chrome — bug conhecido de interpolação). */
+.progress-summary {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition:
+    max-height 0.25s ease,
+    opacity 0.22s ease;
+}
+.progress-section[data-progress-mode="compact"] .progress-summary {
+  max-height: 80px;
+  opacity: 1;
+}
+.progress-summary-inner {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--bg-card), var(--bg-card-2));
+}
+.progress-summary-pct {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.progress-summary-bar {
+  flex: 0 1 130px;
+  height: 5px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+.progress-summary-bar-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-dark), var(--accent));
+  border-radius: 4px;
+}
+.progress-summary-meta {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* Painel expandido: recolhe via max-height (mesmo motivo acima) */
+.progress-panel-wrap {
+  overflow: hidden;
+  max-height: 700px;
+  opacity: 1;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
+  transition:
+    max-height 0.25s ease,
+    opacity 0.22s ease;
+}
+.progress-section[data-progress-mode="compact"] .progress-panel-wrap {
+  max-height: 0;
+  opacity: 0;
+}
+.progress-panel {
+  background: linear-gradient(180deg, var(--bg-card), var(--bg-card-2));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 26px 28px;
+}
+.progress-panel-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.progress-panel-hero-value {
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.progress-panel-hero-label {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+.progress-panel-bar {
+  margin-top: 18px;
+  height: 8px;
+  border-radius: 6px;
+  background: var(--border);
+  overflow: hidden;
+}
+.progress-panel-bar-fill {
+  height: 100%;
+  width: var(--w, 0%);
+  background: linear-gradient(90deg, var(--accent-dark), var(--accent));
+  border-radius: 6px;
+  animation: fill-bar 1.1s cubic-bezier(0.22, 0.8, 0.3, 1) both;
+}
+.progress-panel-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+}
+.progress-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 22px;
+  border-left: 1px solid var(--border);
+}
+.progress-stat:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+.progress-stat-value {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.progress-stat-label {
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+.progress-stat-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+
+.search-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.search-result-item {
+  text-align: left;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--bg-card), rgba(18, 23, 33, 0.94));
+  color: var(--text);
+  font: inherit;
+  text-decoration: none;
+  border-radius: 12px;
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.search-result-item:hover {
+  border-color: rgba(255, 107, 44, 0.55);
+  transform: translateY(-1px);
+}
+.search-result-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.search-result-tag {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.search-result-main {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.search-result-sub {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Página do curso ---------- */
+.course-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--sidebar-w);
+  gap: var(--gap-col);
+  align-items: start;
+}
+
+/* ---------- Modo Teatro (padrão) ----------
+   Player em destaque; o sumário vira painel lateral colapsável. Fechado, o
+   trilho do sumário vai a 0px (com overflow hidden) — a largura anima junto
+   com grid-template-columns (0px → var(--sidebar-w)), então o player encolhe/
+   cresce suavemente em vez de pular. */
+.course-view.theater {
+  grid-template-columns: minmax(0, 1fr) 0px;
+  transition: grid-template-columns 0.28s ease;
+}
+.course-view.theater .sidebar {
+  min-width: 0;
+  overflow: hidden;
+}
+.course-view.theater.summary-open {
+  grid-template-columns: minmax(0, 1fr) var(--sidebar-w);
+}
+/* Colapsado no desktop: além do trilho 0px, esconde o conteúdo para que os
+   links da árvore não fiquem tabuláveis enquanto invisíveis. */
+.course-view.theater:not(.summary-open) .sidebar {
+  visibility: hidden;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  margin-bottom: 16px;
+  user-select: none;
+}
+.back-link:hover {
+  color: var(--text);
+}
+
+.player-col {
+  min-width: 0;
+}
+
+.player-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/9;
+  /* Limite vertical fluido: em janelas baixas o player cede a altura (o vídeo
+     faz letterbox dentro do wrap). dvh = altura "dinâmica" real do navegador
+     (varia com barra de URL/modo janela); vh fica como fallback. */
+  max-height: min(72vh, 780px);
+  max-height: min(72dvh, 780px);
+  min-height: 0;
+  background: linear-gradient(180deg, #020304, #0e1015);
+  border-radius: calc(var(--radius) + 4px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.player-wrap video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  display: block;
+}
+.player-wrap:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+  max-height: none;
+  border-radius: 0;
+  border: none;
+  cursor: auto;
+}
+.player-wrap:fullscreen video {
+  height: 100%;
+  width: 100%;
+}
+.player-wrap:fullscreen .pc-btn {
+  min-width: 44px;
+  height: 44px;
+}
+.player-wrap:fullscreen .pc-bottom {
+  padding: 18px 24px 12px;
+}
+.player-wrap:fullscreen .pc-center {
+  width: 72px;
+  height: 72px;
+}
+.player-placeholder {
+  color: var(--text-dim);
+  font-size: 14px;
+  text-align: center;
+  padding: 20px;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.player-status {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 3, 4, 0.72);
+  color: var(--text-dim);
+  font-size: 13.5px;
+  text-align: center;
+  padding: 20px;
+  z-index: 20;
+  pointer-events: none;
+}
+.player-status.show {
+  display: flex;
+}
+.player-status-retry {
+  margin-top: 14px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card-2);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.player-status-retry:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.player-status-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Badge não-bloqueante de transcoding: fica no topo do player, não cobre os
+   controles e não impede navegação (pointer-events: none). */
+.player-preparing {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(2, 3, 4, 0.62);
+  border: 1px solid var(--border);
+  color: var(--text-mid);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.player-preparing[hidden] {
+  display: none;
+}
+/* BUG-006: aviso discreto de falha ao salvar progresso (não bloqueia o player;
+   some sozinho quando o próximo save volta a funcionar). */
+.player-progress-warning {
+  position: absolute;
+  bottom: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(2, 3, 4, 0.62);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.player-progress-warning[hidden] {
+  display: none;
+}
+.pc-preparing-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: var(--accent);
+  animation: pc-preparing-spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes pc-preparing-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ============ Botão CC + menu de legendas (barra do player) ============
+   O status da legenda é "exibido" pelo botão CC e um dot: pronto (✓ verde),
+   gerando (pulso âmbar), aguardando dispositivo / erro (!) e desativado (◌).
+   Nada de badge flutuante sobre o vídeo — reduz densidade sem perder a
+   informação (o texto completo vai no tooltip/aria do botão). */
+.pc-cc-btn {
+  position: relative;
+}
+.pc-cc-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--success);
+  border: 2px solid var(--bg, #0a0c12);
+  box-sizing: content-box;
+}
+.pc-cc-btn.is-ready {
+  color: var(--accent);
+}
+.pc-cc-btn.is-generating {
+  color: var(--accent);
+}
+.pc-cc-btn.is-generating .pc-cc-dot {
+  background: var(--accent);
+  animation: pc-cc-pulse 1.1s ease-in-out infinite;
+}
+.pc-cc-btn.is-waiting {
+  color: var(--accent);
+}
+.pc-cc-btn.is-waiting .pc-cc-dot,
+.pc-cc-btn.is-failed .pc-cc-dot {
+  width: auto;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+  text-align: center;
+  color: #0a0c12;
+}
+.pc-cc-btn.is-waiting .pc-cc-dot {
+  background: var(--accent);
+}
+.pc-cc-btn.is-failed {
+  color: var(--danger);
+}
+.pc-cc-btn.is-failed .pc-cc-dot {
+  background: var(--danger);
+}
+.pc-cc-btn.is-off {
+  opacity: 0.55;
+}
+@keyframes pc-cc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Menus CC e ⋮ (teatro/sumário): itens listrados, mesmo idioma visual dos
+   popovers existentes. Sem hover-only — teclado/Enter/Space funcionam. */
+.pc-cc-menu,
+.pc-more-menu {
+  min-width: 216px;
+}
+.pc-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px;
+}
+.pc-menu-sep {
+  height: 1px;
+  padding: 0;
+  margin: 3px 4px;
+  background: var(--border);
+}
+.pc-menu-label {
+  padding: 6px 10px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.pc-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #dfe6f0;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.pc-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.pc-menu-item.is-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.pc-menu-item.is-active::after {
+  content: "✓";
+  margin-left: auto;
+}
+.pc-menu-item[hidden] {
+  display: none;
+}
+.pc-cc-status {
+  display: block;
+  padding: 5px 10px 6px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text-dim);
+}
+.pc-cc-status[hidden] {
+  display: none;
+}
+/* Velocidade/Legendas dobram para o menu ⋮ apenas em telas estreitas. */
+.pc-more-narrow {
+  display: none;
+}
+
+/* ============ Overlay de legendas (custom, posicionado no quadro real) ============
+   A legenda é desenhada num overlay próprio, alinhado à região renderizada do
+   vídeo (letterbox-aware) e acima dos controles — o <track> nativo não
+   consegue posicionar texto relativo ao quadro real nem respeitar a altura da
+   barra de controles. O overlay fica acima do <video> (z-index 2) e abaixo do
+   player-ui (z-index 3) e do badge (z-index 16). pointer-events none: nunca
+   intercepta cliques no vídeo. Posição/tamanho/fonte vêm de
+   computeSubtitleGeometry() (JS) — aqui só o layout interno. */
+.subtitle-overlay {
+  /* Aparência padrão sutil (visual "padrão" de legendas): texto branco com
+     contorno suave, SEM caixa de fundo. As vars podem ser sobrescritas pelas
+     opções de personalização (public/app.js, applySubtitleStyle). */
+  --st-text-color: #ffffff;
+  --st-bg-color: transparent;
+  --st-radius: 0.16em;
+  --st-pad-y: 0.02em;
+  --st-pad-x: 0.12em;
+  --st-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.55);
+  --st-line-height: 1.3;
+  --st-weight: 500;
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 3%;
+  box-sizing: border-box;
+  text-align: center;
+  transform: translateZ(0);
+}
+.subtitle-overlay[hidden] {
+  display: none;
+}
+.subtitle-overlay .subtitle-overlay-text {
+  display: inline-block;
+  max-width: 100%;
+  /* margin-bottom é setado inline pelo JS (altura dos controles + margem).
+     A transição suaviza a descida da legenda quando a barra some (pc-idle):
+     a legenda desliza para perto da base em vez de "saltar". */
+  transition: margin-bottom 0.3s ease;
+  font-weight: var(--st-weight);
+  line-height: var(--st-line-height);
+  color: var(--st-text-color);
+}
+.subtitle-overlay .subtitle-overlay-inner {
+  display: inline;
+  padding: var(--st-pad-y) var(--st-pad-x);
+  border-radius: var(--st-radius);
+  background: var(--st-bg-color);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  text-shadow: var(--st-shadow);
+}
+
+/* ============ Painel de aparência da legenda ============ */
+.subtitle-style-panel {
+  position: absolute;
+  z-index: 6;
+  pointer-events: auto;
+  background: var(--bg-elevated, #1f2227);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius, 10px);
+  box-shadow: var(--shadow, 0 6px 24px rgba(0, 0, 0, 0.45));
+  padding: 14px;
+  width: 250px;
+  /* Em viewports menores que ~266px o painel encolhe em vez de transbordar;
+     em janelas curtas a altura é limitada e o conteúdo rola internamente. */
+  max-width: min(250px, calc(100vw - 16px));
+  max-height: min(calc(100dvh - 16px), 520px);
+  overflow-y: auto;
+  text-align: left;
+}
+.subtitle-style-panel[hidden] {
+  display: none;
+}
+.subtitle-style-panel h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text, #e8eaed);
+}
+.ssp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0;
+  font-size: 12.5px;
+  color: var(--text-mid, #c6c9cf);
+}
+.ssp-row > label {
+  flex: 0 0 auto;
+}
+.ssp-size {
+  display: flex;
+  gap: 4px;
+}
+.ssp-size button {
+  font-size: 11.5px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: var(--bg-card, #17191d);
+  color: var(--text-mid, #c6c9cf);
+  cursor: pointer;
+}
+.ssp-size button[data-active] {
+  background: var(--accent, #4a7dff);
+  border-color: var(--accent, #4a7dff);
+  color: #fff;
+}
+.subtitle-style-panel input[type="color"] {
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.subtitle-style-panel select {
+  font-size: 12.5px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: var(--bg-card, #17191d);
+  color: var(--text, #e8eaed);
+}
+.subtitle-style-panel input[type="range"] {
+  width: 110px;
+}
+.ssp-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.ssp-actions button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: transparent;
+  color: var(--text-mid, #c6c9cf);
+  cursor: pointer;
+}
+.ssp-actions button:hover {
+  color: var(--text, #e8eaed);
+}
+
+/* ============ Controles customizados do player ============ */
+.player-ui {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.player-ui .pc-bottom,
+.player-ui .pc-progress,
+.player-ui .pc-row,
+.player-ui .pc-secondary,
+.player-ui .pc-group,
+.player-ui .pc-time,
+.player-ui .pc-spacer {
+  pointer-events: none;
+}
+.player-ui .pc-btn,
+.player-ui .pc-seek,
+.player-ui .pc-slider,
+.player-ui .pc-speed-item,
+.player-ui .pc-menu-item,
+.player-ui .pc-center,
+.player-ui .pc-pop {
+  pointer-events: auto;
+}
+
+/* Autohide: barra some em idle durante reprodução (desktop com mouse). */
+.pc-bottom,
+.pc-center {
+  transition: opacity 0.25s ease;
+}
+.player-wrap.pc-idle {
+  cursor: none;
+}
+.player-wrap.pc-idle .pc-bottom,
+.player-wrap.pc-idle .pc-center {
+  opacity: 0;
+}
+/* No idle, os controles invisíveis não interceptam cliques — o clique cai no
+   vídeo (toggle play) em vez de acertar botões ocultos. */
+.player-wrap.pc-idle .pc-btn,
+.player-wrap.pc-idle .pc-seek,
+.player-wrap.pc-idle .pc-slider,
+.player-wrap.pc-idle .pc-center,
+.player-wrap.pc-idle .pc-pop {
+  pointer-events: none;
+}
+
+.pc-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(8, 11, 18, 0.62);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease,
+    border-color 0.15s ease, color 0.15s ease;
+  z-index: 2;
+}
+.pc-center svg {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+}
+.pc-center:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #16110b;
+  transform: translate(-50%, -50%) scale(1.06);
+}
+.pc-center:active {
+  transform: translate(-50%, -50%) scale(0.94);
+}
+.pc-center:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.pc-center.hidden {
+  display: none;
+}
+
+.pc-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 14px 10px;
+  /* Gradiente com ponto médio: legibilidade sobre vídeos claros/escuros sem
+     virar uma faixa preta sólida e pesada. */
+  background: linear-gradient(
+    180deg,
+    rgba(2, 3, 4, 0) 0%,
+    rgba(2, 3, 4, 0.55) 42%,
+    rgba(2, 3, 4, 0.88) 100%
+  );
+}
+
+.pc-progress {
+  position: relative;
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+/* Trilha base sempre visível, mesmo sobre vídeos claros. */
+.pc-progress::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+.pc-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  pointer-events: none;
+  transition: height 0.15s ease;
+}
+.pc-bar-buffered {
+  width: 0%;
+  background: rgba(255, 255, 255, 0.3);
+}
+.pc-bar-played {
+  width: 0%;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(255, 138, 61, 0.55);
+}
+.pc-seek {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.pc-seek:focus-visible {
+  outline: none;
+}
+.pc-seek:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pc-seek:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pc-seek::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: transparent;
+}
+.pc-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: content-box;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+  transition: width 0.15s ease, height 0.15s ease, margin-top 0.15s ease;
+}
+.pc-seek::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: transparent;
+}
+.pc-seek::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+  transition: width 0.15s ease, height 0.15s ease;
+}
+/* Desktop com mouse: a barra engrossa levemente e o handle cresce ao
+   passar o mouse. Os .pc-bar vêm depois do input no DOM; `~` alcança os
+   dois (a camada do input está acima, então o hover é confiável). */
+@media (hover: hover) and (pointer: fine) {
+  .pc-seek:hover ~ .pc-bar {
+    height: 6px;
+  }
+  .pc-seek:hover::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+    margin-top: -9px;
+  }
+  .pc-seek:hover::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.pc-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* Rede de segurança fluida: em janelas médias (ex.: player ~580px com o
+     sumário aberto no teatro) a linha quebra para a segunda linha quando não
+     cabe, em vez de estourar. Sem efeito quando tudo cabe numa linha. */
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+/* Controles secundários (volume, velocidade, fullscreen): empurrados para a
+   direita pelo .pc-spacer no desktop; no mobile formam a segunda linha. */
+.pc-secondary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 40px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  /* Chip translúcido: garante legibilidade sobre vídeo claro/escuro sem
+     poluir a cena. */
+  background: rgba(10, 14, 22, 0.5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  color: #f4f7fb;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, transform 0.1s ease;
+}
+.pc-btn svg {
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+}
+.pc-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.pc-btn:active {
+  background: rgba(255, 255, 255, 0.24);
+  transform: translateY(1px);
+}
+.pc-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pc-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* O atributo hidden precisa vencer o display: inline-flex do .pc-btn (ex.:
+   botão do sumário, que só existe no modo teatro). */
+.pc-btn[hidden] {
+  display: none;
+}
+/* Estado ativo dos botões de modo (teatro) e sumário: accent indica que o
+   recurso está ligado (aria-pressed = true). */
+.pc-btn[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+/* Controle principal (play/pause): identidade accent sem inflar. */
+.pc-play {
+  background: rgba(255, 138, 61, 0.18);
+  border-color: rgba(255, 138, 61, 0.42);
+}
+.pc-play:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #16110b;
+}
+.pc-play:active {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+  color: #16110b;
+}
+.pc-play:focus-visible {
+  outline-color: var(--accent);
+}
+
+.pc-time {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #e6ecf5;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  margin-left: 6px;
+  margin-right: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.pc-spacer {
+  flex: 1;
+}
+.pc-group {
+  position: relative;
+}
+
+/* Botão de volume e indicação de ganho extra */
+.pc-vol-btn {
+  gap: 6px;
+  padding: 0 12px 0 10px;
+}
+.pc-vol-label {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+/* Estado extra: o chip inteiro acende no accent sempre que o slider de ganho
+   está acima de 100% (o rótulo mostra o volume efetivo). Indicação clara de
+   que o ganho extra está engajado, sem precisar abrir o painel. */
+.pc-vol-btn.extra {
+  background: rgba(255, 138, 61, 0.2);
+  border-color: rgba(255, 138, 61, 0.5);
+  color: #ffc08a;
+}
+.pc-vol-btn.extra:hover {
+  background: rgba(255, 138, 61, 0.32);
+  border-color: rgba(255, 138, 61, 0.65);
+}
+.pc-extra-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.pc-vol-btn.extra .pc-extra-badge {
+  background: var(--accent);
+  color: #16110b;
+}
+/* Sem regra global de [hidden], elementos com display próprio precisam da
+   exceção explícita para o atributo hidden funcionar (label do volume, badge
+   EXTRA e dot do CC somem de verdade quando ocultos). */
+.pc-vol-label[hidden],
+.pc-extra-badge[hidden],
+.pc-cc-dot[hidden] {
+  display: none;
+}
+
+/* Popovers (volume e velocidade) */
+.pc-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 6;
+  background: rgba(16, 20, 30, 0.97);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+  padding: 12px 14px;
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 24px));
+  max-height: min(60vh, 320px);
+  max-height: min(60dvh, 320px);
+  overflow: auto;
+}
+.pc-vol-pop {
+  min-width: 252px;
+  /* Painel curto não precisa de scroll; overflow visível deixa o caret
+     aparecer e conecta o painel ao botão. */
+  overflow: visible;
+}
+/* Caret apontando para o botão de volume (mesmo fundo do painel). */
+.pc-vol-pop::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  transform: translateX(-50%) translateY(-5px) rotate(45deg);
+  pointer-events: none;
+}
+.pc-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 7px 0;
+}
+.pc-slider-name {
+  width: 84px;
+  flex-shrink: 0;
+}
+.pc-slider-val {
+  width: 40px;
+  text-align: right;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.pc-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fill, 50%),
+    rgba(255, 255, 255, 0.22) var(--fill, 50%)
+  );
+  cursor: pointer;
+  outline-offset: 4px;
+}
+.pc-slider:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.pc-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.pc-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+}
+.pc-vol-warn {
+  margin: 8px 0 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--accent);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+/* Menu de velocidade */
+.pc-speed-btn {
+  min-width: 44px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.pc-speed-menu {
+  min-width: 92px;
+  padding: 6px;
+}
+.pc-speed-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #dfe6f0;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.pc-speed-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.pc-speed-item.active {
+  color: var(--accent);
+  font-weight: 700;
+}
+.pc-speed-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* ============ fim controles customizados ============ */
+
+.lesson-header {
+  /* Ancora o painel de aparência da legenda (absolute) ao cabeçalho da aula,
+     em vez de deixá-lo posicionar contra a viewport (o que somava o offset do
+     player-wrap à matemática de top/left e gerava overflow horizontal). */
+  position: relative;
+  margin-top: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.course-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.course-toolbar-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-dim);
+  /* Títulos longos de curso quebram em vez de estourar a toolbar. */
+  overflow-wrap: break-word;
+}
+/* Bloco do título encolhe (min-width:0) para o breadcrumb truncar em vez de
+   empurrar os botões Anterior/Próxima para fora da viewport. */
+.lesson-header .lesson-title-block {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.lesson-header h2 {
+  font-size: 19px;
+  margin: 0 0 6px;
+  overflow-wrap: break-word;
+}
+/* Breadcrumb de uma linha: o prefixo (curso/módulos) trunca com "…" quando
+   falta espaço, e o último segmento (pasta da aula) fica sempre visível. O
+   caminho completo está no title (hover). */
+.lesson-header .breadcrumb {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.lesson-header .breadcrumb-prefix {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lesson-header .breadcrumb-sep,
+.lesson-header .breadcrumb-leaf {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.player-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  /* Os botões Anterior/Próxima não são esmagados pelo título da aula; se
+     faltar espaço, o título encolhe/trunca e os botões quebram de linha. */
+  flex-shrink: 0;
+}
+.nav-buttons {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.nav-buttons button {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.nav-buttons button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.nav-buttons button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.materials {
+  margin-top: 14px;
+  background: linear-gradient(180deg, var(--bg-card), var(--bg-card-2));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+.materials h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.materials a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 13.5px;
+  border-bottom: 1px solid var(--border);
+  /* Nomes de arquivo longos quebram em vez de estourar a largura da coluna
+     em janelas reduzidas. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.materials a:last-child {
+  border-bottom: none;
+}
+.materials a:hover {
+  color: var(--accent);
+}
+
+/* ---------- Sidebar de módulos ---------- */
+.sidebar {
+  min-width: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(18, 24, 35, 0.95),
+    rgba(14, 20, 31, 0.95)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  padding: 8px;
+  /* Altura limitada à área realmente visível (dvh), com o excedente rolado
+     dentro da árvore — o sumário nunca empurra a página para sempre. */
+  max-height: calc(100vh - 90px);
+  max-height: calc(100dvh - 90px);
+  overflow: hidden;
+  position: static;
+  top: auto;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 12px 22px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(10px);
+  z-index: 1;
+  margin-top: 0;
+  /* Coluna: cabeçalho do curso fixo + árvore rolável no espaço restante */
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-title,
+.sidebar-progress {
+  flex-shrink: 0;
+}
+.sidebar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px 8px;
+  font-weight: 700;
+  font-size: 13.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 6px;
+  color: var(--text);
+}
+/* Nome do curso pode encolher e truncar sem empurrar o % */
+.sidebar-course-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-title .pct {
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.sidebar-progress {
+  padding: 0 8px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 6px;
+}
+
+.sidebar-progress-bar {
+  margin-top: 0;
+  height: 5px;
+}
+
+.sidebar-progress-meta {
+  margin-top: 4px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* A árvore é a parte rolável da sidebar (desktop): o cabeçalho continua
+   visível enquanto o usuário navega por centenas de aulas. */
+#tree-slot {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 2px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+#tree-slot::-webkit-scrollbar {
+  width: 8px;
+}
+#tree-slot::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+#tree-slot::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tree-folder {
+  margin-bottom: 2px;
+}
+
+/* Separação entre módulos: uma divisão sutil no topo, sem borda em cada item */
+#tree-slot > .tree-folder + .tree-folder {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.tree-folder-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.tree-folder-head:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.tree-folder-head .chev {
+  transition: transform 0.15s ease;
+  color: var(--text-dim);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.tree-folder-head.open .chev {
+  transform: rotate(90deg);
+}
+.tree-folder-head .folder-progress {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* Módulo (1º nível): maior destaque, contador claro */
+.tree-folder-head[data-depth="1"] {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  padding: 10px 11px;
+}
+.tree-folder-head[data-depth="1"] .chev {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.tree-folder-head[data-depth="1"] .folder-progress {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+/* Submódulo (2º nível): peso intermediário, subordinado ao módulo */
+.tree-folder-head[data-depth="2"] {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-mid);
+  padding: 8px 10px;
+}
+.tree-folder-head[data-depth="2"] .folder-progress {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+/* Níveis profundos (3+): variante plana e discreta (a indentação estabiliza) */
+.tree-folder-head[data-depth="3"],
+.tree-folder-head[data-depth="4"] {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  padding: 7px 10px;
+}
+.tree-folder-head[data-depth="3"] .folder-progress,
+.tree-folder-head[data-depth="4"] .folder-progress {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* Indentação com teto: cada nível contribui um pouco menos de espaço */
+.tree-folder-children {
+  padding-left: 12px;
+  display: none;
+}
+.tree-folder-children.open {
+  display: block;
+}
+.tree-folder-children .tree-folder-children {
+  padding-left: 10px;
+}
+.tree-folder-children .tree-folder-children .tree-folder-children {
+  padding-left: 8px;
+}
+
+/* Aula: discreta e legível, com estados claros */
+.tree-lesson {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-dim);
+  position: relative;
+}
+.tree-lesson:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+}
+
+/* Aula atual: destaque elegante (fundo suave + barra lateral accent), sem
+   borda em volta; a barra em ::before não desloca o layout ao trocar de aula. */
+.tree-lesson.active {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 138, 61, 0.12),
+    rgba(255, 138, 61, 0.04)
+  );
+  color: var(--text);
+}
+.tree-lesson.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.tree-lesson .check {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(154, 168, 191, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.tree-lesson .check:hover {
+  border-color: var(--accent);
+}
+.tree-lesson.done .check {
+  background: var(--success);
+  border-color: var(--success);
+  color: #06210f;
+}
+.tree-lesson .lesson-title,
+.tree-file .lesson-title,
+.tree-folder-head .folder-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+.tree-lesson .lesson-title-inner,
+.tree-file .lesson-title-inner,
+.tree-folder-head .folder-title-inner {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+  transition: transform 0.6s ease;
+}
+.tree-lesson .lesson-mini-progress {
+  width: 26px;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.tree-lesson .lesson-mini-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* Contador secundário da aula (n/total): sempre visível; não desaparece com
+   título longo porque .lesson-title encolhe (flex:1 + min-width:0). */
+.tree-lesson .lesson-counter {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  padding-left: 2px;
+}
+
+/* Concluída: o ✓ verde já marca; o título mais apagado reforça "feito" */
+.tree-lesson.done .lesson-title-inner {
+  opacity: 0.6;
+}
+
+/* Foco visível (teclado) sem sacrificar densidade */
+.tree-folder-head:focus-visible,
+.tree-lesson:focus-visible,
+.tree-file:focus-visible,
+.tree-lesson .check:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Marquee: desliza o título quando ele não cabe no item. Restrito a
+   dispositivos com mouse (hover fino); no touch o título fica apenas com
+   ellipsis — sem animação nem dependência de hover. */
+@media (hover: hover) and (pointer: fine) {
+  .tree-lesson.marquee .lesson-title-inner,
+  .tree-file.marquee .lesson-title-inner,
+  .tree-folder-head.marquee .folder-title-inner {
+    max-width: none;
+    text-overflow: clip;
+    animation: marquee-shuttle var(--marquee-dur, 5s) ease-in-out infinite;
+    will-change: transform;
+  }
+}
+
+@keyframes marquee-shuttle {
+  /* Começa mostrando o INÍCIO do título, desliza até o final e volta */
+  0%,
+  16% {
+    transform: translateX(0);
+  }
+  58% {
+    transform: translateX(var(--marquee-tx, -60px));
+  }
+  84%,
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-lesson.marquee .lesson-title-inner,
+  .tree-file.marquee .lesson-title-inner,
+  .tree-folder-head.marquee .folder-title-inner {
+    animation: none;
+    max-width: 100%;
+    text-overflow: ellipsis;
+  }
+}
+
+.tree-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+.tree-file:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 60px 20px;
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  /* background-attachment: fixed causa falhas de render e lentidão no iOS e
+     em vários Androids; em telas pequenas o degradê estático já basta. */
+  html,
+  body {
+    background-attachment: scroll;
+  }
+  .course-view {
+    grid-template-columns: 1fr;
+    gap: var(--gap-col);
+  }
+  /* Modo Teatro em telas estreitas: o sumário nunca vira coluna espremida ao
+     lado do player. Aberto, ele empilha abaixo (bloco normal); fechado, some. */
+  .course-view.theater,
+  .course-view.theater.summary-open {
+    grid-template-columns: 1fr;
+  }
+  .course-view.theater .sidebar {
+    min-width: 0;
+    overflow: visible;
+  }
+  .course-view.theater:not(.summary-open) .sidebar {
+    display: none;
+  }
+  .sidebar {
+    position: static;
+    /* Sumário empilhado abaixo do player com altura limitada à janela real
+       (dvh) + scroll interno: em 641–900px a árvore não vira uma página
+       infinita. O #tree-slot volta ao comportamento base rolável. */
+    max-height: min(56vh, 500px);
+    max-height: min(56dvh, 500px);
+    margin-top: 8px;
+  }
+  .player-wrap {
+    min-height: 320px;
+  }
+  .player-controls {
+    justify-content: flex-start;
+  }
+  .topbar-search {
+    max-width: none;
+  }
+  .topbar {
+    gap: 10px;
+    padding: 12px 14px;
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  /* Configurações: sidebar vira uma fileira compacta de pills com scroll
+     horizontal controlado (não uma barra gigante; rolagem só quando sobra). */
+  .settings-layout {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .settings-nav {
+    width: auto;
+    max-width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .settings-nav-item {
+    white-space: nowrap;
+    flex: none;
+  }
+}
+
+/* Alvos de toque: apenas em aparelhos com pointer grosseiro (touch);
+   desktop com mouse permanece exatamente como está. 36px mantém o toque
+   confortável sem inflar a altura das linhas da árvore. */
+@media (pointer: coarse) {
+  .tree-folder-head,
+  .tree-lesson,
+  .tree-file {
+    min-height: 36px;
+  }
+  /* Alvos de toque confortáveis nos controles do player. */
+  .pc-btn {
+    min-width: 44px;
+    height: 44px;
+  }
+  .pc-center {
+    width: 58px;
+    height: 58px;
+  }
+}
+
+/* ---------- Mobile compacto e denso ----------
+   Princípio: mais conteúdo na tela sem perder legibilidade. Reduzimos
+   padding/alturas de cards, listas e controles — sem tocar nas proporções
+   do player (o vídeo mantém o 16/9 nativo, menos letterbox e rolagem). */
+@media (max-width: 640px) {
+  .app {
+    padding: 8px 8px 24px;
+  }
+  .player-wrap {
+    /* 16/9 já define a altura; sem o mínimo de 360px o player assume a
+       proporção natural no celular (menos letterbox e rolagem). */
+    min-height: 0;
+  }
+
+  /* Player: controles maiores e barra que reflui em duas linhas no mobile
+     (play + tempo em cima; volume/velocidade/fullscreen embaixo). */
+  .pc-btn {
+    min-width: 44px;
+    height: 44px;
+    font-size: 12px;
+  }
+  .pc-center {
+    width: 56px;
+    height: 56px;
+  }
+  .pc-bottom {
+    padding: 10px 8px 6px;
+  }
+  .pc-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  /* Segunda linha no mobile: secundários ocupam 100% da barra e se espalham —
+     play + tempo em cima, volume/velocidade/fullscreen/teatro/sumário abaixo.
+     flex-wrap evita overflow horizontal quando há muitos botões (telas <360px). */
+  .pc-secondary {
+    flex-basis: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .pc-time {
+    font-size: 12px;
+    margin-left: 4px;
+  }
+  /* Popovers centrados no mobile, acima da barra (caret some). */
+  .pc-pop {
+    position: fixed;
+    left: 50%;
+    right: auto;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    width: min(280px, calc(100vw - 24px));
+  }
+  .pc-vol-pop::after {
+    display: none;
+  }
+  .topbar {
+    gap: 6px;
+    padding: 6px 8px;
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+  .topbar-brand-minimal {
+    width: 30px;
+    height: 30px;
+  }
+  .topbar-icon-btn {
+    width: 30px;
+    height: 30px;
+  }
+  .topbar-search input {
+    padding: 7px 10px;
+    font-size: 13px;
+  }
+  .btn-ghost {
+    padding: 7px 10px;
+    font-size: 11px;
+    box-shadow: none;
+  }
+
+  /* Home: seções com menos respiro vertical */
+  .home-section {
+    margin-bottom: 18px;
+  }
+
+  /* Configurações: cards e modal com respiro reduzido no celular */
+  .settings-header {
+    margin-bottom: 16px;
+  }
+  .settings-title {
+    font-size: 20px;
+  }
+  .settings-section {
+    padding: 13px 14px;
+    margin-bottom: 12px;
+  }
+  .settings-row {
+    padding: 8px 6px;
+  }
+  .modal {
+    padding: 16px;
+  }
+  .modal-actions {
+    margin-top: 16px;
+  }
+  .section-title {
+    font-size: 17px;
+    margin-bottom: 8px;
+  }
+  .section-title .count {
+    font-size: 13px;
+  }
+  .section-head {
+    margin-bottom: 10px;
+  }
+  .section-heading {
+    font-size: 17px;
+  }
+  .section-subtitle {
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  /* Resultados de busca compactos */
+  .search-results {
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .search-result-item {
+    padding: 7px 10px;
+    gap: 2px;
+    border-radius: 10px;
+  }
+  .search-result-tag {
+    font-size: 10px;
+  }
+  .search-result-main {
+    font-size: 12.5px;
+  }
+  .search-result-sub {
+    font-size: 11px;
+  }
+
+  /* Grid de cursos: 2 colunas compactas para mostrar mais cursos por tela */
+  .course-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .course-card-thumb {
+    height: 62px;
+    font-size: 16px;
+  }
+  .course-card-body {
+    padding: 8px 10px 10px;
+    gap: 3px;
+  }
+  .course-card-title {
+    font-size: 12.5px;
+  }
+  .course-card-meta {
+    font-size: 10.5px;
+  }
+  /* Uma linha de meta por card: o tempo "assistidos" sai para não dobrar
+     a altura do card (o % e a barra já comunicam o progresso). */
+  .course-card-meta + .course-card-meta {
+    display: none;
+  }
+  .course-card .progress-bar {
+    height: 4px;
+    margin-top: 3px;
+  }
+  .fav-btn {
+    width: 26px;
+    height: 26px;
+    font-size: 15px;
+    top: 4px;
+    right: 4px;
+  }
+
+  /* "Continuar assistindo": cards viram linhas compactas */
+  .continue-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .continue-card {
+    padding: 10px 12px;
+    gap: 6px;
+    border-radius: 12px;
+  }
+  .continue-card .lesson-name {
+    font-size: 13.5px;
+    -webkit-line-clamp: 1;
+  }
+  .continue-card .course-name {
+    margin-top: 1px;
+    font-size: 11px;
+  }
+  .continue-card-progress {
+    gap: 8px;
+  }
+  .continue-progress-bar {
+    height: 4px;
+  }
+  .continue-pct {
+    font-size: 12px;
+    min-width: 34px;
+  }
+
+  /* Progresso: resumo compacto e painel com as 3 estatísticas lado a lado
+     (em vez de empilhadas, o que dobraria a altura) */
+  .progress-summary-inner {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .progress-summary-pct {
+    font-size: 15px;
+  }
+  .progress-summary-bar {
+    flex-basis: 90px;
+    height: 4px;
+  }
+  .progress-summary-meta {
+    font-size: 12px;
+  }
+  .progress-panel {
+    padding: 14px 12px;
+    border-radius: 12px;
+  }
+  .progress-panel-hero-value {
+    font-size: 26px;
+  }
+  .progress-panel-hero-label {
+    font-size: 12px;
+  }
+  .progress-panel-bar {
+    margin-top: 10px;
+    height: 6px;
+  }
+  .progress-panel-stats {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    margin-top: 12px;
+    padding-top: 12px;
+  }
+  .progress-stat {
+    padding: 0 8px;
+    border-left: 1px solid var(--border);
+    border-top: none;
+    gap: 2px;
+  }
+  .progress-stat:first-child {
+    padding-left: 0;
+    border-left: none;
+  }
+  .progress-stat-value {
+    font-size: 20px;
+  }
+  .progress-stat-label {
+    font-size: 11px;
+  }
+  .progress-stat-sub {
+    display: none;
+  }
+
+  /* Página do curso: cabeçalho e controles compactos */
+  .back-link {
+    margin-bottom: 6px;
+    font-size: 12.5px;
+  }
+  .course-toolbar {
+    margin-bottom: 6px;
+    gap: 8px;
+  }
+  .course-toolbar-title {
+    font-size: 12.5px;
+  }
+  .course-toolbar-actions .secondary-btn {
+    padding: 6px 10px;
+    font-size: 11.5px;
+  }
+  .lesson-header {
+    margin-top: 8px;
+    gap: 8px;
+  }
+  .lesson-header h2 {
+    font-size: 15px;
+    margin: 0 0 2px;
+  }
+  .lesson-header .breadcrumb {
+    font-size: 11px;
+  }
+  .player-controls {
+    gap: 4px;
+  }
+  .nav-buttons {
+    gap: 6px;
+  }
+  .nav-buttons button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .materials {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+  .materials h3 {
+    font-size: 12.5px;
+    margin-bottom: 6px;
+  }
+  .materials a {
+    padding: 5px 0;
+    font-size: 12px;
+  }
+
+  /* Sidebar / árvore: linhas densas, sem divisórias por item — a hierarquia
+     fica por tipografia, indentação e estados. A divisão entre módulos
+     permanece (mais compacta). */
+  .sidebar {
+    padding: 6px;
+    border-radius: 12px;
+    /* No celular a rolagem é da própria página: o sumário abre sem caixa
+       interna de scroll (retoma o fluxo natural). */
+    max-height: none;
+  }
+  #tree-slot {
+    overflow: visible;
+    flex: 0 0 auto;
+    padding: 0;
+  }
+  .sidebar-title {
+    padding: 4px 6px 6px;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  .sidebar-title .pct {
+    font-size: 14px;
+  }
+  .sidebar-progress {
+    padding: 0 6px 6px;
+    margin-bottom: 4px;
+  }
+  .sidebar-progress-bar {
+    height: 5px;
+  }
+  .sidebar-progress-meta {
+    margin-top: 4px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .tree-folder {
+    margin-bottom: 0;
+  }
+  #tree-slot > .tree-folder + .tree-folder {
+    margin-top: 4px;
+    padding-top: 4px;
+  }
+  .tree-folder-head {
+    gap: 6px;
+    border-radius: 8px;
+  }
+  .tree-folder-head[data-depth="1"] {
+    font-size: 13px;
+    padding: 8px;
+  }
+  .tree-folder-head[data-depth="2"] {
+    font-size: 12px;
+    padding: 7px 8px;
+  }
+  .tree-folder-head[data-depth="3"],
+  .tree-folder-head[data-depth="4"] {
+    font-size: 11.5px;
+    padding: 6px 8px;
+  }
+  .tree-folder-head .folder-progress {
+    font-size: 10.5px;
+  }
+  .tree-folder-children {
+    padding-left: 8px;
+  }
+  .tree-folder-children .tree-folder-children {
+    padding-left: 6px;
+  }
+  .tree-folder-children .tree-folder-children .tree-folder-children {
+    padding-left: 5px;
+  }
+  .tree-lesson {
+    padding: 6px 8px;
+    gap: 6px;
+    font-size: 12px;
+    border-radius: 8px;
+  }
+  .tree-lesson .check {
+    width: 16px;
+    height: 16px;
+    font-size: 9px;
+    border-width: 1.5px;
+  }
+  .tree-lesson .lesson-mini-progress {
+    width: 22px;
+  }
+  .tree-file {
+    padding: 6px 8px;
+    gap: 6px;
+    font-size: 11.5px;
+    border-radius: 8px;
+  }
+  /* Player no estreito: Velocidade e Legendas dobram para o menu ⋮
+     (vol | fullscreen | ⋮) — menos botões competindo na segunda linha. */
+  .pc-group-speed,
+  .pc-group-cc {
+    display: none;
+  }
+  .pc-more-narrow {
+    display: flex;
+  }
+  .pc-more-menu {
+    max-height: min(60dvh, 430px);
+    overflow-y: auto;
+  }
+}
+
+/* Celulares pequenos: toolbar do curso empilha (título em linha própria,
+   botões dividindo a linha). */
+/* Header em janelas estreitas (≤560px): a busca ganha uma linha inteira logo
+   abaixo do logo + botões. Nada de espremer a busca nem empurrar a página
+   para fora da viewport — transição progressiva antes do layout mobile. */
+@media (max-width: 560px) {
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .topbar-brand-minimal {
+    order: 1;
+  }
+  .btn-ghost {
+    order: 2;
+    margin-left: auto;
+  }
+  .topbar-icon-btn {
+    order: 2;
+  }
+  .topbar-search {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .course-toolbar-title {
+    width: 100%;
+  }
+  .course-toolbar-actions .secondary-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .course-toolbar-actions {
+    width: 100%;
+  }
+
+  /* Player: mantém o volume extra legível mesmo bem estreito. */
+  .pc-vol-label {
+    font-size: 11.5px;
+  }
+  .pc-extra-badge {
+    font-size: 9.5px;
+    padding: 1px 5px;
+  }
+  .pc-pop {
+    bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Atalhos: mensagem de captura/erro quebra para baixo do chip (sem apertar
+     a linha). */
+  .shortcut-value {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+    max-width: 62%;
+  }
+
+  /* Badge de transcoding: cabe em telas estreitas sem overflow. */
+  .player-preparing {
+    font-size: 11px;
+    padding: 5px 10px;
+    max-width: calc(100% - 24px);
+    white-space: normal;
+    text-align: center;
+  }
+
+  /* Aviso de progresso: mesmo tratamento do badge de transcoding. */
+  .player-progress-warning {
+    font-size: 11px;
+    padding: 5px 10px;
+    max-width: calc(100% - 24px);
+    white-space: normal;
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-bottom,
+  .pc-center,
+  .pc-btn,
+  .pc-bar,
+  .pc-seek::-webkit-slider-thumb,
+  .pc-seek::-moz-range-thumb,
+  .course-view {
+    transition: none;
+  }
+  .shortcut-row.capturing .shortcut-key {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .continue-card,
+  .continue-progress-bar .progress-bar-fill,
+  .progress-panel-bar-fill {
+    animation: none;
+  }
+  .continue-card {
+    transition: none;
+  }
+  .progress-summary,
+  .progress-panel-wrap,
+  .progress-toggle-icon {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Inteligência Artificial (Configurações)
+   Classes prefixadas ai-*; reutilizam os tokens do tema. Nada existente muda.
+   ========================================================================== */
+
+.ai-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.ai-tab {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-mid);
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.ai-tab:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.ai-tab.active {
+  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ai-panel {
+  min-height: 60px;
+}
+
+/* Cards de status (Visão geral) */
+.ai-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.ai-status-card {
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.ai-status-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.ai-status-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.ai-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex: none;
+}
+.ai-status-dot.ok { background: var(--success); }
+.ai-status-dot.warn { background: var(--accent); }
+.ai-status-dot.err { background: var(--danger); }
+.ai-status-dot.off { background: var(--text-dim); }
+.ai-status-sub {
+  font-size: 12.5px;
+  color: var(--text-mid);
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+.ai-status-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* Campos */
+.ai-field {
+  margin-bottom: 14px;
+}
+.ai-field-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+.ai-field-switch .ai-label {
+  margin: 0;
+}
+/* Texto ao lado de um switch (título + descrição curta). */
+.ai-switch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ai-switch-text .ai-label {
+  margin: 0;
+}
+.ai-field-desc {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin: 0;
+  line-height: 1.4;
+}
+/* Cabeçalho de bloco e separador dentro das abas de IA. */
+.ai-block-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 18px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-block-title:first-child {
+  margin-top: 0;
+}
+.ai-block-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+}
+.ai-sep {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
+}
+/* Seleção de modo (radio pills). */
+.ai-radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ai-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-card-2);
+  color: var(--text-mid);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+.ai-radio input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.ai-radio:has(input:checked) {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+/* Estatísticas do pipeline (Visão geral). */
+.ai-pipeline-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+/* Resumo do pipeline no topo da aba Transcrição (com atalho para o Diagnóstico) */
+.ai-tr-summary {
+  margin-bottom: 4px;
+}
+.ai-tr-summary-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.ai-tr-summary-link {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.ai-tr-summary-link:hover {
+  text-decoration: underline;
+}
+.ai-tr-summary .ai-pipeline-stats {
+  margin-top: 6px;
+}
+.ai-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-card-2);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.ai-stat b {
+  font-weight: 700;
+}
+.ai-stat b.ok {
+  color: var(--success);
+}
+.ai-stat b.warn {
+  color: var(--accent);
+}
+.ai-stat b.err {
+  color: var(--danger);
+}
+.ai-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-mid);
+  margin-bottom: 6px;
+}
+.ai-label-small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 500;
+  margin-top: 6px;
+}
+.ai-input,
+.ai-select {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  padding: 9px 11px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.ai-input:focus,
+.ai-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.ai-input-num {
+  width: 90px;
+}
+.ai-input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
+/* Campo de senha com olho */
+.ai-pw-wrap {
+  position: relative;
+}
+.ai-pw-wrap .ai-input {
+  padding-right: 40px;
+}
+.ai-eye {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--text-dim);
+  padding: 4px;
+}
+.ai-eye:hover {
+  color: var(--text);
+}
+
+/* Cards de provedor */
+.ai-provider-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.ai-provider-card {
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.ai-provider-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.ai-provider-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.ai-provider-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  word-break: break-all;
+}
+.ai-provider-key {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.ai-provider-key.has {
+  color: var(--success);
+  border-color: rgba(51, 201, 111, 0.4);
+}
+.ai-provider-model {
+  font-size: 12px;
+  color: var(--text-mid);
+  margin-bottom: 10px;
+}
+.ai-provider-model code {
+  background: var(--bg-hover);
+  border-radius: 6px;
+  padding: 1px 5px;
+  font-size: 11.5px;
+}
+.ai-provider-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Formulário de provedor */
+.ai-provider-form {
+  background: var(--bg-card-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.ai-form-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 12px;
+}
+
+/* Lista de modelos */
+.ai-model-list {
+  margin-top: 8px;
+}
+.ai-model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.ai-model-row:first-child {
+  border-top: none;
+}
+.ai-model-name {
+  color: var(--text-mid);
+  font-weight: 600;
+}
+.ai-model-state {
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.ai-model-state.ok { color: var(--success); }
+.ai-model-state.off { color: var(--text-dim); }
+.ai-model-size {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+/* Mensagens e notas */
+.ai-inline-msg {
+  margin-top: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.ai-inline-msg.ok { color: var(--success); }
+.ai-inline-msg.error { color: var(--danger); }
+.ai-note {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 10px 0 0;
+}
+.ai-note code {
+  background: var(--bg-hover);
+  border-radius: 6px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+.ai-empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+}
+
+/* Responsivo */
+@media (max-width: 560px) {
+  .ai-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 480px) {
+  .ai-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -18px 14px;
+    padding: 0 18px 4px;
+  }
+  .ai-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .ai-tab {
+    flex: none;
+  }
+  .ai-provider-head {
+    flex-direction: column;
+  }
+}
+
+/* ============ Editor de legendas (estilo YouTube) ============ */
+.subtitle-editor {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--bg-card);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  position: relative;
+}
+.se-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+.se-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.se-dirty {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.se-dirty.se-dirty-on {
+  color: var(--accent);
+}
+.se-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+.se-actions .secondary-btn[hidden] {
+  display: none;
+}
+.se-actions .secondary-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.se-body {
+  padding: 12px 14px;
+}
+.se-loading,
+.se-unavailable,
+.se-empty {
+  color: var(--text-mid);
+  font-size: 13px;
+  text-align: center;
+  padding: 22px 10px;
+}
+.se-unavailable p {
+  margin: 0 0 12px;
+}
+.se-timeline-wrap {
+  margin-bottom: 10px;
+}
+.se-timeline {
+  position: relative;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  overflow: hidden;
+}
+.se-tl-block {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--border));
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+.se-tl-block:hover {
+  opacity: 1;
+}
+.se-tl-block.active {
+  background: var(--accent);
+  opacity: 1;
+}
+.se-tl-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #fff;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+.se-list {
+  max-height: 430px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.se-row {
+  display: grid;
+  grid-template-columns: 34px minmax(150px, 210px) auto 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.se-row.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+.se-row-num {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding-top: 6px;
+  text-align: center;
+  user-select: none;
+}
+.se-row-time {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.se-time-inputs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.se-time-inputs input {
+  width: 92px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+.se-time-inputs .se-set {
+  font-size: 10px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-mid);
+  cursor: pointer;
+}
+.se-time-inputs .se-set:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.se-row-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 2px;
+}
+.se-row-tools button {
+  font-size: 10px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-mid);
+  cursor: pointer;
+  line-height: 1.2;
+}
+.se-row-tools button:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.se-row-tools button.se-danger:hover {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+}
+.se-text {
+  width: 100%;
+  min-height: 42px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  box-sizing: border-box;
+}
+.se-text:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.se-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%) translateY(8px);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 5;
+}
+.se-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+@media (max-width: 720px) {
+  .se-row {
+    grid-template-columns: 24px 1fr;
+    grid-template-areas:
+      "num time"
+      "tools tools"
+      "text text";
+  }
+  .se-row-num {
+    grid-area: num;
+  }
+  .se-row-time {
+    grid-area: time;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .se-row-tools {
+    grid-area: tools;
+  }
+  .se-text {
+    grid-area: text;
+  }
+  .se-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+}

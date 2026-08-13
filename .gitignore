@@ -1,0 +1,44 @@
+# ===== Dependências =====
+node_modules/
+
+# ===== Dados gerados pela aplicação (runtime local) =====
+# Progresso do usuário, backups, logs e cache de transcode.
+# Tudo em data/ é local — nada deve ser versionado.
+data/
+
+# ===== Arquivos temporários =====
+*.tmp
+*.temp
+
+# ===== Logs =====
+*.log
+
+# ===== Arquivos de ambiente =====
+.env
+.env.*
+!.env.example
+
+# ===== Arquivos de sistema =====
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ===== Editores / IDEs =====
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# ===== Ferramentas locais =====
+# Claude Code: configuração local do usuário (pode conter caminhos da máquina)
+.claude/settings.local.json
+
+# ===== Cache =====
+.cache/
+
+# ===== Modelos e binários de IA =====
+# Baixados manualmente (grandes); não devem ser versionados nem copiados.
+models/
+bin/
+

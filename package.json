@@ -1,0 +1,13 @@
+{
+  "name": "local-player",
+  "version": "1.0.0",
+  "description": "Player local/offline para organizar e reproduzir conteúdo de mídia em disco",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
