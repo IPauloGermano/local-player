@@ -951,6 +951,62 @@ body {
   font-size: 12px;
   color: var(--text-dim);
 }
+/* Tag discreta de card de tópico: distingue do card de curso sem virar
+   um elemento novo — reusa o grid/card existentes. */
+.topic-card-tag {
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  background: var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+/* ---------- Visão de tópico (navegação hierárquica) ---------- */
+.topic-view {
+  padding-top: 8px;
+}
+.topic-breadcrumb {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 14px;
+}
+.breadcrumb-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+.breadcrumb-link:hover {
+  text-decoration: underline;
+}
+.topic-title {
+  font-size: 24px;
+  margin: 0 0 22px;
+  overflow-wrap: break-word;
+}
+.topic-view .course-grid {
+  margin-bottom: 0;
+}
+/* Lista defensiva (vídeo/material direto dentro de um tópico — não deve
+   ocorrer, mas sem card quebrado se acontecer). */
+.topic-loose {
+  margin: 0 0 24px;
+  padding-left: 20px;
+  line-height: 1.9;
+}
+.topic-loose a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.topic-loose a:hover {
+  text-decoration: underline;
+}
 
 .progress-bar {
   height: 6px;
@@ -4155,4 +4211,110 @@ body {
     margin-left: 0;
     width: 100%;
   }
+}
+
+/* --- Settings: Bibliotecas --- */
+.lib-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+.lib-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card);
+  flex-wrap: wrap;
+}
+.lib-row-main {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.lib-row-name {
+  font-weight: 600;
+}
+.lib-row-path {
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.lib-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.2);
+  margin-left: 6px;
+  vertical-align: 1px;
+  color: var(--text-dim);
+}
+.lib-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.lib-badge-ok {
+  color: var(--success);
+  background: rgba(51, 201, 111, 0.12);
+}
+.lib-badge-warn {
+  color: var(--accent);
+  background: rgba(255, 138, 61, 0.12);
+}
+.lib-badge-off {
+  color: var(--text-dim);
+  background: rgba(128, 128, 128, 0.16);
+}
+.lib-row-count {
+  font-size: 12px;
+  color: var(--text-mid);
+  white-space: nowrap;
+}
+.lib-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.lib-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.lib-btn:hover {
+  background: var(--bg-hover);
+}
+.lib-btn-danger {
+  color: var(--danger);
+  border-color: rgba(255, 91, 91, 0.45);
+}
+.lib-btn-danger:hover {
+  background: rgba(255, 91, 91, 0.12);
+}
+.lib-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.lib-field {
+  margin: 10px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }

@@ -2,11 +2,13 @@
 
 Este arquivo orienta Claude Code (claude.ai/code) no trabalho com este repositório. Foi reescrito a partir de auditoria do código real (`server.js`, `public/`, `package.json`) — o código é a fonte de verdade.
 
-> Documentação profunda (detalhe de implementação) foi movida para `docs/` — **leia o ponteiro antes de mexer no subsistema**: `docs/DOCUMENTACAO.md` (scan, API, media, persistência, transcoding), `docs/SUBTITLES.md` (pipeline de legendas + editor), `docs/VALIDACAO.md` (checklist de validação), `docs/whisper.md` (instalação do whisper.cpp).
+> Documentação profunda (detalhe de implementação) foi movida para `docs/` — **leia o ponteiro antes de mexer no subsistema**: `docs/DOCUMENTACAO.md` (scan, API, media, persistência, transcoding), `docs/SUBTITLES.md` (pipeline de legendas + editor), `docs/VALIDACAO.md` (checklist de validação), `docs/whisper.md` (instalação do whisper.cpp), `docs/BIBLIOTECAS.md` (bibliotecas externas configuráveis).
 
 ## Projeto
 
 O **Local Player** é um player local/offline para organizar e reproduzir conteúdo de mídia armazenado em disco (HDs externos / pendrives). Ele pode estruturar qualquer biblioteca de conteúdo em pastas — cursos, aulas, treinamentos, vídeos educacionais, coleções de vídeo. Escaneia a árvore de pastas, serve vídeos/materiais diretamente do disco, persiste progresso por aula e oferece busca, favoritos e atalhos de teclado. Um **fallback de transcoding** (ffmpeg) converte apenas os formatos que o navegador não reproduz; originais compatíveis nunca tocam o ffmpeg. Gera também **legendas automáticas por vídeo** (ASR local Whisper + correção LLM opcional) — recurso adicional, nunca dependência do player.
+
+**Navegação hierárquica por tópicos**: pastas marcadas **explicitamente** como tópico viram **tópicos navegáveis** — um card que abre a lista de filhos com breadcrumb (`Home › TI › Python`) em profundidade arbitrária. Só quando se chega num **curso** (pasta normal) a experiência atual do player abre. A estrutura física de diretórios é a fonte de verdade (sem taxonomia paralela). Regra e detalhes: `docs/TOPICOS-MARCADORES.md`.
 
 - **Backend**: arquivo único Node.js + Express (`server.js`), sem build step.
 - **Frontend**: SPA em HTML/CSS/JS puro em `public/`, sem build step, sem framework.
@@ -22,7 +24,8 @@ npm start                    # inicia o servidor (scripts.start = "node server.j
 - Escuta em `http://localhost:4173` (sobrescreva com a env `PORT`). Por padrão
   escuta em todas as interfaces (acesso pela rede local é comportamento
   documentado); para restringir à máquina local, use `HOST=127.0.0.1`.
-- **Sem testes, sem linter, sem build step**. Verificação rápida de sintaxe: `node --check server.js public/app.js`. Para validar comportamento, rode o servidor e exercite a UI (ou `curl` as rotas da API). Checklist completo: `docs/VALIDACAO.md`.
+- **Sem linter, sem build step**. Verificação rápida de sintaxe: `node --check server.js public/app.js public/scope.js`. Testes: `node --test test/progress.test.js test/topics.test.js test/libraries.test.js test/scope.test.js test/sidebar.test.js test/sidebar-runtime-smoke.js` (integridade do progresso + tópicos por marcador + bibliotecas externas + escopo contextual + sidebar/materiais; progresso e o smoke de sidebar sobem o servidor real com `LP_DATA_DIR` num diretório temporário; os demais são puros, sem DOM). Para validar comportamento, rode o servidor e exercite a UI (ou `curl` as rotas da API). Checklist completo: `docs/VALIDACAO.md`.
+- **`LP_DATA_DIR`** (env, opcional): aponta progresso/caches/config de IA para outro diretório (`data/` por padrão). Usada pelos testes para rodar em sandbox sem tocar o `data/` real; uso normal não define a env.
 - Dependência real: **Express** (`^4.19.2`, instalado 4.22.2). Não adicione dependências sem justificativa forte.
 
 ## Multiplataforma (Linux + Windows)
@@ -42,8 +45,10 @@ O mesmo código roda em Linux e Windows, sem scripts separados. Regras a manter:
 ### Raiz da biblioteca & scan
 
 - `server.js` escaneia `ROOT = path.resolve(__dirname, "..")` — o diretório que contém todas as pastas de curso. **Nunca hardcode a raiz**; ela deriva da localização do app para que o app possa ser copiado para qualquer drive.
+- **Bibliotecas externas configuráveis** (feature de múltiplas bibliotecas): além da raiz padrão, bibliotecas extras são registradas pelo frontend em `data/libraries.json` (`{libraries:[{id,name,path,enabled,isDefault,createdAt}],updatedAt}`, lazy e semeado com a padrão). `validateLibraryPath` exige path **absoluto**, faz realpath (symlink/junction), proíbe `__dirname`/`public`/`node_modules`/`data` e rejeita aninhamento com bibliotecas existentes. A **padrão** tem path **imutável** (`ROOT`); ids de externas são `randomUUID` (estáveis). Scan **sequencial** das habilitadas; `GET /api/tree` retorna `{libraries:[summary...]}`. Media/transcode/legendas/progresso/favoritos escopados por biblioteca (`libId\0rel`). Resumo completo: `docs/BIBLIOTECAS.md`.
 - A pasta do próprio app (`_LocalPlayer`, via `APP_DIR_NAME = path.basename(__dirname)`) é excluída do scan, assim como entradas com prefixo `.` e arquivos com `IGNORED_EXT` (`.ini`, `.db`, `.lnk`). Imagens de capa são excluídas dos materiais e da busca.
-- `scanDir()` monta a árvore recursivamente. Tipos de nó: `folder`, `video`, `file` (material não-vídeo). Ordenação natural por `localeCompare(..., "pt-BR", { numeric: true, sensitivity: "base" })`.
+- `scanDir()` monta a árvore recursivamente. Tipos de nó: `folder` (curso/módulo — comportamento normal), `topic` (marcado explicitamente), `video`, `file` (material não-vídeo). Ordenação natural por `localeCompare(..., "pt-BR", { numeric: true, sensitivity: "base" })`.
+- **Regra tópico-vs-curso (explícita, sem inferência estrutural)**: uma pasta é **tópico** se existir o arquivo `.topic` dentro dela **ou** se o nome real terminar com `(TP)` (regex `\(TP\)\s*$`, case-insensitive). **Senão**, é `folder` (curso/módulo) — conteúdo direto, subpastas, profundidade e contagens de vídeo/aula **não** influenciam. O marcador `.topic` é um dotfile (ignorado pelo scan e pelo static `dotfiles: "ignore"`): nunca vira material, resultado de busca nem entra em contagens; não confundir com `.courseplayer` (pasta de artefatos de legenda, propósito diferente). `(TP)` é removido **só** do título de exibição em `normalizeDisplayTitle` (o `name` real permanece; vídeos não são afetados).
 - A árvore é cacheada em `treeCache` (com `scannedAt`); `GET /api/tree?rescan=1` ou `POST /api/rescan` força novo scan.
 - **Capas**: cada pasta escolhe uma capa das próprias imagens por nome (dicas: `cover`, `thumbnail`, `poster`, `banner`, `image`, `img`) ou herda de pasta filha. Capa direta pontua 200, capa de filho 50. Sem imagem, o frontend renderiza um gradiente determinístico com as iniciais do curso.
 
@@ -51,7 +56,7 @@ O mesmo código roda em Linux e Windows, sem scripts separados. Regras a manter:
 
 - Todo nó da árvore carrega um `title` de exibição calculado no servidor por `normalizeDisplayTitle()` (cursos, módulos e aulas). O `name` original do arquivo/pasta **nunca** é alterado — ele continua dirigindo ordenação e indexação de busca.
 - Pipeline: remove prefixos simbólicos (`==`, `###`, `--`, `**`, `>`, `_`, `=`), rótulos (`Aula 03 - `, `Módulo 1 - `), sufixos de autoria (` - By @canal`), numeração inicial, truncamentos (`Arq...` → `Arq`), artefato `~1` (8.3), tags `[PROJETO]`, sublinhados entre palavras, separadores soltos; aplica capitalização de sentença pt-BR preservando nomes próprios/siglas (`TITLE_KEEP_CASE`: SQL, Python, PostgreSQL, Node.js, NumPy, etc.).
-- Remoção de numeração é conservadora: números de conteúdo sobrevivem (`3D Modelagem`, `4K Vídeos`, `9.5 título`). Módulos/tópicos mantêm o número de exibição (`keepNumber` → `"01 - Título"`); aulas não.
+- Remoção de numeração é conservadora: números de conteúdo sobrevivem (`3D Modelagem`, `4K Vídeos`, `9.5 título`). Módulos mantêm o número de exibição (`keepNumber` → `"01 - Título"`); tópicos e aulas removem a numeração inicial (`1. Language` → `Language`, primeira letra sempre maiúscula via `toDisplayCase`).
 - O frontend também valida títulos em `validateDisplayTitle` (só avisa no console — não oculta nada).
 
 ### API (`server.js`)
@@ -60,19 +65,24 @@ Rotas principais. Rotas de legendas/IA → `docs/SUBTITLES.md`.
 
 | Rota | Propósito |
 | --- | --- |
-| `GET /api/tree?rescan=1` | Árvore de cursos (cacheada) |
-| `POST /api/rescan` | Força novo scan, retorna a árvore |
-| `GET /api/progress` | Todo o progresso salvo |
-| `POST /api/progress` | Salva `{path, position, duration, completed}` de uma aula |
-| `POST /api/progress/clear` | Limpa progresso de um curso (`coursePath`) ou de tudo (body vazio) |
-| `GET /media/*` | Serve originais (vídeo via `sendFile`, materiais via `express.static(ROOT)`), com suporte a Range |
+| `GET /api/tree?rescan=1` | Árvores por biblioteca (cacheadas) → `{libraries:[summary...]}` |
+| `POST /api/rescan` | Força novo scan de todas, retorna `{libraries:[...]}` |
+| `GET /api/libraries` | Summary das bibliotecas (sem cache → status `unknown`) |
+| `POST /api/libraries` | Cria `{name?, path}` (path validado/canonicalizado uma vez) → 201 |
+| `PATCH /api/libraries/:id` | `{name?, enabled?, path?}`; path da padrão é imutável (403) |
+| `DELETE /api/libraries/:id` | Remove da **configuração** (nunca aceita path; padrão→403; jobs ativos→409; enfileirados descartados) — **nunca toca arquivos** |
+| `POST /api/libraries/:id/rescan` | Reescanela UMA biblioteca (409 se já em andamento; dir sumiu → 200 `unavailable`) |
+| `GET /api/progress` | Todo o progresso salvo (chaves `libId\0rel`) |
+| `POST /api/progress` | Salva `{path: <rel>, position, duration, completed}` de uma aula (+ `libraryId` p/ externa; a chave é derivada) |
+| `POST /api/progress/clear` | Limpa progresso de um curso (`coursePath`, rel) ou de tudo (body vazio); `libraryId` opcional |
+| `GET /media/*` | Serve originais por biblioteca com Range — `/media/<rel>` (padrão) ou `/media/<libId>/<rel>` (externa) |
 | `GET /api/video/fallback?path=<rel>` | Plano de transcoding: `{compatible:true,url}` \| `{compatible:false,status:'transcoding'\|'ready',url}` \| `{error,message}` |
 | `GET /transcoded/<24-hex>.mp4` | Serve o cache de transcode: arquivo final (Range completo) ou `.tmp` em crescimento (progressivo) enquanto o job roda |
 | `POST /api/transcode/clear` | Apaga `data/transcoded/` e cancela jobs; **nunca toca `progress.json`** |
 
 - `app.use(express.json({ limit: "100kb" }))`.
 - **Segurança de path**: todo path vindo do cliente passa por `resolveSafeRelPath()`, que rejeita qualquer coisa que escape de `ROOT`. Aplique a novos endpoints que recebam paths.
-- **Media**: vídeos vão por `resolveSafeRelPath()` + `res.sendFile()` (express/send trata `Range` → 206, `Content-Length`, `Content-Type` — o que o `<video>` precisa para seek/buffer); materiais não-vídeo caem em `express.static(ROOT)`. Originais nunca são processados. **Limitação conhecida (BUG-001 da auditoria)**: o static de `ROOT` também serve a pasta do app (`<ROOT>/_LocalPlayer/`, inclusive `data/ai-config.json` e `data/progress.json`) — a exclusão de `APP_DIR_NAME` existe no scan, **não** no serviço estático. Não exponha a porta a outros dispositivos até corrigir (404 para `/media/<APP_DIR_NAME>/*` e/ou bind em `127.0.0.1`).
+- **Media**: `/media/*` é resolvido por biblioteca (`parseMediaRequest`: primeiro segmento que casa id de externa vira prefixo; senão, padrão) + `res.sendFile()` (express/send trata `Range` → 206, `Content-Length`, `Content-Type` — o que o `<video>` precisa para seek/buffer). Vídeos e materiais seguem o mesmo caminho; originais nunca são processados. **BUG-001 corrigido**: não existe mais `express.static(ROOT)` — a pasta do app é bloqueada **só na biblioteca padrão** (`isAppDirRel`) e segmentos dotfile → 404 (`hasDotSegment`).
 - `/transcoded/*` valida o nome com regex estrita `^([0-9a-f]{24})\.mp4$` (nunca um path do usuário); `.tmp` órfão sem job → 404.
 - `express.static(public)` por último serve a SPA.
 
@@ -120,11 +130,12 @@ Pipeline: `Vídeo → extração de áudio (ffmpeg → WAV 16kHz mono PCM16) →
 
 ### Frontend (`public/`)
 
-- Roteamento por hash (`route()`): `#/` (home), `#/settings` (configurações), `#/course/<encodedCoursePath>?lesson=<encodedLessonPath>`. `location.hash` dirige a navegação; `init()` carrega árvore + progresso, roteia e registra atalhos.
+- Roteamento por hash (`route()`): `#/` (home), `#/settings` (configurações), `#/course/<encodedPath>?lesson=<encodedLessonPath>` e `#/topic/<encodedPath>`. Ambos os caminhos de pasta caem no mesmo parse; `renderCourse` resolve o nó por path na árvore inteira (`findNodeByPath`) e, se `type==="topic"`, delega a `renderTopic` (links velhos `#/course/<tópico>` degradam bem). `location.hash` dirige a navegação; `init()` carrega árvore + progresso, roteia e registra atalhos.
 - Objeto global `state` com árvore, progresso e nós atuais do curso/vídeo.
 - **localStorage** (preferências do usuário, nunca no servidor): `course-favorites`, `course-player-progress-mode`, `course-player-settings` (`closeOtherModules` + `shortcuts`), `course-player-volume`, `course-player-gain`, `course-player-muted`, `course-player-speed`.
-- **Home** (`renderHome`): cards de curso com capa (ou gradiente + iniciais), busca **accent-insensitive** (token scoring com normalização NFD em `buildSearchResults`, top 18; Enter abre o 1º), favoritos ao topo, painel "Seu progresso" (conclusão, tempo estudado, cursos ativos) e "Continuar assistindo" (até 8, um por curso, `position > 5 && !completed`, por `updatedAt`).
-- **Visão do curso** (`renderCourse`): toolbar (favoritar, "Limpar progresso do curso", **"Gerar legendas do curso"** → `POST /api/subtitles/generate-course?path=`), player, cabeçalho da aula (breadcrumb + Anterior/Próxima), materiais da pasta, sidebar colapsável de módulos/aulas + progresso do curso. `expandedFolders` é **em memória** (resetado ao entrar, auto-expandido para ancestrais da aula atual; não persistido). `closeOtherModules` = acordeão (nível 1).
+- **Home** (`renderHome`): **Home mista** — cards de curso e de tópico (classificação por marcador explícito no scan), capa (ou gradiente + iniciais). Card de tópico: `href = #/topic/<path>`, sem favorito, meta "N itens" (filhos diretos), tag "Tópico". Busca **accent-insensitive** em `buildSearchResults` (caminha a árvore inteira via `collectAllFolders` — acha tópicos, cursos e aulas aninhados; tópico → resultado `#/topic/`; Enter abre o 1º respeitando o tipo). Favoritos ao topo (só cursos). **Escopo contextual** (helpers puros em `public/scope.js`): "Seu progresso" na Home conta **só os cursos diretos** da raiz (`collectDirectCourses`) e **não aparece** quando a raiz não tem curso direto (biblioteca toda organizada em tópicos → o bloco vive dentro dos tópicos); "Continuar assistindo" é **GLOBAL** na Home (todos os cursos de todas as bibliotecas, inclusive aninhados em tópicos — `collectCoursesInScope(tree)`), até 8 itens, um por curso. Aulas dentro de tópicos continuam com `#/course/<nested>?lesson=...`. Card reutilizado por Home e tópico: `renderNodeCard(node)`.
+- **Visão de tópico** (`renderTopic`, rota `#/topic/<path>`): breadcrumb clicável (`Home › TI › Python`, ancestrais → `#/topic/`), título do tópico e grid dos filhos (`renderNodeCard`). **Escopo contextual (CURRENT_TOPIC subtree only, recursivo)**: dentro do tópico, "Seu progresso" e "Continuar assistindo" (até 8, um por curso) consideram **somente** os cursos da subárvore do tópico (`collectCoursesInScope(topicNode)`) — tópicos irmãos, cursos da Home e outras bibliotecas ficam de fora; tópico aninhado refina (`TI/Programação` só vê o que está abaixo de `TI/Programação`). Não abre player, não mostra favoritos; empty state para tópico vazio. Back/forward do navegador funcionam por `hashchange`.
+- **Visão do curso** (`renderCourse`): resolve o curso por path na árvore inteira (não só top-level) — habilita cursos aninhados em tópicos. Toolbar (favoritar, "Limpar progresso do curso", **"Gerar legendas do curso"** → `POST /api/subtitles/generate-course?path=`), player, cabeçalho da aula (breadcrumb + Anterior/Próxima), **sidebar de navegação de aulas** + progresso do curso. `expandedFolders` é **em memória** (resetado ao entrar, auto-expandido para ancestrais da aula atual; não persistido). `closeOtherModules` = acordeão (nível 1). **Sidebar vs materiais**: a sidebar é **navegação de aulas** — exibe apenas módulos/pastas de navegação e vídeos/aulas (`isSidebarNavigableNode` em `public/scope.js`); arquivos não-vídeo (`type === "file"`: PDF/DOC/XLS/PPT/ZIP/TXT/imagens de material) **não** aparecem como itens da sidebar, ficam **exclusivamente** na seção **"Materiais da aula"** abaixo do player (`parentFolder.children.filter(c => c.type === "file")`). A lista de navegação do player (`state.flatVideos = flattenVideos(course)`) contém **só vídeos** — anterior/próxima/avanço pós-`ended`/retomada ignoram materiais. Busca continua achando materiais; capas (imagens promovidas a capa pelo scan) continuam excluídas dos materiais.
 - **Seleção de aula**: `lessonPath` explícito na URL → essa aula; senão retoma a mais recente em andamento (`position > 5 && !completed`, por `updatedAt`); senão a primeira não concluída; senão a primeira vídeo.
 - **Tracking de progresso** (`setupVideoTracking`): `timeupdate` persiste com throttle de 5s, `pause` persiste, `ended` marca concluída e avança para a próxima aula (só com reprodução real — `wasPlaying`). `beforeunload` dá o flush final (`currentVideoPersist`).
 - **Regras finas do persist** (`persist()`): auto-conclusão em >95%; reassistir parcialmente vídeo concluído **não** remove a conclusão (mantém posição máxima); posição zerada não apaga progresso válido; sem metadados nada é gravado. `loadAll()` sanea progresso carregado (posição perto do fim sem `completed` recuada para `duration-5`).
@@ -141,6 +152,7 @@ Pipeline: `Vídeo → extração de áudio (ffmpeg → WAV 16kHz mono PCM16) →
 
 - `server.js` — backend completo (scan, API, media, persistência, transcoding, legendas por IA).
 - `public/index.html` — casca da SPA (topbar + `<main id="app">`).
+- `public/scope.js` — helpers **puros** de escopo contextual (Home/tópicos) e de navegação (sidebar): `isDescendantPath` (path REAL, por segmentos — `TI/` não alcança `TI2/`), `isSidebarNavigableNode` (navegável na sidebar de aulas = `folder`/`topic`/`video`; `file`/material rejeitado — decisão por `type`, nunca por extensão no frontend), `collectCoursesInScope`, `collectDirectCourses`, `flattenVideos` (só vídeos — base da lista de navegação, prev/next/ended), `buildContinueItems` (uma aula por curso, `position > 5`, `!completed`, ordenado por `updatedAt`, máx. 8). Sem DOM/estado — carregado antes de `app.js` e `require()`-ável pelos testes.
 - `public/app.js` — toda a lógica de UI, roteamento, player e atalhos.
 - `public/styles.css` — estilos (tema, layout, gradientes das capas).
 - `package.json` / `package-lock.json` — dependência única: Express.
@@ -148,6 +160,14 @@ Pipeline: `Vídeo → extração de áudio (ffmpeg → WAV 16kHz mono PCM16) →
 - `docs/SUBTITLES.md` — referência completa do subsistema de legendas (pipeline, editor, API).
 - `docs/VALIDACAO.md` — checklist completo de validação.
 - `docs/whisper.md` — guia independente de instalação/configuração do whisper.cpp (binário + modelo + envs + validação + solução de problemas), com os comandos reais testados.
+- `docs/TOPICOS-MARCADORES.md` — relatório final da feature de tópicos por marcador explícito (`.topic` e `(TP)`; alterações, compatibilidade, migração, riscos, limitações).
+- `docs/AUDITORIA-PROGRESSO.md` — auditoria do sistema de progresso pós-tópicos/bibliotecas (identidade `libId\0rel`, casos de colisão, backup/corrupção, shutdown, veredito).
+- `test/topics.test.js` — testes estruturais da regra de tópicos por marcador (`node:test` + `node:assert`, stdlib). Rodar: `node --test test/topics.test.js`.
+- `test/libraries.test.js` — testes das bibliotecas externas (validação de path, escopo de progresso/caches, `scanLibrary`). Rodar: `node --test test/libraries.test.js`.
+- `test/progress.test.js` — testes de **integridade do progresso** (auditoria pós-tópicos/bibliotecas): chave `libId\0rel` (sem colisão entre bibliotecas/cursos/tópicos), clear delimitado e escopado, migração de chaves legadas, recuperação de backup em cascata, dreno no shutdown. Sobe o servidor real num diretório temporário (`LP_DATA_DIR`). Rodar: `node --test test/progress.test.js`.
+- `test/scope.test.js` — testes do **escopo contextual** (Home/tópicos) sobre `public/scope.js`: segmentação de path (`TI` ≠ `TI2`, `Curso` ≠ `Curso2`), coleção por escopo (raiz = todos; tópico = subárvore; aninhado refina), cursos diretos da Home, "Continuar assistindo" global vs filtrado, regras de progresso preservadas (<=5s/concluído/updatedAt/limite 8). Puros, sem DOM. Rodar: `node --test test/scope.test.js`.
+- `test/sidebar.test.js` — testes da **sidebar vs materiais** sobre `public/scope.js`: `isSidebarNavigableNode` aceita folder/topic/video e rejeita file; `flattenVideos` (lista do player) tem só vídeos (PDF/ZIP fora); próxima/anterior/avanço pós-`ended` ignoram materiais; material não vira item de progresso/"Continuar assistindo"; materiais continuam na árvore para "Materiais da aula". Puros, sem DOM. Rodar: `node --test test/sidebar.test.js`.
+- `test/sidebar-runtime-smoke.js` — validação **runtime** da regra sidebar-vs-materiais sobre um scan REAL (sobe o servidor com `LP_DATA_DIR` e cria biblioteca externa sandbox): lista de navegação só com vídeos, próxima aula de Aula 01 = Aula 02, nenhum material navegável, "Materiais da aula" com os arquivos da pasta, capa preservada. Rodar: `node --test test/sidebar-runtime-smoke.js`.
 - `data/` — runtime: `progress.json`, `progress.json.bak`, `*.corrupt-<ts>` (auto), `*.tmp` (órfãos auto-limpados), `transcoded/` (cache), `ai-config.json` (config de IA; chaves só aqui), `subtitles/` (`raw/`, `processed/`, `work/`, `edited/` (edição manual JSON), `backup/` (edição preservada antes de regenerar), `jobs.json`, `<hash>.vtt`). **Atenção**: `data/server.log` e backups históricos tipo `progress.json.wiped-1701.bak`/`wrecked.bak` são artefatos manuais de sessões anteriores — o servidor **não** escreve log em arquivo (só stdout) nem os gera. Não dependa deles.
 - `bin/` + `models/` — infra para instalação **manual** de binários/modelos de IA (`whisper-cli*`, `ggml-*.bin`); nada é baixado pelo app. READMEs pt-BR explicam a instalação. **Nota**: pendrives FAT/vfat não executam binários — instale o `whisper-cli` num filesystem com exec (a localização é livre; ex.: `~/.local/opt/whisper.cpp/`) e aponte `WHISPER_BIN` para ele; os modelos (`ggml-*.bin`, ~465 MB o `small`) ficam em `models/` e são localizados via `WHISPER_MODEL_DIR`.
 - `.gitignore` — `node_modules/`, `data/` (runtime completo: progresso, backups, logs, cache, config de IA), `models/` + `bin/` (grandes, baixados manualmente), `*.tmp`/`*.temp`, `*.log`, `.env*`, arquivos de sistema e configs locais de editor (`.claude/settings.local.json`, `.vscode/`, `.idea/`).
@@ -155,7 +175,7 @@ Pipeline: `Vídeo → extração de áudio (ffmpeg → WAV 16kHz mono PCM16) →
 ## Fluxo de dados (resumo)
 
 1. `init()` (frontend) → `GET /api/tree` + `GET /api/progress` → `state`.
-2. Navegação por hash → `renderHome`/`renderCourse`/`renderSettings`.
+2. Navegação por hash → `renderHome`/`renderCourse` (delega a `renderTopic` quando `type==="topic"`)/`renderSettings`.
 3. `renderCourse` escolhe a aula (regra de retomada) → `renderPlayerAndLesson` monta o `<video>` com `src = /media/<path>`.
 4. `setupVideoTracking` → `timeupdate`/`pause`/`ended` → `POST /api/progress` (path, position, duration, completed).
 5. `error` no `<video>` → `prepareTranscoded` → `GET /api/video/fallback?path=` → `src = /transcoded/<hash>.mp4` (cresce enquanto o ffmpeg converte).
@@ -167,7 +187,9 @@ Pipeline: `Vídeo → extração de áudio (ffmpeg → WAV 16kHz mono PCM16) →
 ## Invariantes (não quebrar sem justificativa forte)
 
 - **ROOT deriva da localização do app** (`path.resolve(__dirname, "..")`); nunca hardcode nem troque a base.
-- **Todo path de cliente passa por `resolveSafeRelPath()`** em qualquer endpoint novo que aceite path.
+- **Todo path de cliente passa por `resolveSafeRelPath()`** em qualquer endpoint novo que aceite path (e por `resolveLibraryRel`/`requestLibrary` quando a operação é por biblioteca — id desconhecido → 400, nunca degrada silenciosamente para a padrão).
+- **Remoção de biblioteca é config-only**: `DELETE /api/libraries/:id` nunca executa `rm`/`fs.rm`/`fs.rmdir` em arquivos da biblioteca; jobs ativos bloqueiam (409) e enfileirados são descartados.
+- **Chaves/caches escopados por biblioteca**: progresso `libId\0rel`, transcode/legendas `sha1(libId\0rel)[0:24]`, favoritos `libId\0path` — nunca reintroduzir chave global sem prefixo nem resolver mídia fora do path canônico do registro.
 - **Rel paths usam sempre `/`** (árvore, chaves de progresso, URLs); nunca introduza `\` — no Windows `path.normalize` produziria separador nativo e quebraria a correspondência.
 - **Originais compatíveis são servidos direto** — zero envolvimento do ffmpeg no caminho feliz. O fallback só entra após `error` do `<video>`.
 - **O caminho do arquivo em crescimento deve permanecer intacto**: `fd.stat()` (não existe `fs.fstat` em `fs/promises`), copiar buffers antes de `res.write` (subarrays aliasam o buffer reutilizado), tratar a corrida de rename (job terminou no meio da requisição → abrir o final), e nunca servir `.tmp` parcial como cache final.
@@ -190,6 +212,7 @@ Pipeline: `Vídeo → extração de áudio (ffmpeg → WAV 16kHz mono PCM16) →
 - **Edição manual nunca sobrescreve o raw** nem o processed: o JSON editado vive em `data/subtitles/edited/<hash>.json` e o VTT derivado sempre parte dele (`renderVtt`). `loadEditableDoc` = edited > processed (mtime+size válido) > vtt. `backupEditedSubtitle` preserva a edição antes de qualquer regeneração.
 - **Concorrência do editor por `version`**: o save manda o `version` carregado; divergente do persistido = **409** (diálogo "alterada em outra aba"); nunca sobrescreve silenciosamente.
 - **Overlay customizado substitui `<track>`** como camada de exibição (uma única `.subtitle-overlay`); o WebVTT permanece apenas como fonte de dados/serialização. Geometria sempre pela área REAL do vídeo renderizado (letterbox incluso).
+- **Sidebar = navegação de aulas, não catálogo de arquivos**: a sidebar renderiza só `isSidebarNavigableNode` (módulos/pastas e vídeos); `type === "file"` NUNCA vira item de sidebar, aula, item de anterior/próxima, avanço pós-`ended`, "current lesson" nem contagem de aulas — materiais vivem só em "Materiais da aula" (`filter(c => c.type === "file")` da pasta da aula) e na busca. Decisão por `type` do scan, nunca por extensão no frontend. Capas (imagens promovidas a capa) continuam excluídas dos materiais.
 
 ## Gotchas
 
@@ -205,8 +228,8 @@ Pipeline: `Vídeo → extração de áudio (ffmpeg → WAV 16kHz mono PCM16) →
 
 ## Como validar alterações (resumo)
 
-1. `node --check server.js public/app.js` (sintaxe).
-2. Rode o servidor (`npm start`) e exercite: scan, navegação, player (originais compatíveis sem transcode), busca, favoritos, progresso (recarregar preserva posição), atalhos, Configurações.
+1. `node --check server.js public/app.js public/scope.js` (sintaxe); `node --test test/progress.test.js test/topics.test.js test/libraries.test.js test/scope.test.js test/sidebar.test.js test/sidebar-runtime-smoke.js` (integridade do progresso + tópicos por marcador + bibliotecas externas + escopo contextual + sidebar/materiais).
+2. Rode o servidor (`npm start`) e exercite: scan, navegação, player (originais compatíveis sem transcode), busca, favoritos, progresso (recarregar preserva posição), atalhos, Configurações. Tópicos: `docs/VALIDACAO.md` item 12.
 3. Fallback de transcode: toque formato incompatível (`.mkv`/`.avi`) e confirme badge → reprodução em segundos → `[TRANSCODE] progresso` no log → final em `data/transcoded/`; seek além do convertido aguarda/416.
 4. Persistência: escreva progresso, derrube o servidor no meio da gravação (ou simule `progress.json` corrompido) e confirme recuperação do backup.
 5. Path traversal: `/media/../../etc/passwd`, `/api/video/fallback?path=../../etc/passwd`, e variantes Windows (`\`, `..\..\`, absolutos) → 404/400, nunca conteúdo fora de `ROOT`.

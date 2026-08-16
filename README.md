@@ -23,13 +23,22 @@ tudo direto do disco (HD, SSD, pendrive), sem upload para a internet.
 
 - escaneia pastas de cursos e monta a árvore automaticamente;
 - lista cursos em cards com capa automática por imagem da pasta;
-- busca por curso, aula e material de apoio;
+- **tópicos hierárquicos**: pastas que apenas organizam outras pastas viram
+  tópicos navegáveis (card → lista de filhos com breadcrumb `Home › TI › Python`,
+  profundidade arbitrária). Só cursos abrem o player — veja abaixo;
+- busca por tópico, curso, aula e material de apoio;
 - player com progresso persistente por aula;
-- sidebar com navegação por módulos/aulas e progresso do curso;
+- sidebar com navegação por módulos/aulas e progresso do curso — a sidebar
+  exibe **apenas módulos e aulas/vídeos**; arquivos de apoio (PDF, DOC/XLS/PPT,
+  ZIP, imagens de material) ficam **exclusivamente** na seção **"Materiais da
+  aula"** abaixo do player;
 - atalhos de teclado configuráveis (veja abaixo);
 - reprodução direta do arquivo original (sem conversão nem reprocessamento);
 - fallback de transcoding para vídeos que o navegador não reproduz (veja abaixo);
-- títulos padronizados automaticamente (veja abaixo).
+- títulos padronizados automaticamente (veja abaixo);
+- **bibliotecas externas configuráveis**: além da pasta ao lado do app, registre
+  bibliotecas extras por path absoluto em Configurações → Bibliotecas — o app
+  navega, busca, toca, transcodifica e gera legendas nelas sem copiar nada.
 
 ## Títulos padronizados
 
@@ -51,6 +60,65 @@ escritos para a plataforma — o nome original dos arquivos/pastas não é alter
 - títulos podem quebrar em até 2 linhas (CSS `line-clamp`) sem cortar com "...";
 - o console do navegador (F12) avisa títulos que ainda não passaram nas regras,
   para correção manual.
+
+## Tópicos hierárquicos (por marcador explícito)
+
+A estrutura física de pastas é a fonte de verdade — não existe taxonomia
+paralela nem configuração manual. Um tópico é declarado explicitamente, de
+duas formas equivalentes:
+
+- **Arquivo `.topic`** dentro da pasta (arquivo vazio; é dotfile, então nunca
+  aparece na interface, na busca nem nas contagens).
+- **Nome real terminando em `(TP)`** (case-insensitive, só no final):
+  `1 Linguas (TP)/`, `TI(TP)/`, `Áudio (tp)/`. O `(TP)` é removido apenas do
+  título de exibição, junto com a numeração inicial (`1. Language` → `Language`,
+  primeira letra sempre maiúscula); o nome da pasta permanece intacto.
+
+Tudo que **não** tem um desses marcadores segue o comportamento normal: é um
+**curso** (pasta com vídeos/aulas/módulos — abre o player completo, com
+progresso, favoritos, legendas e materiais) ou um módulo dentro de curso.
+Nenhuma heurística de conteúdo (quantidade de arquivos, profundidade,
+presença de vídeo, nomes de módulo) classifica uma pasta como tópico.
+
+Exemplos:
+
+```
+1 Linguas (TP)/Inglês/…            → Linguas = TÓPICO, Inglês = curso
+TI/.topic + TI/Curso Linux/aula    → TI = TÓPICO, Curso Linux = curso
+Curso X/Módulo 1/Aula.mp4          → Curso X = curso (modular, sem marcador)
+Curso Y/Aula.mp4                   → Curso Y = curso
+Projeto TP/                        → curso normal (TP sem parênteses)
+(TP) Curso/                        → curso normal (marcador fora do final)
+```
+
+Na Home, tópicos e cursos aparecem no mesmo grid; a busca encontra ambos (e
+aulas/materiais dentro de cursos aninhados); "Continuar assistindo" e o
+progresso continuam keyed por vídeo/curso, independente da profundidade.
+
+**"Seu progresso" é contextual**: na Home ele só conta os **cursos diretos**
+da raiz (e some quando a raiz não tem curso direto, ex.: biblioteca toda
+organizada em tópicos); dentro de um tópico, considera somente os cursos da
+subárvore daquele tópico (aninhados inclusive). **"Continuar assistindo" é
+global somente na Home** (qualquer curso de qualquer tópico/biblioteca) e
+vira local ao tópico quando você navega para dentro de um.
+
+## Bibliotecas externas
+
+Além da biblioteca padrão (a pasta ao lado do app), você pode registrar
+**bibliotecas externas configuráveis** em **Configurações → Bibliotecas**:
+cada uma tem nome, path absoluto e pode ser ativada/desativada. O path é
+validado (absoluto, realpath, sem aninhamento com bibliotecas existentes, sem
+apontar para a pasta do app/dados). A biblioteca padrão não pode ser removida
+nem ter o path alterado.
+
+- A **Home** mostra cursos/tópicos de todas as bibliotecas habilitadas;
+  "Continuar assistindo" e o progresso funcionam por vídeo, em qualquer
+  biblioteca.
+- **Progresso, favoritos e caches** (transcode/legendas) são escopados por
+  biblioteca — o mesmo arquivo relativo em bibliotecas distintas não colide.
+- **Remover** uma biblioteca é **config-only**: nenhum arquivo é tocado e o
+  progresso/cache permanecem (readicionar pelo mesmo path reusa tudo). A
+  remoção é bloqueada enquanto houver jobs ativos (transcode/legenda) para ela.
 
 ## Requisitos
 
@@ -408,6 +476,8 @@ curl -X POST "http://localhost:4173/api/subtitles/generate?priority=0&path=<rel-
 - Sem build step e sem framework: edite `server.js` e `public/` e recarregue a
   página.
 - Verificação rápida de sintaxe: `node --check server.js public/app.js`.
+- Testes: `node --test test/topics.test.js test/libraries.test.js` (regra de
+  tópicos por marcador + bibliotecas externas).
 - Valide mudanças rodando o servidor e exercitando a interface.
 
 ## Estrutura
@@ -416,7 +486,10 @@ curl -X POST "http://localhost:4173/api/subtitles/generate?priority=0&path=<rel-
 - `public/index.html`: estrutura base;
 - `public/styles.css`: estilo da interface;
 - `public/app.js`: lógica de UI, roteamento e player;
-- `data/`: progresso, cache de transcoding e configuração de IA locais;
+- `data/`: progresso, cache de transcoding, configuração de IA e registro de
+  bibliotecas (`libraries.json`) locais;
+- `test/topics.test.js`: testes da regra de tópicos por marcador (`node:test`);
+- `test/libraries.test.js`: testes das bibliotecas externas (`node:test`);
 
 ## Documentação completa
 
@@ -426,10 +499,20 @@ manter o projeto), veja [docs/DOCUMENTACAO.md](docs/DOCUMENTACAO.md).
 Para instalar e configurar a transcrição local (Whisper), veja
 [docs/whisper.md](docs/whisper.md).
 
+Para o relatório da navegação hierárquica por tópicos (marcadores `.topic` e
+`(TP)`, alterações, compatibilidade, migração, riscos), veja
+[docs/TOPICOS-MARCADORES.md](docs/TOPICOS-MARCADORES.md).
+
+Para o relatório das bibliotecas externas configuráveis (registry, validação,
+API, escopo de progresso/caches, remoção config-only), veja
+[docs/BIBLIOTECAS.md](docs/BIBLIOTECAS.md).
+
 ## Observações
 
 - funciona em **Linux** e **Windows**; o app pode ser copiado para qualquer
-  pasta, HD externo ou pendrive — a biblioteca é sempre a pasta ao lado do app;
+  pasta, HD externo ou pendrive — a biblioteca padrão é sempre a pasta ao lado
+  do app, e bibliotecas externas podem ser adicionadas por path absoluto
+  (Configurações → Bibliotecas);
 - `npm install --no-bin-links` ajuda em alguns cenários com pendrive/HD externo
   (funciona nos dois sistemas);
 - se houver demora no início do vídeo, confira o desempenho do disco (a leitura

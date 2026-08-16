@@ -397,8 +397,9 @@ Regras de exclusão no scan (dentro de `scanDir`):
 **O que é?**
 
 O scanner percorre a árvore de pastas do disco e monta uma representação em
-memória (a "árvore de conteúdo") com nós de três tipos: `folder` (pasta),
-`video` (arquivo de vídeo) e `file` (material não-vídeo).
+memória (a "árvore de conteúdo") com nós de três tipos: `folder` (pasta:
+curso/módulo), `topic` (pasta marcada explicitamente como tópico), `video`
+(arquivo de vídeo) e `file` (material não-vídeo).
 
 **Por que existe?**
 
@@ -410,8 +411,11 @@ sistema de arquivos em JSON que o frontend consome.
 ### Tipos de nó (exatamente o que o servidor envia)
 
 ```js
-// Pasta (curso, módulo ou submódulo)
+// Pasta normal (curso/módulo) — classificação por marcador explícito:
+//   "topic" se existir o arquivo ".topic" dentro OU nome terminando em "(TP)";
+//   senão "folder". Nenhuma heurística estrutural (conteúdo/profundidade).
 { type: "folder", name, path, title, children, videoCount, coverImage }
+{ type: "topic",  name, path, title, children, videoCount, coverImage }
 
 // Vídeo (aula)
 { type: "video",  name, path, ext, size, title }
@@ -432,12 +436,15 @@ Aprendendo Python/01 - Introdução à Lógica de Programação/01 Apresentaçã
 async function scanDir(absDir, relDir) {
   // 1. lê a pasta com withFileTypes (sabe se é dir ou arquivo)
   const entries = await fs.readdir(absDir, { withFileTypes: true });
-  // 2. separa em dirs e files, pulando ocultos e a pasta do app
+  // 2. separa em dirs e files, pulando ocultos e a pasta do app; um dotfile
+  //    ".topic" (arquivo) marca a pasta como tópico (nunca vira material)
   // 3. ordena com naturalSort (localeCompare pt-BR, numérico, case-insensitive)
-  // 4. para cada pasta: recursão (sub = await scanDir(...)) → nó folder
+  // 4. para cada pasta: recursão (sub = await scanDir(...)) → nó cujo type é
+  //    o sub.type ("topic" se marcador .topic OU nome termina em "(TP)",
+  //    senão "folder")
   // 5. para cada arquivo: ignora IGNORED_EXT e a capa → nó video ou file
   // 6. escolhe a capa (veja seção 8)
-  // 7. retorna { children, videoCount, coverImage }
+  // 7. retorna { children, videoCount, coverImage, type }
 }
 ```
 
@@ -1199,7 +1206,8 @@ como "assistiu").
 
 **O que é?**
 
-A seção da Home que lista aulas em andamento, para você voltar de onde parou.
+A seção que lista aulas em andamento, para você voltar de onde parou. Aparece
+na Home e dentro de tópicos (com escopo contextual — veja abaixo).
 
 **Por que existe?**
 
@@ -1207,7 +1215,8 @@ A seção da Home que lista aulas em andamento, para você voltar de onde parou.
 
 **Como funciona neste projeto?**
 
-Em `renderHome`, as regras (verificadas no código):
+As regras de seleção (preservadas — em `buildContinueItems`, `public/scope.js`,
+pura, sem DOM) são:
 
 - **No máximo uma aula por curso** (agrupamento por curso, escolhendo a aula
   com `updatedAt` mais recente).
@@ -1216,22 +1225,41 @@ Em `renderHome`, as regras (verificadas no código):
 - Clicar navega direto para a aula (`?lesson=<path>`).
 
 ```js
-for (const course of courses) {
-  let best = null;
-  for (const v of flattenVideos(course)) {
-    const p = state.progress[v.path];
-    if (!p || p.position <= 5 || p.completed) continue;
-    if (!best || (p.updatedAt || 0) > (best.progress.updatedAt || 0)) {
-      best = { course, video: v, progress: p };
+function buildContinueItems(courses, progressOf) {
+  for (const course of courses) {
+    let best = null;
+    for (const v of flattenVideos(course)) {
+      const p = progressOf(v);
+      if (!p || p.position <= 5 || p.completed) continue;
+      if (!best || (p.updatedAt || 0) > (best.progress.updatedAt || 0)) {
+        best = { course, video: v, progress: p };
+      }
     }
+    if (best) items.push(best);
   }
-  // push para continueItems
+  // ordena por updatedAt desc, corta em 8
 }
 ```
 
+**Escopo contextual**: o conjunto de candidatos muda conforme o nível:
+
+- **Home** → **GLOBAL**: todos os cursos de todas as bibliotecas, inclusive os
+  aninhados em tópicos (`collectCoursesInScope(tree)` por biblioteca).
+- **Dentro de um tópico** → **local ao tópico**: somente cursos da subárvore
+  daquele tópico (`collectCoursesInScope(topicNode)`), recursivo em tópicos
+  aninhados (`TI/Programação` só enxerga o que está abaixo de `TI/Programação`).
+
+O escopo usa o **path real** do nó com comparação por **segmentos**
+(`isDescendantPath`): `TI/` não alcança `TI2/` nem `TIJava/`. Cursos de tópicos
+irmãos, da raiz ou de outras bibliotecas ficam de fora dentro de um tópico.
+
 **Onde está implementado?**
 
-- `renderHome` (linha 820), usando `flattenVideos`, `state.progress`.
+- `public/scope.js` → `buildContinueItems`, `flattenVideos`,
+  `collectCoursesInScope`, `isDescendantPath` (puros, testados em
+  `test/scope.test.js`).
+- `renderHome` / `renderTopic` (public/app.js) → escolhem o escopo e renderizam
+  via `renderContinueSection`/`renderContinueCard`.
 
 ---
 
@@ -1648,8 +1676,11 @@ O passo a passo de uso normal da interface.
 
 1. Abra `http://localhost:4173`. A Home lista os cursos da biblioteca (com
    capa automática ou gradiente + iniciais).
-2. Clique num curso. A sidebar mostra módulos/aulas; o player escolhe a aula
-   correta (regra de retomada — veja abaixo).
+2. Clique num curso. A sidebar mostra **apenas módulos/pastas de navegação e
+   aulas/vídeos** — arquivos não-vídeo (PDF, DOC/XLS/PPT, ZIP, imagens de
+   material) NÃO aparecem como itens da sidebar; eles ficam na seção
+   **"Materiais da aula"** abaixo do player. O player escolhe a aula correta
+   (regra de retomada — veja abaixo).
 3. Use a **busca** no topo (tecla `/`) para localizar curso/aula/material.
 4. Marque **favoritos** com a ★ (card ou toolbar do curso).
 5. Clique **⟳ Atualizar** quando mudar arquivos/pastas da biblioteca.
@@ -1699,6 +1730,16 @@ init() → loadAll() → GET /api/tree + GET /api/progress
             · error → prepareTranscoded (Fluxo B)
       → beforeunload → flush final (currentVideoPersist)
 ```
+
+**Sidebar de aulas vs "Materiais da aula"**: a sidebar (`renderFolderChildren`)
+é de **navegação de aulas** — o loop pula `!isSidebarNavigableNode(child)`
+(`public/scope.js`: aceita `folder`/`topic`/`video`, rejeita `file`). Arquivos
+não-vídeo continuam no scan e na árvore, mas aparecem **só** em "Materiais da
+aula" (`parentFolder.children.filter(c => c.type === "file")`) e na busca.
+A lista de navegação do player (`state.flatVideos = flattenVideos(course)`)
+contém **somente vídeos** — anterior, próxima, avanço pós-`ended`, retomada,
+"current lesson" e contagens (`countStats`, `N/M aulas`) ignoram materiais.
+Capas (imagens promovidas a capa pelo scan) continuam excluídas dos materiais.
 
 ### Fluxo B — Fallback de transcoding
 
@@ -2042,8 +2083,10 @@ Como manter esta doc fiel ao código conforme o projeto evolui.
   - remove tags `[PROJETO]` e sublinhados entre palavras;
   - aplica capitalização de sentença pt-BR preservando `TITLE_KEEP_CASE`
     (SQL, Python, PostgreSQL, Node.js, NumPy, etc.).
-- **Módulos/tópicos mantêm o número** (`keepNumber` → `"01 - Título"`); aulas
-  não.
+- **Módulos mantêm o número** (`keepNumber` → `"01 - Título"`); **tópicos e
+  aulas removem a numeração inicial** (`1. Language` → `Language`, `1 Linguas
+  (TP)` → `Linguas` — primeira letra sempre maiúscula via `toDisplayCase`).
+  Opção `preserveLeading` (que preservava o número nos tópicos) foi removida.
 - Frontend `validateDisplayTitle` só **avisa no console** — não oculta nada.
 
 ### Progresso — formato e regras
