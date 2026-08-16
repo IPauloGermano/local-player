@@ -147,6 +147,20 @@ const IMAGE_EXT = new Set([
   ".bmp",
   ".avif",
 ]);
+// Tipos com CONTEÚDO ATIVO que o navegador pode executar quando renderizados no
+// top-level (HTML/SVG/XML/JS/JSON). Materiais desses tipos são servidos como
+// download (Content-Disposition: attachment) para nunca rodarem no origin da
+// app; `X-Content-Type-Options: nosniff` cobre o restante (anti MIME-sniff).
+const ACTIVE_EXT = new Set([
+  ".html",
+  ".htm",
+  ".xhtml",
+  ".svg",
+  ".xml",
+  ".js",
+  ".mjs",
+  ".json",
+]);
 const IGNORED_EXT = new Set([".ini", ".db", ".lnk"]);
 const COVER_NAME_HINTS = [
   "cover",
@@ -534,6 +548,12 @@ async function scanDir(absDir, relDir) {
       continue;
     }
     if (relDir === "" && entry.name === APP_DIR_NAME) continue;
+    // Sem suporte a symlinks/junctions (invariante multiplataforma): um link
+    // dentro da biblioteca pode apontar para FORA dela. Não indexar diretórios
+    // linkados (evita recursão fora da raiz) nem arquivos linkados (não podem
+    // ser servidos/processados). O realpath containment no serve/processo é a
+    // segunda barreira para paths vindos do frontend.
+    if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) dirs.push(entry);
     else files.push(entry);
   }
@@ -737,6 +757,33 @@ function resolveSafeRelPath(relPath, base) {
 function resolveLibraryRel(lib, rel) {
   if (!lib || typeof lib.path !== "string" || !lib.path) return null;
   return resolveSafeRelPath(rel, lib.path);
+}
+
+// Requer que o arquivo esteja DENTRO do path canônico da biblioteca depois de
+// resolver symlinks/junctions (realpath). `resolveSafeRelPath` é puramente
+// lexical: um symlink DENTRO da biblioteca apontando para fora (ex.:
+// link → /etc/passwd, link → o data/ de outra biblioteca) passaria por ele e o
+// sendFile/ffmpeg/whisper seguiria o link. Este check fecha a brecha em todos
+// os pontos que ABREM o arquivo — nunca servir/processar um alvo que escapa da
+// biblioteca autorizada. Sem dependência de suporte a symlink (multiplataforma).
+async function fileWithinLibrary(lib, abs) {
+  if (!lib || typeof lib.path !== "string" || !lib.path || !abs) return false;
+  let realDir;
+  try {
+    realDir = await fs.realpath(lib.path);
+  } catch {
+    return false;
+  }
+  let realFile;
+  try {
+    realFile = await fs.realpath(abs);
+  } catch {
+    return false;
+  }
+  const sep = path.sep;
+  const normEnd = (p) => (p.endsWith(sep) ? p.slice(0, -1) : p);
+  const rd = normEnd(realDir);
+  return realFile === rd || realFile.startsWith(rd + sep);
 }
 
 // BUG-001: o primeiro segmento do rel canônico é a pasta do app? O app vive
@@ -1541,6 +1588,12 @@ async function getTranscodePlan(lib, rel, abs) {
   const cacheName = transcodeCacheName(lib.id, rel);
   const finalPath = path.join(TRANSCODE_DIR, cacheName);
   const tmpPath = finalPath + ".tmp";
+
+  // Symlink/junction apontando para fora da biblioteca: recusa antes de passar
+  // o caminho ao ffprobe/ffmpeg (ssrf/filesystem — nunca analisar alvo externo).
+  if (!(await fileWithinLibrary(lib, abs))) {
+    return { error: true, message: "Arquivo não encontrado." };
+  }
 
   const origStat = await fs.stat(abs).catch(() => null);
   if (!origStat) return { error: true, message: "Arquivo não encontrado." };
@@ -3222,6 +3275,19 @@ async function runSubtitlePipeline(job) {
       return;
     }
 
+    // Symlink/junction apontando para fora da biblioteca: o raw/extrato seria
+    // gerado a partir de um arquivo fora da biblioteca (ex.: link → /etc/passwd,
+    // link → data/ de outra lib). Recusa antes de extrair com ffmpeg/whisper.
+    if (!(await fileWithinLibrary(lib, job.abs))) {
+      updateSubtitleJob(hash, {
+        status: "failed",
+        progress: "",
+        error: "Arquivo fora da biblioteca.",
+      });
+      console.log(`[SUBTITLE] recusado (fora da biblioteca): ${rel}`);
+      return;
+    }
+
     // 0) force (botão "Regenerar"): descarta artefatos existentes para a
     // transcrição rodar de novo — cache, raw e VTTs (espelho + curso). A
     // versão EDITADA manualmente é preservada em backup/ (nunca apagada em
@@ -4224,6 +4290,18 @@ function applyLlmGuardrail(original, corrected) {
 
 const app = express();
 
+// Headers de segurança baseline em TODA resposta (JSON/erros/HTML/arquivos):
+// nosniff evita MIME-sniffing (material não pode ser renderizado como outro
+// tipo); Referrer-Policy evita vazar paths/nomes de cursos no Referer ao abrir
+// links externos; X-Frame-Options impede a UI de ser embutida num iframe de
+// outro site (clickjacking).
+app.use((req, res, next) => {
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("Referrer-Policy", "no-referrer");
+  res.set("X-Frame-Options", "DENY");
+  next();
+});
+
 
 app.use(express.json({ limit: "100kb" }));
 
@@ -4978,6 +5056,10 @@ app.post("/api/subtitles/generate", async (req, res) => {
   if (!safe) return res.status(400).json({ error: "invalid path" });
   // BUG-001: não rodar extração sobre arquivos da pasta do app.
   if (isAppDirRel(safe, lib)) return res.status(400).json({ error: "invalid path" });
+  // Symlink apontando para fora da biblioteca: recusa na porta de entrada.
+  if (!(await fileWithinLibrary(lib, safe.abs))) {
+    return res.status(400).json({ error: "invalid path" });
+  }
   const ext = path.extname(safe.abs).toLowerCase();
   if (!VIDEO_EXT.has(ext)) return res.status(400).json({ error: "not a video" });
   const priority = Number.isInteger(Number(req.query.priority))
@@ -5293,8 +5375,21 @@ app.use("/media", (req, res, next) => {
 app.get("/media/*", async (req, res, next) => {
   const parsed = req.mediaParsed || parseMediaRequest(req);
   if (!parsed) return res.status(404).end();
+  // Symlink/junction apontando para fora da biblioteca: recusa (404) antes de
+  // qualquer stat/sendFile — o original pode estar em qualquer lugar do disco.
+  if (!(await fileWithinLibrary(parsed.lib, parsed.safe.abs))) {
+    return res.status(404).end();
+  }
   const st = await fs.stat(parsed.safe.abs).catch(() => null);
   if (!st) return res.status(404).end();
+  // Materiais com conteúdo ativo (HTML/SVG/XML/JS/JSON) são servidos como
+  // download: nunca renderizados no origin da app (XSS via material). nosniff
+  // vale para todos os tipos (anti MIME-sniffing). Vídeos/imagens continuam
+  // inline (o <video>/<img> precisa renderizar).
+  res.set("X-Content-Type-Options", "nosniff");
+  if (ACTIVE_EXT.has(path.extname(parsed.safe.abs).toLowerCase())) {
+    res.set("Content-Disposition", "attachment");
+  }
   return res.sendFile(parsed.safe.abs, (err) => {
     if (err && err.code !== "ECONNRESET") next(err);
   });
@@ -5562,7 +5657,19 @@ app.get("/", async (req, res, next) => {
     .send(UNAVAILABLE_HTML);
 });
 
-app.use(express.static(path.join(__dirname, "public")));
+app.use(
+  express.static(path.join(__dirname, "public"), {
+    setHeaders: (res) => {
+      // CSP só na SPA (assets próprios, sem recursos externos; inline styles
+      // vêm de atributos style gerados pelo app). Não é aplicado à página de
+      // indisponibilidade (servida de memória com script inline próprio).
+      res.set(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      );
+    },
+  }),
+);
 
 // Erros assíncronos não tratados não devem derrubar o servidor (o usuário
 // perde o player e o progresso corre risco de gravação incompleta).
