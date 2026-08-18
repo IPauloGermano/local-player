@@ -50,7 +50,7 @@ Transcode ffmpeg e whisper compartilham o MESMO semáforo `heavySlots` (nunca si
 
 ## Player
 
-`<track kind="subtitles" srclang="pt-BR">` dinâmico (`src = /subtitles/<hash>.vtt?rel=<path>` → VTT do curso primeiro) + badge de status discreto (`.subtitle-status` .ok/.warn/.err/.off → "Legenda disponível" / "Gerando legenda…" / "Legenda indisponível" / "Erro ao gerar") + botão manual `.subtitle-action` ("Gerar legenda" quando sem legenda/erro; "Regenerar" com `force=1` quando pronta/erro). Polling em `setupPlayerSubtitles`; ao trocar de aula, `<track>`/badge antigos removidos. **Nunca `await` a geração antes de `video.play()`**.
+Overlay `.subtitle-overlay` (posicionado pela geometria REAL do vídeo renderizado, `object-fit: contain` → letterbox) + badge de status discreto (`.subtitle-status` .ok/.warn/.err/.off → "Legenda disponível" / "Gerando legenda…" / "Legenda indisponível" / "Erro ao gerar") + botão manual `.subtitle-action` ("Gerar legenda" quando sem legenda/erro; "Regenerar" com `force=1` quando pronta/erro). O WebVTT (servido por `GET /subtitles/<hash>.vtt?rel=<path>`, canônico do curso primeiro) é só fonte de dados — nunca `<track>`. Polling em `setupPlayerSubtitles`; ao trocar de aula, overlay/badge antigos removidos. **Nunca `await` a geração antes de `video.play()`**.
 
 ## Segurança
 

@@ -2,6 +2,10 @@
 // local para navegar pelos cursos, tocar vídeos e acompanhar o progresso.
 
 const state = {
+  // `libraries` é a fonte de verdade (array de {id, name, path, enabled,
+  // isDefault, status, error, lastScanAt, courseCount, tree}); `tree` é o alias
+  // da biblioteca padrão, mantido para os walkers legados.
+  libraries: [],
   tree: null,
   progress: {},
   currentCourseNode: null,
@@ -10,24 +14,109 @@ const state = {
   lastSearchResults: [],
 };
 
-let expandedFolders = new Set();
+const DEFAULT_LIB_ID = "default";
 
-// Cursos favoritados (persistidos localmente no navegador).
-const favorites = new Set(JSON.parse(localStorage.getItem("course-favorites") || "[]"));
-
-function isFavorite(path) {
-  return favorites.has(path);
+function getLibById(id) {
+  return (state.libraries || []).find((l) => l.id === id) || null;
 }
 
-function toggleFavorite(path) {
-  if (favorites.has(path)) favorites.delete(path);
-  else favorites.add(path);
+// Helpers puros de escopo contextual (scope.js, carregado antes de app.js):
+// isDescendantPath, isSidebarNavigableNode, flattenVideos,
+// collectCoursesInScope, collectDirectCourses, buildContinueItems. Nada de
+// DOM/estado — compartilhados por Home, tópicos e sidebar.
+const {
+  isDescendantPath,
+  isSidebarNavigableNode,
+  flattenVideos,
+  collectCoursesInScope,
+  collectDirectCourses,
+  buildContinueItems,
+} = window.LocalPlayerScope;
+
+// Marca cada nó de uma árvore com o id da biblioteca a que pertence — o rel
+// path de uma aula é idêntico em duas bibliotecas, então todo acesso a
+// progresso/mídia precisa saber de qual biblioteca o nó veio.
+function annotateLibId(node, libId) {
+  if (!node) return;
+  node.libId = libId;
+  for (const c of node.children || []) annotateLibId(c, libId);
+}
+
+function isExternalLib(libId) {
+  return !!libId && libId !== DEFAULT_LIB_ID;
+}
+
+// Chave de progresso/favorito = "<libraryId>\0<rel>" (mesma do servidor).
+function progKey(path, libId) {
+  return (libId || DEFAULT_LIB_ID) + "\0" + path;
+}
+
+function progFor(node) {
+  return state.progress[progKey(node.path, node.libId)];
+}
+
+// Correlação frontend→servidor (forense de progresso): cada requisição de
+// save carrega um id único que o servidor registra no log de escrita.
+function newRequestId() {
+  return (window.crypto && window.crypto.randomUUID
+    ? window.crypto.randomUUID()
+    : Date.now() + "-" + Math.random().toString(36).slice(2, 10));
+}
+
+// Query string (para a API) de uma biblioteca não-padrão; vazio na padrão.
+function libQuery(node) {
+  return isExternalLib(node && node.libId)
+    ? "&libraryId=" + encodeURIComponent(node.libId)
+    : "";
+}
+
+// Rotas de hash com prefixo de biblioteca (legado sem prefixo = padrão).
+function courseRoute(node) {
+  const p = isExternalLib(node.libId) ? encodeURIComponent(node.libId) + "/" : "";
+  return `/course/${p}${encodeURIComponent(node.path)}`;
+}
+
+function topicRoute(node) {
+  const p = isExternalLib(node.libId) ? encodeURIComponent(node.libId) + "/" : "";
+  return `/topic/${p}${encodeURIComponent(node.path)}`;
+}
+
+function courseHref(node, lessonPath) {
+  return "#" + courseRoute(node) + (lessonPath ? `?lesson=${encodeURIComponent(lessonPath)}` : "");
+}
+
+// Árvore de uma biblioteca (legado sem libId = padrão).
+function libTree(libId) {
+  const lib = getLibById(libId);
+  return (lib && lib.tree) || state.tree;
+}
+
+let expandedFolders = new Set();
+
+// Cursos favoritados (persistidos localmente no navegador), keyed por
+// "<libraryId>\0<path>" — duas bibliotecas podem ter o mesmo rel path.
+// Migração: favoritos salvos antes das bibliotecas são paths crus ("Curso X")
+// → entram na biblioteca padrão ("default\0Curso X").
+const favorites = new Set(
+  JSON.parse(localStorage.getItem("course-favorites") || "[]").map((k) =>
+    k.includes("\0") ? k : DEFAULT_LIB_ID + "\0" + k,
+  ),
+);
+
+function isFavorite(path, libId) {
+  return favorites.has(progKey(path, libId));
+}
+
+function toggleFavorite(path, libId) {
+  const key = progKey(path, libId);
+  if (favorites.has(key)) favorites.delete(key);
+  else favorites.add(key);
   localStorage.setItem("course-favorites", JSON.stringify([...favorites]));
 }
 
-function favButtonHtml(path) {
-  const on = isFavorite(path);
-  return `<button class="fav-btn ${on ? "on" : ""}" data-fav="${encodeURIComponent(path)}" title="${on ? "Remover dos favoritos" : "Favoritar curso"}">${on ? "★" : "☆"}</button>`;
+function favButtonHtml(path, libId) {
+  const on = isFavorite(path, libId);
+  return `<button class="fav-btn ${on ? "on" : ""}" data-fav="${encodeURIComponent(path)}" data-lib="${encodeURIComponent(libId || "")}" title="${on ? "Remover dos favoritos" : "Favoritar curso"}">${on ? "★" : "☆"}</button>`;
 }
 
 // Modo da seção "Seu progresso" (expandida/compacta), persistido no
@@ -290,6 +379,10 @@ function courseTitle(node) {
   return displayTitle(node, "curso");
 }
 
+function topicTitle(node) {
+  return displayTitle(node, "tópico");
+}
+
 function normalizeText(str) {
   return String(str || "")
     .normalize("NFD")
@@ -317,8 +410,11 @@ function scoreMatch(text, tokens) {
   return score;
 }
 
-function mediaUrl(relPath) {
-  return "/media/" + relPath.split("/").map(encodeURIComponent).join("/");
+function mediaUrl(relPath, libId) {
+  const rel = relPath.split("/").map(encodeURIComponent).join("/");
+  return isExternalLib(libId)
+    ? "/media/" + encodeURIComponent(libId) + "/" + rel
+    : "/media/" + rel;
 }
 
 function courseColor(name) {
@@ -332,11 +428,14 @@ function courseColor(name) {
 function initials(name) {
   const clean = name.replace(/[\[\]]/g, "");
   const words = clean.split(/\s+/).filter(Boolean);
-  return words
+  const chars = words
     .slice(0, 2)
     .map((w) => w[0])
     .join("")
     .toUpperCase();
+  // Inserido como conteúdo de um div via template → escapar para nunca
+  // permitir que o primeiro caractere do nome vire um markup (ex.: "<b").
+  return escapeHtml(chars);
 }
 
 async function loadAll() {
@@ -345,7 +444,12 @@ async function loadAll() {
     fetch("/api/progress"),
     fetch("/api/ai/status"),
   ]);
-  state.tree = await treeRes.json();
+  const treeData = await treeRes.json();
+  const libraries = Array.isArray(treeData.libraries) ? treeData.libraries : [];
+  state.libraries = libraries;
+  const defaultLib = libraries.find((l) => l.isDefault);
+  state.tree = (defaultLib && defaultLib.tree) || null;
+  for (const lib of libraries) annotateLibId(lib.tree, lib.id);
   const progress = await progRes.json();
   // Whisper configurado ⇒ controles de legenda visíveis; caso contrário o
   // frontend oculta "Gerar legendas" e o botão CC. Falha/indisponibilidade ⇒
@@ -389,7 +493,7 @@ function formatDuration(totalSeconds) {
 
 function countStats(node) {
   if (node.type === "video") {
-    const p = state.progress[node.path];
+    const p = progFor(node);
     return { total: 1, done: p && p.completed ? 1 : 0 };
   }
   if (node.type === "folder") {
@@ -406,23 +510,12 @@ function countStats(node) {
   return { total: 0, done: 0 };
 }
 
-function flattenVideos(node, out = []) {
-  if (node.type === "video") {
-    out.push(node);
-    return out;
-  }
-  if (node.type === "folder") {
-    for (const c of node.children) flattenVideos(c, out);
-  }
-  return out;
-}
-
 function flattenMaterials(node, out = []) {
   if (node.type === "file") {
     out.push(node);
     return out;
   }
-  if (node.type === "folder") {
+  if (node.type === "folder" || node.type === "topic") {
     for (const c of node.children) flattenMaterials(c, out);
   }
   return out;
@@ -435,7 +528,7 @@ function getNodeProgressStats(node) {
   let watchedSeconds = 0;
 
   for (const video of videos) {
-    const p = state.progress[video.path];
+    const p = progFor(video);
     if (!p) continue;
     const duration = Number(p.duration) || 0;
     const position = Number(p.position) || 0;
@@ -480,12 +573,36 @@ function getLibraryProgressSummary(courses) {
   };
 }
 
-function buildSearchResults(courses, query) {
+function buildSearchResults(roots, query) {
   const tokens = toSearchTokens(query);
   if (!tokens.length) return [];
 
   const results = [];
-  for (const course of courses) {
+  // Caminha a árvore inteira de CADA biblioteca: tópicos viram resultados
+  // próprios (clique → #/topic/) e cursos aninhados em tópicos também aparecem
+  // (aulas/materiais inclusive). Cada resultado leva o libraryId de origem.
+  for (const tree of (Array.isArray(roots) ? roots : [roots]).filter(Boolean)) {
+    for (const folder of collectAllFolders(tree)) {
+      if (folder.type === "topic") {
+        const topicScore = scoreMatch(
+          `${folder.name} ${topicTitle(folder)} ${folder.path}`,
+          tokens,
+        );
+        if (topicScore) {
+          results.push({
+            type: "topic",
+            libId: folder.libId,
+            path: folder.path,
+            courseName: "Tópico",
+            label: topicTitle(folder),
+            hint: folder.path,
+            score: topicScore + 15,
+          });
+        }
+        continue;
+      }
+
+    const course = folder;
     const courseScore = scoreMatch(
       `${course.name} ${courseTitle(course)} ${course.path}`,
       tokens,
@@ -493,6 +610,7 @@ function buildSearchResults(courses, query) {
     if (courseScore) {
       results.push({
         type: "course",
+        libId: course.libId,
         coursePath: course.path,
         courseName: courseTitle(course),
         label: courseTitle(course),
@@ -510,6 +628,7 @@ function buildSearchResults(courses, query) {
       if (videoScore) {
         results.push({
           type: "lesson",
+          libId: course.libId,
           coursePath: course.path,
           lessonPath: video.path,
           courseName: courseTitle(course),
@@ -528,6 +647,7 @@ function buildSearchResults(courses, query) {
       if (fileScore) {
         results.push({
           type: "material",
+          libId: course.libId,
           coursePath: course.path,
           courseName: courseTitle(course),
           label: file.name,
@@ -537,16 +657,17 @@ function buildSearchResults(courses, query) {
       }
     }
   }
+  }
 
   results.sort((a, b) => b.score - a.score || a.label.localeCompare(b.label));
   return results.slice(0, 18);
 }
 
 function findParentFolder(node, targetPath) {
-  if (node.type !== "folder") return null;
+  if (node.type !== "folder" && node.type !== "topic") return null;
   if (node.children.some((c) => c.path === targetPath)) return node;
   for (const c of node.children) {
-    if (c.type === "folder") {
+    if (c.type === "folder" || c.type === "topic") {
       const found = findParentFolder(c, targetPath);
       if (found) return found;
     }
@@ -555,10 +676,10 @@ function findParentFolder(node, targetPath) {
 }
 
 function findAncestorFolders(node, targetPath) {
-  if (node.type !== "folder") return null;
+  if (node.type !== "folder" && node.type !== "topic") return null;
   for (const c of node.children) {
     if (c.path === targetPath) return [node.path];
-    if (c.type === "folder") {
+    if (c.type === "folder" || c.type === "topic") {
       const res = findAncestorFolders(c, targetPath);
       if (res) return [node.path, ...res];
     }
@@ -566,12 +687,38 @@ function findAncestorFolders(node, targetPath) {
   return null;
 }
 
+// Busca um nó na árvore inteira pelo path relativo (cursos podem estar
+// aninhados dentro de tópicos). `root` é `state.tree` ou uma pasta.
+function findNodeByPath(root, targetPath) {
+  if (!root || !Array.isArray(root.children)) return null;
+  if (root.path === targetPath) return root;
+  for (const child of root.children) {
+    const found = findNodeByPath(child, targetPath);
+    if (found) return found;
+  }
+  return null;
+}
+
+// Todas as pastas da árvore (tópicos e cursos), recursivo.
+function collectAllFolders(root, out = []) {
+  for (const c of root.children || []) {
+    if (c.type === "folder" || c.type === "topic") {
+      out.push(c);
+      collectAllFolders(c, out);
+    }
+  }
+  return out;
+}
+
 // ---------- Home ----------
-function clearProgress(coursePath) {
+function clearProgress(coursePath, libId) {
+  // coursePath null = limpar tudo; senão limpa o escopo da biblioteca da aula.
+  const body = { coursePath: coursePath ?? null };
+  if (isExternalLib(libId)) body.libraryId = libId;
   fetch("/api/progress/clear", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ coursePath }),
+    body: JSON.stringify(body),
   })
     .then(() => loadAll())
     .then(() => route())
@@ -680,6 +827,7 @@ const SETTINGS_CATS = [
   { id: "atalhos", label: "Atalhos" },
   { id: "ia", label: "Inteligência Artificial" },
   { id: "dados", label: "Dados e armazenamento" },
+  { id: "bibliotecas", label: "Bibliotecas" },
   { id: "diagnostico", label: "Diagnóstico" },
 ];
 
@@ -735,6 +883,7 @@ function renderSettingsCategory(cat) {
     case "atalhos": return renderSettingsAtalhos();
     case "ia": return renderAiSection();
     case "dados": return renderSettingsDados();
+    case "bibliotecas": return renderSettingsBibliotecas();
     case "diagnostico": return renderSettingsDiagnostico();
     default: return renderSettingsGeral();
   }
@@ -746,6 +895,7 @@ function bindSettingsCategory(cat, app) {
     case "atalhos": bindSettingsAtalhos(app); break;
     case "ia": bindAiSection(app); break;
     case "dados": bindSettingsDados(app); break;
+    case "bibliotecas": bindSettingsBibliotecas(app); break;
     case "diagnostico": initSettingsDiagnostics(app); break;
     default: bindSettingsGeral(app); break;
   }
@@ -922,6 +1072,246 @@ function bindSettingsDados(app) {
   });
 
   initSettingsStorage(app);
+}
+
+// --- Categoria: Bibliotecas ---
+function renderSettingsBibliotecas() {
+  // Fallback se o estado ainda não carregou — o servidor sempre retorna a
+  // biblioteca padrão; essa linha só cobre um render antes do loadAll().
+  const libs = state.libraries.length
+    ? state.libraries
+    : [
+        {
+          id: DEFAULT_LIB_ID,
+          name: "Biblioteca",
+          path: "",
+          isDefault: true,
+          enabled: true,
+          status: "ready",
+          courseCount: 0,
+        },
+      ];
+  const rows = libs
+    .map((lib) => {
+      const isDefault = lib.isDefault === true;
+      const badge =
+        lib.enabled === false
+          ? `<span class="lib-badge lib-badge-off">Desativada</span>`
+          : lib.status === "unavailable" || lib.status === "error"
+            ? `<span class="lib-badge lib-badge-warn" title="${escapeHtml(lib.error || "diretório indisponível")}">⚠ indisponível</span>`
+            : `<span class="lib-badge lib-badge-ok">✓ Disponível</span>`;
+      const pathText = isDefault && !lib.path ? "Biblioteca da instalação" : lib.path;
+      const actions = [
+        `<button type="button" class="lib-btn" data-action="rescan">Reescanear</button>`,
+      ];
+      if (!isDefault) {
+        actions.push(`<button type="button" class="lib-btn" data-action="edit">Editar</button>`);
+        actions.push(
+          `<button type="button" class="lib-btn" data-action="toggle">${
+            lib.enabled === false ? "Ativar" : "Desativar"
+          }</button>`,
+        );
+      }
+      actions.push(
+        `<button type="button" class="lib-btn lib-btn-danger" data-action="remove" ${
+          isDefault ? 'disabled title="A biblioteca padrão não pode ser removida"' : ""
+        }>Remover</button>`,
+      );
+      return `
+    <div class="lib-row" data-lib-id="${encodeURIComponent(lib.id)}">
+      <div class="lib-row-main">
+        <div class="lib-row-name">${escapeHtml(lib.name)}${isDefault ? ' <span class="lib-tag">padrão</span>' : ""}</div>
+        <div class="lib-row-path" title="${escapeHtml(pathText)}">${escapeHtml(pathText)}</div>
+      </div>
+      ${badge}
+      <span class="lib-row-count">${lib.courseCount} curso${lib.courseCount === 1 ? "" : "s"}</span>
+      <span class="lib-row-actions">${actions.join("")}</span>
+    </div>`;
+    })
+    .join("");
+  return `
+    <section class="settings-section" aria-label="Bibliotecas">
+      <h2 class="settings-section-heading">Bibliotecas</h2>
+      <p class="settings-section-desc">Gerencie pastas de conteúdo além da biblioteca padrão. Cada biblioteca tem seus próprios cursos, progresso, cache de transcoding e legendas.</p>
+      <div class="lib-list" id="lib-list">${rows}</div>
+      <div class="settings-actions">
+        <button type="button" class="btn btn--primary" id="lib-add">＋ Adicionar biblioteca</button>
+      </div>
+      <div id="lib-error" class="ai-inline-msg error" hidden></div>
+      <p class="ai-note">O caminho é informado manualmente (cole ou digite o caminho absoluto da pasta). Remover apenas desliga a biblioteca da configuração — nenhum arquivo é apagado e o progresso é preservado.</p>
+    </section>`;
+}
+
+function bindSettingsBibliotecas(app) {
+  const showError = (msg) => {
+    const err = app.querySelector("#lib-error");
+    if (!err) return;
+    err.textContent = msg;
+    err.hidden = false;
+  };
+  const refresh = async () => {
+    await loadAll();
+    renderSettings(app);
+  };
+  const doFetch = async (url, opts) => {
+    const res = await fetch(url, opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  };
+
+  app.querySelector("#lib-add").addEventListener("click", () => {
+    openLibraryDialog(app, { mode: "add", onSaved: refresh });
+  });
+
+  const list = app.querySelector("#lib-list");
+  list.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-action]");
+    if (!btn || btn.disabled) return;
+    const row = btn.closest(".lib-row");
+    if (!row) return;
+    const libId = decodeURIComponent(row.dataset.libId);
+    const lib = getLibById(libId) || null;
+    const action = btn.dataset.action;
+
+    if (action === "rescan") {
+      doFetch(`/api/libraries/${encodeURIComponent(libId)}/rescan`, { method: "POST" })
+        .then(refresh)
+        .catch((err) => showError("Reescaneamento falhou: " + err.message));
+      return;
+    }
+    if (action === "edit") {
+      openLibraryDialog(app, { mode: "edit", libId, onSaved: refresh });
+      return;
+    }
+    if (action === "toggle") {
+      doFetch(`/api/libraries/${encodeURIComponent(libId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !(lib && lib.enabled) }),
+      })
+        .then(refresh)
+        .catch((err) => showError("Falha ao alternar: " + err.message));
+      return;
+    }
+    if (action === "remove") {
+      openConfirmDialog({
+        title: "Remover biblioteca",
+        message:
+          `A biblioteca "${lib && lib.name ? lib.name : ""}" será removida da configuração. ` +
+          "Nenhum arquivo da pasta será apagado; progresso e caches (transcoding/legendas) são preservados. Esta ação não pode ser desfeita.",
+        confirmLabel: "Remover da configuração",
+        cancelLabel: "Cancelar",
+        danger: true,
+        onConfirm: () => {
+          doFetch(`/api/libraries/${encodeURIComponent(libId)}`, { method: "DELETE" })
+            .then(refresh)
+            .catch((err) => showError("Falha ao remover: " + err.message));
+        },
+      });
+    }
+  });
+}
+
+// Diálogo de adicionar/editar biblioteca: campo de caminho colado/digitado
+// (sem seletor de pasta nativo), nome opcional, switch de ativação.
+function openLibraryDialog(app, { mode, libId, onSaved }) {
+  const lib = libId ? getLibById(libId) : null;
+  const isEdit = mode === "edit";
+  const previousFocus = document.activeElement;
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-title" id="modal-title">${isEdit ? "Editar biblioteca" : "Adicionar biblioteca"}</div>
+      <div class="modal-body">
+        <p class="ai-note">${
+          isEdit
+            ? "Ajuste o nome, o caminho e o estado da biblioteca."
+            : "Cole ou digite o caminho absoluto da pasta com o conteúdo. A pasta será escaneada e aparecerá na Home, ao lado da biblioteca padrão."
+        }</p>
+        <div class="lib-field">
+          <label class="ai-label" for="lib-path">Caminho da pasta</label>
+          <input class="ai-input" id="lib-path" type="text" value="${escapeHtml(lib ? lib.path : "")}" placeholder="/caminho/para/sua/pasta" autocomplete="off">
+        </div>
+        <div class="lib-field">
+          <label class="ai-label" for="lib-name">Nome (opcional)</label>
+          <input class="ai-input" id="lib-name" type="text" value="${escapeHtml(lib ? lib.name : "")}" placeholder="ex.: HD Externo, Cursos de Inglês" autocomplete="off">
+        </div>
+        ${isEdit ? `<label class="ai-label"><input type="checkbox" id="lib-enabled" ${lib && lib.enabled === false ? "" : "checked"}> Biblioteca ativa</label>` : ""}
+        <div id="lib-dialog-error" class="ai-inline-msg error" hidden></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel secondary-btn" type="button">Cancelar</button>
+        <button class="btn-confirm" type="button">${isEdit ? "Salvar" : "Adicionar"}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const close = () => {
+    document.removeEventListener("keydown", onKeydown);
+    overlay.remove();
+    if (previousFocus && previousFocus.focus) previousFocus.focus();
+  };
+  function onKeydown(event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    }
+  }
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) close();
+  });
+  overlay.querySelector(".btn-cancel").addEventListener("click", close);
+
+  const confirmBtn = overlay.querySelector(".btn-confirm");
+  const pathInput = overlay.querySelector("#lib-path");
+  const nameInput = overlay.querySelector("#lib-name");
+  const enabledBox = overlay.querySelector("#lib-enabled");
+
+  const submit = async () => {
+    const path = (pathInput.value || "").trim();
+    const name = (nameInput.value || "").trim();
+    const enabled = enabledBox ? enabledBox.checked : true;
+    confirmBtn.disabled = true;
+    // Edit com caminho vazio = manter o atual (evita revalidar path à toa).
+    const body = { name, enabled };
+    if (!isEdit || path) body.path = path;
+    try {
+      const res = await fetch(
+        isEdit ? `/api/libraries/${encodeURIComponent(libId)}` : "/api/libraries",
+        {
+          method: isEdit ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      close();
+      if (onSaved) await onSaved();
+    } catch (err) {
+      confirmBtn.disabled = false;
+      const errEl = overlay.querySelector("#lib-dialog-error");
+      if (errEl) {
+        errEl.textContent = err.message;
+        errEl.hidden = false;
+      }
+    }
+  };
+  confirmBtn.addEventListener("click", submit);
+  pathInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
+  });
+  nameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
+  });
 }
 
 // --- Categoria: Diagnóstico ---
@@ -2116,11 +2506,24 @@ function applyViewModeToDOM() {
   }
   const summaryItem = document.querySelector('[data-more="summary"]');
   if (summaryItem) {
-    const open = theater && getSummaryOpen();
-    summaryItem.hidden = !theater;
-    summaryItem.classList.toggle("is-active", open);
-    summaryItem.setAttribute("aria-pressed", String(open));
-    summaryItem.textContent = open ? "Fechar sumário" : "Resumo da aula";
+    if (isMobileDrawer()) {
+      // Mobile: o item ⋮ > Resumo da aula é o controle do drawer. O rótulo
+      // reflete o estado real do drawer (setDrawerOpen também o atualiza) e
+      // não depende do teatro — evita que alternar teatro sobrescreva o
+      // estado do drawer com um estado paralelo desatualizado.
+      const view = document.querySelector(".course-view");
+      const open = !!(view && view.classList.contains("drawer-open"));
+      summaryItem.hidden = false;
+      summaryItem.classList.toggle("is-active", open);
+      summaryItem.setAttribute("aria-pressed", String(open));
+      summaryItem.textContent = open ? "Fechar sumário" : "Resumo da aula";
+    } else {
+      const open = theater && getSummaryOpen();
+      summaryItem.hidden = !theater;
+      summaryItem.classList.toggle("is-active", open);
+      summaryItem.setAttribute("aria-pressed", String(open));
+      summaryItem.textContent = open ? "Fechar sumário" : "Resumo da aula";
+    }
   }
 }
 
@@ -2130,110 +2533,153 @@ function toggleTheaterMode() {
 }
 
 function toggleSummaryPanel() {
+  if (isMobileDrawer()) {
+    toggleDrawer();
+    return;
+  }
   setSummaryOpen(!getSummaryOpen());
   applyViewModeToDOM();
 }
 
-function renderHome(app) {
-  const courses = state.tree.children.filter((c) => c.type === "folder");
-  const search = (document.getElementById("search-input").value || "").trim();
-  const results = buildSearchResults(courses, search);
-  const librarySummary = getLibraryProgressSummary(courses);
-  state.lastSearchResults = results;
-  const matchedCoursePaths = new Set(results.map((r) => r.coursePath));
-  const filtered = search
-    ? courses.filter((c) => matchedCoursePaths.has(c.path))
-    : courses;
-
-  // "Continuar assistindo": no máximo uma aula por curso. Para cada curso,
-  // seleciona a aula elegível com updatedAt mais recente (regra de agrupamento,
-  // não limite visual). Regras existentes preservadas: aulas concluídas e aulas
-  // com menos de 5s de progresso continuam fora da seção.
-  const continueItems = [];
-  for (const course of courses) {
-    let best = null;
-    for (const v of flattenVideos(course)) {
-      const p = state.progress[v.path];
-      if (!p || p.position <= 5 || p.completed) continue;
-      if (!best || (p.updatedAt || 0) > (best.progress.updatedAt || 0)) {
-        best = { course, video: v, progress: p };
-      }
-    }
-    if (best) continueItems.push(best);
+// ---------- Drawer mobile (sumário off-canvas) ----------
+// Em telas ≤900px o sumário deixa de empilhar abaixo do player e vira um
+// drawer que desliza da direita (CSS em styles.css). O estado NÃO é
+// persistido: trocar de aula re-renderiza a página e fecha o drawer — é o
+// comportamento desejado. A classe .drawer-open no .course-view comanda a
+// visibilidade; o backdrop fecha ao tocar fora; Esc fecha também.
+function isMobileDrawer() {
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+function setDrawerOpen(open) {
+  const view = document.querySelector(".course-view");
+  if (!view) return;
+  view.classList.toggle("drawer-open", open);
+  const btn = document.getElementById("lesson-sidebar-toggle");
+  if (btn) btn.setAttribute("aria-expanded", String(open));
+  // Reflete o estado no item ⋮ > Resumo da aula (o mesmo controle no mobile).
+  const summaryItem = document.querySelector('[data-more="summary"]');
+  if (summaryItem) {
+    summaryItem.textContent = open ? "Fechar sumário" : "Resumo da aula";
+    summaryItem.setAttribute("aria-pressed", String(open));
   }
-  continueItems.sort(
-    (a, b) => (b.progress.updatedAt || 0) - (a.progress.updatedAt || 0),
-  );
-  const topContinue = continueItems.slice(0, 8);
-
-  let html = "";
-
-  if (search) {
-    html += `<div class="section-title">Resultados da pesquisa <span class="count">(${results.length})</span></div>`;
-    if (!results.length) {
-      html += `<div class="empty-state">Nenhum resultado para "${escapeHtml(search)}".</div>`;
-    } else {
-      html += `<div class="search-results">`;
-      for (const item of results) {
-        const tag =
-          item.type === "course"
-            ? "Curso"
-            : item.type === "lesson"
-              ? "Aula"
-              : "Material";
-        const itemHref = item.lessonPath
-          ? `#/course/${encodeURIComponent(item.coursePath)}?lesson=${encodeURIComponent(item.lessonPath)}`
-          : `#/course/${encodeURIComponent(item.coursePath)}`;
-        html += `
-          <a class="search-result-item" href="${itemHref}" data-type="${item.type}">
-            <span class="search-result-tag">${tag}</span>
-            <span class="search-result-main">${escapeHtml(item.label)}</span>
-            <span class="search-result-sub">${escapeHtml(item.courseName)} · ${escapeHtml(item.hint)}</span>
-          </a>`;
-      }
-      html += `</div>`;
-    }
+  // Ao abrir, refresca a árvore: o updateProgressUI pausa os re-renders com o
+  // drawer aberto, então este refresh garante que o progresso exibido ao
+  // abrir está atual (a lista re-renderiza sem perder o scroll de quem abre).
+  if (open && state.currentCourseNode) {
+    renderTree(state.currentCourseNode, false);
   }
+}
+function toggleDrawer() {
+  const view = document.querySelector(".course-view");
+  if (!view) return;
+  setDrawerOpen(!view.classList.contains("drawer-open"));
+}
+function closeMobileDrawer() {
+  const view = document.querySelector(".course-view");
+  if (view && view.classList.contains("drawer-open")) {
+    setDrawerOpen(false);
+    return true;
+  }
+  return false;
+}
 
-  if (topContinue.length) {
-    const inProgressLabel = `${librarySummary.inProgressLessons} ${librarySummary.inProgressLessons === 1 ? "aula" : "aulas"} em andamento`;
-    html += `
-      <section class="home-section">
-        <div class="section-head">
-          <div>
-            <h2 class="section-heading">Continuar assistindo</h2>
-            <p class="section-subtitle">Retome de onde parou · ${inProgressLabel}</p>
+// Card reutilizado por Home e renderTopic: curso → card com progresso/favorito;
+// tópico → card com contagem de itens, href #/topic/ e tag "Tópico".
+function renderNodeCard(node) {
+  if (node.type === "topic") {
+    const coverImage = node.coverImage ? mediaUrl(node.coverImage, node.libId) : null;
+    const topicHref = "#" + topicRoute(node);
+    const n = node.children.length;
+    const meta = `${n} ${n === 1 ? "item" : "itens"}`;
+    return `
+      <div class="course-card">
+        <a class="course-card-link" href="${topicHref}">
+          <div class="course-card-thumb ${coverImage ? "has-image" : ""}"${coverImage ? "" : ` style="background:${courseColor(node.name)}"`}>
+            ${coverImage ? `<img src="${coverImage}" alt="${escapeHtml(topicTitle(node))}" />` : initials(topicTitle(node))}
           </div>
+          <div class="course-card-body">
+            <div class="course-card-title">${escapeHtml(topicTitle(node))}</div>
+            <div class="course-card-meta">${meta}</div>
+            <div class="topic-card-tag">Tópico</div>
+          </div>
+        </a>
+      </div>`;
+  }
+  const stats = getNodeProgressStats(node);
+  const pct = stats.pct;
+  const coverImage = node.coverImage ? mediaUrl(node.coverImage, node.libId) : null;
+  const href = courseRoute(node);
+  return `
+    <div class="course-card">
+      <a class="course-card-link" href="#${href}">
+        <div class="course-card-thumb ${coverImage ? "has-image" : ""}"${coverImage ? "" : ` style="background:${courseColor(node.name)}"`}>
+          ${coverImage ? `<img src="${coverImage}" alt="${escapeHtml(courseTitle(node))}" />` : initials(courseTitle(node))}
         </div>
-        <div class="continue-row">`;
-    topContinue.forEach((item, i) => {
-      const pct = item.progress.duration
-        ? Math.min(
-            100,
-            Math.round((item.progress.position / item.progress.duration) * 100),
-          )
-        : 0;
-      const continueHref = `#/course/${encodeURIComponent(item.course.path)}?lesson=${encodeURIComponent(item.video.path)}`;
-      html += `
-        <a class="continue-card" href="${continueHref}" aria-label="Continuar aula: ${escapeHtml(lessonTitle(item.video))}" style="--i:${i}">
-          <div>
-            <div class="lesson-name">${escapeHtml(lessonTitle(item.video))}</div>
-            <div class="course-name">${escapeHtml(courseTitle(item.course))}</div>
-          </div>
-          <div class="continue-card-progress">
-            <div class="progress-bar continue-progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
-            <span class="continue-pct">${pct}%</span>
-          </div>
-        </a>`;
-    });
-    html += `</div>
-      </section>`;
-  }
+        <div class="course-card-body">
+          <div class="course-card-title">${escapeHtml(courseTitle(node))}</div>
+          <div class="course-card-meta">${stats.done}/${stats.total} concluídas · ${pct}%</div>
+          <div class="course-card-meta">${formatDuration(stats.watchedSeconds)} assistidos</div>
+          <div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
+        </div>
+      </a>
+      ${favButtonHtml(node.path, node.libId)}
+    </div>`;
+}
 
+// ---------- Escopo contextual: seções reutilizáveis (Home + tópicos) ----------
+
+// Card de "Continuar assistindo" (uma aula por curso, já agrupada em
+// buildContinueItems). Compartilhado pela Home (global) e por tópicos (escopo).
+function renderContinueCard(item, i) {
+  const pct = item.progress.duration
+    ? Math.min(
+        100,
+        Math.round((item.progress.position / item.progress.duration) * 100),
+      )
+    : 0;
+  const continueHref = courseHref(item.course, item.video.path);
+  return `
+    <a class="continue-card" href="${continueHref}" aria-label="Continuar aula: ${escapeHtml(lessonTitle(item.video))}" style="--i:${i}">
+      <div>
+        <div class="lesson-name">${escapeHtml(lessonTitle(item.video))}</div>
+        <div class="course-name">${escapeHtml(courseTitle(item.course))}</div>
+      </div>
+      <div class="continue-card-progress">
+        <div class="progress-bar continue-progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
+        <span class="continue-pct">${pct}%</span>
+      </div>
+    </a>`;
+}
+
+// Seção "Continuar assistindo": cabeçalho + cards. `summary` vem do escopo.
+function renderContinueSection(items, summary) {
+  const inProgressLabel = `${summary.inProgressLessons} ${
+    summary.inProgressLessons === 1 ? "aula" : "aulas"
+  } em andamento`;
+  let html = `
+    <section class="home-section">
+      <div class="section-head">
+        <div>
+          <h2 class="section-heading">Continuar assistindo</h2>
+          <p class="section-subtitle">Retome de onde parou · ${inProgressLabel}</p>
+        </div>
+      </div>
+      <div class="continue-row">`;
+  items.forEach((item, i) => {
+    html += renderContinueCard(item, i);
+  });
+  html += `</div>
+    </section>`;
+  return html;
+}
+
+// Bloco "Seu progresso": resumo agregado do escopo (Home = cursos diretos;
+// tópico = subárvore). `totalCourses` alimenta o rodapé "de X disponíveis".
+function renderProgressSection(summary, totalCourses) {
   const progressMode = getProgressMode();
   const progressExpanded = progressMode === "expanded";
-  const watchedLabel = formatDuration(librarySummary.watchedSeconds);
-  html += `
+  const watchedLabel = formatDuration(summary.watchedSeconds);
+  return `
     <section class="home-section progress-section" id="progress-section" data-progress-mode="${progressMode}">
       <div class="section-head">
         <div>
@@ -2246,23 +2692,23 @@ function renderHome(app) {
       </div>
       <div class="progress-summary" aria-hidden="${progressExpanded}">
         <div class="progress-summary-inner">
-          <div class="progress-summary-pct">${librarySummary.pct}%</div>
-          <div class="progress-summary-bar"><div class="progress-summary-bar-fill" style="width:${librarySummary.pct}%"></div></div>
-          <div class="progress-summary-meta">${librarySummary.doneLessons} aulas concluídas · ${librarySummary.startedCourses} cursos ativos · ${watchedLabel} estudadas</div>
+          <div class="progress-summary-pct">${summary.pct}%</div>
+          <div class="progress-summary-bar"><div class="progress-summary-bar-fill" style="width:${summary.pct}%"></div></div>
+          <div class="progress-summary-meta">${summary.doneLessons} aulas concluídas · ${summary.startedCourses} cursos ativos · ${watchedLabel} estudadas</div>
         </div>
       </div>
       <div class="progress-panel-wrap">
         <div class="progress-panel" id="progress-panel" aria-hidden="${!progressExpanded}">
         <div class="progress-panel-hero">
-          <div class="progress-panel-hero-value">${librarySummary.pct}%</div>
+          <div class="progress-panel-hero-value">${summary.pct}%</div>
           <div class="progress-panel-hero-label">conclusão geral</div>
         </div>
-        <div class="progress-panel-bar"><div class="progress-panel-bar-fill" style="--w:${librarySummary.pct}%"></div></div>
+        <div class="progress-panel-bar"><div class="progress-panel-bar-fill" style="--w:${summary.pct}%"></div></div>
         <div class="progress-panel-stats">
           <div class="progress-stat">
-            <div class="progress-stat-value">${librarySummary.doneLessons}</div>
+            <div class="progress-stat-value">${summary.doneLessons}</div>
             <div class="progress-stat-label">aulas concluídas</div>
-            <div class="progress-stat-sub">de ${librarySummary.totalLessons} na biblioteca</div>
+            <div class="progress-stat-sub">de ${summary.totalLessons} na biblioteca</div>
           </div>
           <div class="progress-stat">
             <div class="progress-stat-value">${watchedLabel}</div>
@@ -2270,59 +2716,18 @@ function renderHome(app) {
             <div class="progress-stat-sub">acumulado localmente</div>
           </div>
           <div class="progress-stat">
-            <div class="progress-stat-value">${librarySummary.startedCourses}</div>
+            <div class="progress-stat-value">${summary.startedCourses}</div>
             <div class="progress-stat-label">cursos ativos</div>
-            <div class="progress-stat-sub">de ${courses.length} disponíveis</div>
+            <div class="progress-stat-sub">de ${totalCourses} disponíveis</div>
           </div>
         </div>
         </div>
       </div>
     </section>`;
+}
 
-  html += `<div class="section-title">Meus cursos <span class="count">(${filtered.length})</span></div>`;
-  if (!filtered.length) {
-    html += `<div class="empty-state">Nenhum curso encontrado na biblioteca.</div>`;
-  } else {
-    const ordered = search
-      ? filtered
-      : filtered.slice().sort((a, b) => Number(isFavorite(b.path)) - Number(isFavorite(a.path)));
-    html += `<div class="course-grid">`;
-    for (const course of ordered) {
-      const stats = getNodeProgressStats(course);
-      const pct = stats.pct;
-      const coverImage = course.coverImage ? mediaUrl(course.coverImage) : null;
-      const courseHref = `#/course/${encodeURIComponent(course.path)}`;
-      html += `
-        <div class="course-card">
-          <a class="course-card-link" href="${courseHref}">
-            <div class="course-card-thumb ${coverImage ? "has-image" : ""}"${coverImage ? "" : ` style="background:${courseColor(course.name)}"`}>
-              ${coverImage ? `<img src="${coverImage}" alt="${escapeHtml(courseTitle(course))}" />` : initials(courseTitle(course))}
-            </div>
-            <div class="course-card-body">
-              <div class="course-card-title">${escapeHtml(courseTitle(course))}</div>
-              <div class="course-card-meta">${stats.done}/${stats.total} concluídas · ${pct}%</div>
-              <div class="course-card-meta">${formatDuration(stats.watchedSeconds)} assistidos</div>
-              <div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
-            </div>
-          </a>
-          ${favButtonHtml(course.path)}
-        </div>`;
-    }
-    html += `</div>`;
-  }
-
-  app.innerHTML = html;
-  // Cards de curso, "Continuar assistindo" e resultados de busca agora são
-  // <a href> reais: o navegador cuida de clique, Ctrl+clique, botão do meio,
-  // arrastar e "abrir em nova aba". O route() (via hashchange) segue o mesmo.
-  app.querySelectorAll(".fav-btn").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleFavorite(decodeURIComponent(el.dataset.fav));
-      renderHome(app);
-    });
-  });
-
+// Liga o botão recolher/expandir da seção "Seu progresso" (se existir).
+function bindProgressToggle() {
   const progressSection = document.getElementById("progress-section");
   const progressToggle = progressSection?.querySelector(".progress-toggle");
   if (progressToggle) {
@@ -2336,11 +2741,166 @@ function renderHome(app) {
   }
 }
 
+function renderHome(app) {
+  // Bibliotecas visíveis na Home: a padrão + as externas habilitadas com
+  // árvore (indisponíveis/desativadas ficam fora; a lista completa fica em
+  // Configurações → Bibliotecas).
+  const libs = (
+    state.libraries.length
+      ? state.libraries
+      : [{ id: DEFAULT_LIB_ID, name: "Biblioteca", tree: state.tree }]
+  ).filter((l) => l.enabled !== false && l.tree);
+  const sections = libs.map((lib) => {
+    const topNodes = ((lib.tree && lib.tree.children) || []).filter(
+      (c) => c.type === "folder" || c.type === "topic",
+    );
+    return { lib, topNodes };
+  });
+  // Home mista: pastas da raiz viram cards de curso (type "folder") ou de
+  // tópico (type "topic") — classificação explícita por marcador/nome no scan.
+  const hasTopics = sections.some((s) => s.topNodes.some((c) => c.type === "topic"));
+  // Escopos (paths REAIS, nunca título):
+  //   allCourses  = TODOS os cursos de TODAS as bibliotecas (global) → alimenta
+  //                 "Continuar assistindo" (global na Home, como sempre).
+  //   directCourses = cursos DIRETOS da raiz de cada biblioteca (filhos
+  //                 "folder") → "Seu progresso" só conta o que pertence à Home;
+  //                 sem cursos diretos, a seção é ocultada.
+  const allCourses = [];
+  const directCourses = [];
+  for (const lib of libs) {
+    allCourses.push(...collectCoursesInScope(lib.tree));
+    directCourses.push(...collectDirectCourses(lib.tree));
+  }
+  const search = (document.getElementById("search-input").value || "").trim();
+  const results = buildSearchResults(libs.map((l) => l.tree), search);
+  // Resumo GLOBAL (todas as bibliotecas) → rodapé de "Continuar assistindo".
+  // Resumo de "Seu progresso" na Home: PREFERE o escopo DIRETO (cursos filhos
+  // da raiz — comportamento contextual documentado); se a raiz não tem curso
+  // direto (ex.: biblioteca toda organizada em tópicos), cai para o GLOBAL,
+  // para o progresso existente não ficar invisível na Home (persistência é a
+  // fonte de verdade; o bloco nunca some por organização em tópicos).
+  const continueSummary = getLibraryProgressSummary(allCourses);
+  const progressScope = directCourses.length ? directCourses : allCourses;
+  const librarySummary = getLibraryProgressSummary(progressScope);
+  state.lastSearchResults = results;
+  // Tópicos têm path (sem coursePath); cursos/aulas/materiais têm coursePath.
+  const matchedPaths = new Set(
+    results.map((r) => (r.type === "topic" ? r.path : r.coursePath)),
+  );
+  for (const s of sections) {
+    s.filtered = search
+      ? s.topNodes.filter((c) => matchedPaths.has(c.path))
+      : s.topNodes;
+  }
+  const grouped = libs.length > 1 && !search;
+
+  // "Continuar assistindo": GLOBAL na Home (todos os cursos de todas as
+  // bibliotecas, incluindo os aninhados em tópicos). Uma aula por curso — a
+  // elegível com updatedAt mais recente. Regras preservadas: concluídas e
+  // <=5s ficam fora.
+  const topContinue = buildContinueItems(allCourses, progFor);
+
+  let html = "";
+
+  if (search) {
+    html += `<div class="section-title">Resultados da pesquisa <span class="count">(${results.length})</span></div>`;
+    if (!results.length) {
+      html += `<div class="empty-state">Nenhum resultado para "${escapeHtml(search)}".</div>`;
+    } else {
+      html += `<div class="search-results">`;
+      for (const item of results) {
+        const tag =
+          item.type === "course"
+            ? "Curso"
+            : item.type === "topic"
+              ? "Tópico"
+              : item.type === "lesson"
+                ? "Aula"
+                : "Material";
+        let itemHref;
+        if (item.type === "topic") {
+          itemHref = "#" + topicRoute({ path: item.path, libId: item.libId });
+        } else if (item.lessonPath) {
+          itemHref =
+            "#" +
+            courseRoute({ path: item.coursePath, libId: item.libId }) +
+            `?lesson=${encodeURIComponent(item.lessonPath)}`;
+        } else {
+          itemHref = "#" + courseRoute({ path: item.coursePath, libId: item.libId });
+        }
+        html += `
+          <a class="search-result-item" href="${itemHref}" data-type="${item.type}">
+            <span class="search-result-tag">${tag}</span>
+            <span class="search-result-main">${escapeHtml(item.label)}</span>
+            <span class="search-result-sub">${escapeHtml(item.courseName)} · ${escapeHtml(item.hint)}</span>
+          </a>`;
+      }
+      html += `</div>`;
+    }
+  }
+
+  if (topContinue.length) {
+    html += renderContinueSection(topContinue, continueSummary);
+  }
+
+  // "Seu progresso" na Home: escopo DIRETO quando houver cursos na raiz; sem
+  // cursos diretos (ex.: biblioteca toda organizada em tópicos), o bloco mostra
+  // o resumo GLOBAL — o progresso existente nunca some da Home por estrutura.
+  if (progressScope.length) {
+    html += renderProgressSection(librarySummary, progressScope.length);
+  }
+
+  const totalShown = sections.reduce((n, s) => n + s.filtered.length, 0);
+  // Uma biblioteca (ou busca ativa): cabeçalho único, como sempre foi.
+  if (!grouped) {
+    const sectionLabel = hasTopics ? "Biblioteca" : "Meus cursos";
+    html += `<div class="section-title">${sectionLabel} <span class="count">(${totalShown})</span></div>`;
+  }
+  if (!totalShown) {
+    html += `<div class="empty-state">Nenhum curso encontrado na biblioteca.</div>`;
+  }
+  for (const s of sections) {
+    if (!s.filtered.length) continue;
+    // Mais de uma biblioteca: cada uma ganha um cabeçalho com o próprio nome.
+    if (grouped) {
+      html += `<div class="section-title">${escapeHtml(s.lib.name)} <span class="count">(${s.filtered.length})</span></div>`;
+    }
+    const ordered = search
+      ? s.filtered
+      : s.filtered.slice().sort(
+          (a, b) =>
+            Number(isFavorite(b.path, b.libId)) - Number(isFavorite(a.path, a.libId)),
+        );
+    html += `<div class="course-grid">`;
+    for (const node of ordered) {
+      html += renderNodeCard(node);
+    }
+    html += `</div>`;
+  }
+
+  app.innerHTML = html;
+  // Cards de curso, "Continuar assistindo" e resultados de busca agora são
+  // <a href> reais: o navegador cuida de clique, Ctrl+clique, botão do meio,
+  // arrastar e "abrir em nova aba". O route() (via hashchange) segue o mesmo.
+  app.querySelectorAll(".fav-btn").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFavorite(decodeURIComponent(el.dataset.fav), decodeURIComponent(el.dataset.lib || ""));
+      renderHome(app);
+    });
+  });
+
+  bindProgressToggle();
+}
+
 // ---------- Curso ----------
 function renderFolderChildren(folderNode, depth = 1) {
   let html = "";
   for (const child of folderNode.children) {
-    if (child.type === "folder") {
+    // A sidebar é de NAVEGAÇÃO de aulas: só módulos/pastas e vídeos entram.
+    // Arquivos/material (type "file") aparecem apenas em "Materiais da aula".
+    if (!isSidebarNavigableNode(child)) continue;
+    if (child.type === "folder" || child.type === "topic") {
       const stats = countStats(child);
       const isOpen = expandedFolders.has(child.path);
       // data-depth permite ao CSS diferenciar módulo (1) de submódulo (2+) e
@@ -2358,7 +2918,7 @@ function renderFolderChildren(folderNode, depth = 1) {
           </div>
         </div>`;
     } else if (child.type === "video") {
-      const p = state.progress[child.path];
+      const p = progFor(child);
       const done = p && p.completed;
       const active =
         state.currentVideoNode && state.currentVideoNode.path === child.path;
@@ -2379,11 +2939,6 @@ function renderFolderChildren(folderNode, depth = 1) {
           <span class="lesson-mini-progress"><span style="width:${pct}%"></span></span>
           <span class="lesson-counter">${lessonIndex}/${lessonTotal}</span>
         </div>`;
-    } else {
-      html += `
-        <a class="tree-file" href="${mediaUrl(child.path)}" target="_blank" rel="noopener">
-          <span>📄</span><span class="lesson-title"><span class="lesson-title-inner">${escapeHtml(child.name)}</span></span>
-        </a>`;
     }
   }
   return html;
@@ -2394,7 +2949,8 @@ function toggleLessonCompleted(lessonPath, event) {
   const lesson = state.flatVideos.find((v) => v.path === lessonPath);
   if (!lesson) return;
 
-  const current = state.progress[lessonPath] || {
+  const key = progKey(lessonPath, lesson.libId);
+  const current = state.progress[key] || {
     position: 0,
     duration: 0,
     completed: false,
@@ -2407,16 +2963,24 @@ function toggleLessonCompleted(lessonPath, event) {
     updatedAt: Date.now(),
   };
 
-  state.progress[lessonPath] = nextProgress;
+  state.progress[key] = nextProgress;
+  // O servidor deriva a chave (`<libId>\0<rel>`) a partir do path relativo e
+  // da biblioteca — envia o rel, não a chave composta. `explicitToggle` marca
+  // esta como a ação explícita do usuário que pode regredir `completed` de
+  // true para false (o ✓); qualquer outro save normal nunca pode.
+  const body = {
+    path: lessonPath,
+    position: nextProgress.position,
+    duration: nextProgress.duration,
+    completed,
+    explicitToggle: true,
+    requestId: newRequestId(),
+  };
+  if (isExternalLib(lesson.libId)) body.libraryId = lesson.libId;
   fetch("/api/progress", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      path: lessonPath,
-      position: nextProgress.position,
-      duration: nextProgress.duration,
-      completed,
-    }),
+    body: JSON.stringify(body),
   }).catch(() => {});
 
   updateProgressUI();
@@ -2470,9 +3034,12 @@ function attachTreeHandlers(slot) {
     });
   });
   slot.querySelectorAll(".tree-lesson").forEach((el) => {
-    el.addEventListener("click", () =>
-      navigateToLesson(decodeURIComponent(el.dataset.lesson)),
-    );
+    el.addEventListener("click", () => {
+      // Tocar numa aula fecha o drawer mobile. Navegar re-renderiza e fecha
+      // igual; este close cobre também o caso de tocar na aula já ativa.
+      closeMobileDrawer();
+      navigateToLesson(decodeURIComponent(el.dataset.lesson));
+    });
   });
   slot.querySelectorAll(".check").forEach((el) => {
     el.addEventListener("click", (event) => {
@@ -2480,7 +3047,7 @@ function attachTreeHandlers(slot) {
     });
   });
   slot
-    .querySelectorAll(".tree-lesson, .tree-file, .tree-folder-head")
+    .querySelectorAll(".tree-lesson, .tree-folder-head")
     .forEach((el) => {
       el.addEventListener("mouseenter", () => startTitleMarquee(el));
       el.addEventListener("mouseleave", () => stopTitleMarquee(el));
@@ -2543,7 +3110,15 @@ function renderTree(course, resetExpanded) {
 
 function updateProgressUI() {
   const slot = document.getElementById("tree-slot");
-  if (!slot || !slot.matches(":hover")) {
+  // No touch não existe :hover, então a guarda antiga re-renderizava a árvore
+  // a cada timeupdate (~5s) mesmo com o drawer aberto — o innerHTML resetava
+  // o scroll do usuário no meio da leitura da lista. Enquanto o drawer mobile
+  // está aberto, o re-render da árvore é pausado (o cabeçalho do sidebar — %,
+  // contadores — continua atualizando); a lista volta a atualizar quando o
+  // drawer fecha ou ao trocar de aula (o setDrawerOpen ao abrir já refresca).
+  const view = document.querySelector(".course-view");
+  const drawerOpen = !!(view && view.classList.contains("drawer-open"));
+  if (!slot || (!slot.matches(":hover") && !drawerOpen)) {
     renderTree(state.currentCourseNode, false);
   }
   const stats = getNodeProgressStats(state.currentCourseNode);
@@ -2573,7 +3148,7 @@ function setupVideoTracking(video) {
   const el = document.getElementById("video-el");
   if (!el) return;
   currentVideoEl = el;
-  const saved = state.progress[video.path];
+  const saved = progFor(video);
   // Retoma também vídeos marcados como concluídos pelo ✓ (a posição real é
   // preservada). Concluídos por `ended` (position == duration) voltam ao
   // início para reassistir.
@@ -2621,18 +3196,23 @@ function setupVideoTracking(video) {
       return null; // ainda sem metadados: nada a gravar
     }
     const nextCompleted = completed || wasCompleted;
-    return {
+    // O servidor deriva a chave (`<libId>\0<rel>`) a partir do path relativo e
+    // da biblioteca — envia o rel, não a chave composta.
+    const body = {
       path: video.path,
       position,
       duration,
       completed: nextCompleted,
+      requestId: newRequestId(),
     };
+    if (isExternalLib(video.libId)) body.libraryId = video.libId;
+    return body;
   };
 
   const persist = (forceCompleted) => {
     const payload = progressPayload(forceCompleted);
     if (!payload) return;
-    state.progress[video.path] = {
+    state.progress[progKey(video.path, video.libId)] = {
       position: payload.position,
       duration: payload.duration,
       completed: payload.completed,
@@ -2761,7 +3341,7 @@ function retryOriginal(el, video) {
   hidePreparingBadge();
   el.removeAttribute("data-fallback");
   el.dataset.retryOriginal = "1";
-  el.src = mediaUrl(video.path);
+  el.src = mediaUrl(video.path, video.libId);
   el.load();
 }
 
@@ -2784,14 +3364,14 @@ async function prepareTranscoded(video, el, saved) {
     setPlayerStatus(message || "Não foi possível preparar a versão compatível deste vídeo.", () => retryOriginal(el, video));
   };
   try {
-    const res = await fetch(`/api/video/fallback?path=${encodeURIComponent(video.path)}`);
+    const res = await fetch(`/api/video/fallback?path=${encodeURIComponent(video.path)}${libQuery(video)}`);
     const data = await res.json().catch(() => null);
     if (!data) throw new Error("no response");
     if (data.error) return fail(data.message);
     if (data.compatible) {
       // O servidor (ffprobe) diz que o original é reproduzível: tenta de novo.
       hidePreparingBadge();
-      el.src = mediaUrl(video.path);
+      el.src = mediaUrl(video.path, video.libId);
       el.load();
       return;
     }
@@ -3167,7 +3747,7 @@ function renderPlayerAndLesson() {
     .join("");
 
   wrap.innerHTML = `
-    <video id="video-el" playsinline preload="auto" src="${mediaUrl(video.path)}"></video>
+    <video id="video-el" playsinline preload="auto" src="${mediaUrl(video.path, video.libId)}"></video>
     <div class="subtitle-overlay" id="subtitle-overlay" hidden>
       <span class="subtitle-overlay-text"><span class="subtitle-overlay-inner"></span></span>
     </div>
@@ -3241,6 +3821,7 @@ function renderPlayerAndLesson() {
               <div class="pc-pop pc-more-menu" id="pc-more-menu" hidden>
                 <button type="button" class="pc-menu-item" data-more="theater">Modo teatro</button>
                 <button type="button" class="pc-menu-item" data-more="summary">Resumo da aula</button>
+                <button type="button" class="pc-menu-item pc-more-narrow" data-more="subtitle-style">Aparência da legenda</button>
                 <div class="pc-menu-group pc-more-narrow">
                   <span class="pc-menu-label">Velocidade</span>
                   ${speedOptions}
@@ -3265,15 +3846,28 @@ function renderPlayerAndLesson() {
   // vai no title para o hover. Nunca força o layout lateralmente.
   const crumbParts = video.path.split("/").slice(0, -1);
   const crumbLeaf = crumbParts.pop() || "";
-  const crumbPrefix = crumbParts.join(" / ");
+  // Mobile (<600px): o breadcrumb mostra só o último segmento do prefixo com
+  // "…" na frente (ex.: "… / 04 - Projetos / 01 - Introdução ao projeto") —
+  // ocupa menos espaço vertical/horizontal. O path real não muda e o caminho
+  // completo continua no title do elemento.
+  const narrowHeader = window.matchMedia("(max-width: 600px)").matches;
+  const showFullPrefix = !narrowHeader || crumbParts.length <= 1;
+  const crumbPrefix = showFullPrefix
+    ? crumbParts.join(" / ")
+    : crumbParts[crumbParts.length - 1];
+  const crumbLead =
+    showFullPrefix || !crumbParts.length ? "" : "… / ";
   const breadcrumbHtml =
     (crumbPrefix
-      ? `<span class="breadcrumb-prefix">${escapeHtml(crumbPrefix)}</span><span class="breadcrumb-sep"> / </span>`
+      ? `<span class="breadcrumb-prefix">${escapeHtml(crumbLead + crumbPrefix)}</span><span class="breadcrumb-sep"> / </span>`
       : ``) + `<span class="breadcrumb-leaf">${escapeHtml(crumbLeaf)}</span>`;
   header.innerHTML = `
-    <div class="lesson-title-block">
-      <h2 title="${escapeHtml(lessonTitle(video))}">${escapeHtml(lessonTitle(video))}</h2>
-      <div class="breadcrumb" title="${escapeHtml(breadcrumb)}">${breadcrumbHtml}</div>
+    <div class="lesson-title-row">
+      <div class="lesson-title-block">
+        <h2 title="${escapeHtml(lessonTitle(video))}">${escapeHtml(lessonTitle(video))}</h2>
+        <div class="breadcrumb" title="${escapeHtml(breadcrumb)}">${breadcrumbHtml}</div>
+      </div>
+      <button id="lesson-sidebar-toggle" class="secondary-btn lesson-sidebar-toggle" type="button" aria-expanded="false" title="Abrir a lista de aulas" aria-label="Abrir a lista de aulas">☰ Aulas</button>
     </div>
     <div class="player-controls">
       <div class="nav-buttons">
@@ -3334,7 +3928,7 @@ function renderPlayerAndLesson() {
     ? `
       <div class="materials">
         <h3>Materiais da aula</h3>
-        ${files.map((f) => `<a href="${mediaUrl(f.path)}" target="_blank" rel="noopener">📎 ${escapeHtml(f.name)}</a>`).join("")}
+        ${files.map((f) => `<a href="${mediaUrl(f.path, f.libId)}" target="_blank" rel="noopener">📎 ${escapeHtml(f.name)}</a>`).join("")}
       </div>`
     : "";
 
@@ -3344,6 +3938,14 @@ function renderPlayerAndLesson() {
   document
     .getElementById("next-btn")
     ?.addEventListener("click", () => next && navigateToLesson(next.path));
+
+  // Drawer mobile: abre/fecha pelo botão "☰ Aulas" e fecha ao tocar o backdrop.
+  document
+    .getElementById("lesson-sidebar-toggle")
+    ?.addEventListener("click", () => toggleDrawer());
+  document
+    .getElementById("sidebar-backdrop")
+    ?.addEventListener("click", () => closeMobileDrawer());
 
   const videoEl = document.getElementById("video-el");
   if (videoEl) {
@@ -3617,7 +4219,8 @@ function wirePlayerUI(videoEl) {
     if (more) {
       e.stopPropagation();
       if (more.dataset.more === "theater") toggleTheaterMode();
-      else toggleSummaryPanel();
+      else if (more.dataset.more === "summary") toggleSummaryPanel();
+      else if (more.dataset.more === "subtitle-style") toggleSubtitleStylePanel();
       closePopovers();
       return;
     }
@@ -3658,10 +4261,11 @@ function wirePlayerUI(videoEl) {
 
 // ---------- Legendas por IA (estágio 6) ----------
 // Integração NÃO-bloqueante com o player: o vídeo toca primeiro; quando a
-// legenda está pronta é anexada via <track>. Se o modo de geração for
-// automático e não houver legenda, dispara a geração em segundo plano. O
-// status aparece num badge discreto (nunca um modal): "Legenda disponível",
-// "Gerando legenda…", "Legenda indisponível" ou "Erro ao gerar".
+// legenda está pronta, o texto é exibido no overlay .subtitle-overlay (nunca
+// via <track>). Se o modo de geração for automático e não houver legenda,
+// dispara a geração em segundo plano. O status aparece num badge discreto
+// (nunca um modal): "Legenda disponível", "Gerando legenda…", "Legenda
+// indisponível" ou "Erro ao gerar".
 let subtitlePollTimer = null;
 // Guarda de P1: só antecipa a próxima aula uma vez por montagem do player
 // (o backend já dedupa, mas isto evita POSTs repetidos a cada sondagem).
@@ -3935,40 +4539,65 @@ function applySubtitleStyleChange(panel) {
   syncSubtitleStylePanel(panel);
 }
 
-// Botão "Aa Aparência" no player: abre um popover com as opções de
-// personalização da legenda (tamanho, cor do texto, fundo, espaçamento,
-// contorno). Persistido em localStorage; aplicado ao vivo no player e no
-// preview do editor. Fecha com clique fora ou Esc.
+// Abre o painel de aparência da legenda. No desktop ele ancora no botão
+// "Aa Aparência" (absolute dentro do .lesson-header); no mobile (<600px) o
+// botão sai da toolbar e o acesso vira o item ⋮ > Aparência da legenda —
+// o painel abre centralizado na tela (position: fixed, via CSS).
+function subtitleStyleOpen() {
+  const panel = document.getElementById("subtitle-style-panel");
+  const btn = document.getElementById("subtitle-style-btn");
+  if (!panel) return;
+  if (window.matchMedia("(max-width: 600px)").matches) {
+    // Centralizado fixo: o CSS posiciona; limpa o top/left inline para o
+    // position:fixed da media query valer.
+    panel.style.top = "";
+    panel.style.left = "";
+    panel.hidden = false;
+    return;
+  }
+  const br = btn.getBoundingClientRect();
+  // offsetWidth/offsetHeight são 0 enquanto o painel está [hidden]
+  // (display:none) — sem esse fallback a largura 0 fazia o painel abrir com
+  // a borda esquerda na borda direita do botão e transbordar a viewport.
+  const pw = panel.offsetWidth || 250;
+  const ph = panel.offsetHeight || 240;
+  // Posição desejada no viewport, clampada para nunca gerar overflow
+  // horizontal/vertical, qualquer que seja a largura da janela.
+  const topVp = Math.max(8, Math.min(br.bottom + 6, window.innerHeight - ph - 8));
+  const leftVp = Math.max(8, Math.min(br.right - pw, window.innerWidth - pw - 8));
+  // O painel é absolute dentro do .lesson-header (position: relative): a
+  // posição viewport é convertida para o sistema de coordenadas do anchor.
+  const ar = panel.parentElement.getBoundingClientRect();
+  panel.style.top = Math.round(topVp - ar.top) + "px";
+  panel.style.left = Math.round(leftVp - ar.left) + "px";
+  panel.hidden = false;
+}
+
+function subtitleStyleClose() {
+  const panel = document.getElementById("subtitle-style-panel");
+  if (panel) panel.hidden = true;
+}
+
+function toggleSubtitleStylePanel() {
+  const panel = document.getElementById("subtitle-style-panel");
+  if (!panel) return;
+  if (panel.hidden) subtitleStyleOpen();
+  else subtitleStyleClose();
+}
+
+// Botão "Aa Aparência" no player (desktop) + item ⋮ > Aparência da legenda
+// (mobile): abrem um popover com as opções de personalização da legenda
+// (tamanho, cor do texto, fundo, espaçamento, contorno). Persistido em
+// localStorage; aplicado ao vivo no player e no preview do editor. Fecha com
+// clique fora ou Esc.
 function wireSubtitleStylePanel(wrap) {
   const btn = document.getElementById("subtitle-style-btn");
   const panel = document.getElementById("subtitle-style-panel");
   if (!btn || !panel) return;
   syncSubtitleStylePanel(panel);
-  const open = () => {
-    const br = btn.getBoundingClientRect();
-    // offsetWidth/offsetHeight são 0 enquanto o painel está [hidden]
-    // (display:none) — sem esse fallback a largura 0 fazia o painel abrir com
-    // a borda esquerda na borda direita do botão e transbordar a viewport.
-    const pw = panel.offsetWidth || 250;
-    const ph = panel.offsetHeight || 240;
-    // Posição desejada no viewport, clampada para nunca gerar overflow
-    // horizontal/vertical, qualquer que seja a largura da janela.
-    const topVp = Math.max(8, Math.min(br.bottom + 6, window.innerHeight - ph - 8));
-    const leftVp = Math.max(8, Math.min(br.right - pw, window.innerWidth - pw - 8));
-    // O painel é absolute dentro do .lesson-header (position: relative): a
-    // posição viewport é convertida para o sistema de coordenadas do anchor.
-    const ar = panel.parentElement.getBoundingClientRect();
-    panel.style.top = Math.round(topVp - ar.top) + "px";
-    panel.style.left = Math.round(leftVp - ar.left) + "px";
-    panel.hidden = false;
-  };
-  const close = () => {
-    panel.hidden = true;
-  };
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (panel.hidden) open();
-    else close();
+    toggleSubtitleStylePanel();
   });
   // Controles do painel
   panel.querySelectorAll(".ssp-size button").forEach((b) => {
@@ -3998,10 +4627,10 @@ function wireSubtitleStylePanel(wrap) {
     applySubtitleGeometry();
   });
   document.addEventListener("click", (e) => {
-    if (!panel.hidden && !panel.contains(e.target) && e.target !== btn) close();
+    if (!panel.hidden && !panel.contains(e.target) && e.target !== btn) subtitleStyleClose();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") close();
+    if (e.key === "Escape") subtitleStyleClose();
   });
 }
 
@@ -4009,6 +4638,15 @@ function wireSubtitleStylePanel(wrap) {
 let subtitleGeoRO = null;
 let subtitleIdleMO = null;
 let subtitleGeoListeners = []; // [{target,type,fn}]
+
+// Piso da fonte da legenda: no mobile (≤640px) o quadro em retrato é pequeno
+// (~170–200px de altura), e o piso de 12px renderizava texto miúdo. Um piso
+// maior mantém a legenda legível sem mudar o desktop (onde o quadro é alto e
+// o valor proporcional domina). "sm"/"md"/"lg" continuam escalando este piso
+// em applySubtitleGeometry.
+function subtitleMinFontPx() {
+  return window.matchMedia("(max-width: 640px)").matches ? 14 : 12;
+}
 
 // Quadro REAL do vídeo dentro do player-wrap: object-fit: contain letterboxa o
 // vídeo dentro do elemento <video> (que ocupa 100% do wrap). O quadro renderado
@@ -4038,7 +4676,7 @@ function computeSubtitleGeometry(videoEl, wrap) {
         width: fw,
         height: fh,
       },
-      fontPx: Math.max(12, Math.min(36, Math.round(fh * 0.04))),
+      fontPx: Math.max(subtitleMinFontPx(), Math.min(36, Math.round(fh * 0.04))),
       bottomInset: ctrlH > 0 ? ctrlH + Math.max(6, Math.round(fh * 0.02)) : Math.max(6, Math.round(fh * 0.02)),
     };
   }
@@ -4052,7 +4690,7 @@ function computeSubtitleGeometry(videoEl, wrap) {
   // Fonte proporcional ao quadro (padrão sutil ≈ 4% da altura), com clamp.
   // A preferência de "Tamanho" (sm/md/lg) escala este valor em
   // applySubtitleGeometry — a base aqui é sempre a do tamanho "Normal".
-  const fontPx = Math.max(12, Math.min(36, Math.round(fh * 0.04)));
+  const fontPx = Math.max(subtitleMinFontPx(), Math.min(36, Math.round(fh * 0.04)));
   const margin = Math.max(6, Math.round(fh * 0.02));
   const bottomInset = ctrlH > 0 ? ctrlH + margin : margin;
   return {
@@ -4177,10 +4815,10 @@ function updateSubtitleOverlay(time) {
 
 // Carrega o documento editável do backend e liga o overlay à reprodução.
 // Usa /api/subtitles/editor (fonte: edited > processed > vtt; nunca raw).
-async function loadSubtitleOverlay(videoEl, rel) {
+async function loadSubtitleOverlay(videoEl, rel, libId) {
   let doc;
   try {
-    const res = await fetch("/api/subtitles/editor?path=" + encodeURIComponent(rel));
+    const res = await fetch("/api/subtitles/editor?path=" + encodeURIComponent(rel) + libQuery({ libId }));
     if (!res.ok) return false;
     doc = await res.json();
   } catch {
@@ -4264,6 +4902,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
     fetch(
       "/api/subtitles/generate?path=" +
         encodeURIComponent(rel) +
+        libQuery(video) +
         "&priority=0" +
         force,
       { method: "POST" },
@@ -4291,7 +4930,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
 
   const check = async () => {
     try {
-      const res = await fetch("/api/subtitles/status?path=" + encodeURIComponent(rel));
+      const res = await fetch("/api/subtitles/status?path=" + encodeURIComponent(rel) + libQuery(video));
       if (!res.ok) throw new Error("http " + res.status);
       st = await res.json();
       // Sem Whisper configurado ⇒ o controle CC não tem o que fazer (gerar
@@ -4324,7 +4963,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
       // backend (edited > processed > vtt; nunca raw) e liga à reprodução.
       if (!overlayLoaded) {
         overlayLoaded = true;
-        loadSubtitleOverlay(videoEl, rel).then((ok) => {
+        loadSubtitleOverlay(videoEl, rel, video.libId).then((ok) => {
           if (!ok) return;
           // timeupdate SÓ atualiza o texto do segmento ativo — sem re-render.
           videoEl.addEventListener("timeupdate", () =>
@@ -4375,9 +5014,12 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
       stReady = false;
       stFailed = false;
       setCc("generating");
-      fetch("/api/subtitles/generate?path=" + encodeURIComponent(rel), {
-        method: "POST",
-      }).catch(() => {});
+      fetch(
+        "/api/subtitles/generate?path=" +
+          encodeURIComponent(rel) +
+          libQuery(video),
+        { method: "POST" },
+      ).catch(() => {});
       return; // continua a sondar até ficar pronta
     }
     stReady = false;
@@ -4400,6 +5042,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
     fetch(
       "/api/subtitles/generate?path=" +
         encodeURIComponent(next.path) +
+        libQuery(next) +
         "&priority=1&skipIfReady=1",
       { method: "POST" },
     ).catch(() => {});
@@ -5206,7 +5849,7 @@ function editorShowToast(text) {
 function navigateToLesson(lessonPath) {
   const video = state.flatVideos.find((v) => v.path === lessonPath);
   if (!video) return;
-  location.hash = `/course/${encodeURIComponent(state.currentCourseNode.path)}?lesson=${encodeURIComponent(lessonPath)}`;
+  location.hash = courseHref(state.currentCourseNode, lessonPath);
 }
 
 function changePlaybackSpeed(videoEl, delta) {
@@ -5240,6 +5883,17 @@ async function togglePlayerFullscreen(videoEl) {
     return;
   }
 
+  // iOS < 16.4 não tem Element.requestFullscreen; o único caminho é o
+  // fullscreen nativo do <video> (webkitEnterFullscreen), que degrada para os
+  // controles nativos (sem overlay/legenda) — melhor do que o botão não fazer
+  // nada. Navegadores modernos nunca chegam aqui.
+  if (videoEl && videoEl.webkitEnterFullscreen) {
+    try {
+      videoEl.webkitEnterFullscreen();
+    } catch {}
+    return;
+  }
+
   if (videoEl && videoEl.requestFullscreen) {
     await videoEl.requestFullscreen().catch(() => {});
   }
@@ -5265,10 +5919,10 @@ function registerShortcuts() {
     // teclado: Esc fecha).
     if (document.querySelector(".modal-overlay")) return;
 
-    // Esc fecha os popovers do player (volume/velocidade) antes de qualquer
-    // outra ação global.
+    // Esc fecha os popovers do player (volume/velocidade) e o drawer mobile
+    // antes de qualquer outra ação global.
     if (event.key === "Escape") {
-      if (closePlayerPopovers()) {
+      if (closePlayerPopovers() || closeMobileDrawer()) {
         event.preventDefault();
         return;
       }
@@ -5443,16 +6097,98 @@ function registerShortcutCaptureListener() {
   });
 }
 
-function renderCourse(app, coursePath, lessonPath, editMode) {
+// Breadcrumb clicável de um caminho de pasta: Home › TI › Python. Cada ancestral
+// vira um link #/topic/<path>; a Home linka para #/. Usa os mesmos estilos do
+// breadcrumb do player (prefixo truncável + separadores + folha).
+function topicBreadcrumb(path, libId) {
+  const parts = path.split("/");
+  let html = `<a class="breadcrumb-link" href="#/">Home</a>`;
+  let acc = "";
+  const libPrefix = isExternalLib(libId) ? encodeURIComponent(libId) + "/" : "";
+  for (const part of parts) {
+    acc = acc ? `${acc}/${part}` : part;
+    const isLast = part === parts[parts.length - 1];
+    html += `<span class="breadcrumb-sep"> › </span>`;
+    html += isLast
+      ? `<span class="breadcrumb-leaf">${escapeHtml(part)}</span>`
+      : `<a class="breadcrumb-link" href="#/topic/${libPrefix}${encodeURIComponent(acc)}">${escapeHtml(part)}</a>`;
+  }
+  return html;
+}
+
+// Visão de tópico: lista os filhos (sub-tópicos e cursos) num grid, sem abrir o
+// player. Não mostra favoritos nem progresso (v1 só contagens — §13 do prompt).
+function renderTopic(app, topicPath, libId) {
+  const node = findNodeByPath(libTree(libId), topicPath);
+  if (!node || node.type !== "topic") {
+    renderCourse(app, topicPath, null, false, libId);
+    return;
+  }
+  state.currentCourseNode = null;
+  state.flatVideos = [];
+  const children = node.children || [];
+  // Escopo contextual do tópico (CURRENT_TOPIC subtree only, recursivo):
+  // "Continuar assistindo" e "Seu progresso" só enxergam cursos DENTRO deste
+  // tópico — tópicos irmãos, cursos da Home e outras bibliotecas ficam de fora.
+  const scopeCourses = collectCoursesInScope(node);
+  const scopeSummary = getLibraryProgressSummary(scopeCourses);
+  const topContinue = buildContinueItems(scopeCourses, progFor);
+  let html = `
+    <div class="topic-view">
+      <div class="topic-breadcrumb">${topicBreadcrumb(topicPath, libId)}</div>
+      <h1 class="topic-title" title="${escapeHtml(topicTitle(node))}">${escapeHtml(topicTitle(node))}</h1>`;
+  if (topContinue.length) {
+    html += renderContinueSection(topContinue, scopeSummary);
+  }
+  if (scopeCourses.length) {
+    html += renderProgressSection(scopeSummary, scopeCourses.length);
+  }
+  if (!children.length) {
+    html += `<div class="empty-state">Tópico vazio.</div>`;
+  } else {
+    // Tópico, por construção, só tem pastas como filhas (sub-tópicos e cursos).
+    // Defensivo: se houver vídeo/material direto, renderiza como lista simples
+    // em vez de card.
+    const folders = children.filter(
+      (c) => c.type === "folder" || c.type === "topic",
+    );
+    const loose = children.filter((c) => c.type !== "folder");
+    if (folders.length) {
+      html += `<div class="course-grid">`;
+      for (const child of folders) {
+        html += renderNodeCard(child);
+      }
+      html += `</div>`;
+    }
+    if (loose.length) {
+      html += `<ul class="topic-loose">`;
+      for (const item of loose) {
+        html += `<li><a href="${mediaUrl(item.path, item.libId)}" target="_blank" rel="noopener">${escapeHtml(item.name)}</a></li>`;
+      }
+      html += `</ul>`;
+    }
+  }
+  html += `</div>`;
+  app.innerHTML = html;
+  bindProgressToggle();
+}
+
+function renderCourse(app, coursePath, lessonPath, editMode, libId) {
   // Editor de legendas desativado: ignora ?editSubtitles=1 e nunca entra em modo editor.
   subtitleEditorMode = false;
-  const course = state.tree.children.find(
-    (c) => c.type === "folder" && c.path === coursePath,
-  );
-  if (!course) {
+  // Resolve por path na árvore da biblioteca inteira (não só top-level) —
+  // habilita cursos aninhados em tópicos. Um nó com type==="topic" delega a
+  // renderTopic (links velhos #/course/<topicPath> degradam bem).
+  const node = findNodeByPath(libTree(libId), coursePath);
+  if (!node || (node.type !== "folder" && node.type !== "topic")) {
     app.innerHTML = `<div class="empty-state">Curso não encontrado.</div>`;
     return;
   }
+  if (node.type === "topic") {
+    renderTopic(app, coursePath, libId);
+    return;
+  }
+  const course = node;
 
   state.currentCourseNode = course;
   state.flatVideos = flattenVideos(course);
@@ -5465,19 +6201,19 @@ function renderCourse(app, coursePath, lessonPath, editMode) {
     // mesmo que haja aulas anteriores ainda não concluídas.
     const inProgress = state.flatVideos
       .filter((v) => {
-        const p = state.progress[v.path];
+        const p = progFor(v);
         return p && p.position > 5 && !p.completed;
       })
       .sort(
         (a, b) =>
-          (state.progress[b.path].updatedAt || 0) -
-          (state.progress[a.path].updatedAt || 0),
+          (progFor(b).updatedAt || 0) - (progFor(a).updatedAt || 0),
       );
     video =
       inProgress[0] ||
-      state.flatVideos.find(
-        (v) => !(state.progress[v.path] && state.progress[v.path].completed),
-      ) ||
+      state.flatVideos.find((v) => {
+        const p = progFor(v);
+        return !(p && p.completed);
+      }) ||
       state.flatVideos[0] ||
       null;
   }
@@ -5499,12 +6235,12 @@ function renderCourse(app, coursePath, lessonPath, editMode) {
 
   app.innerHTML = `
     <div class="back-link" id="back-link">← Voltar aos cursos</div>
-    <div class="course-view ${theater ? "theater" : ""} ${summaryOpen ? "summary-open" : ""}">
+    <div class="course-view drawer-host ${theater ? "theater" : ""} ${summaryOpen ? "summary-open" : ""}">
       <div class="player-col">
         <div class="course-toolbar">
           <div class="course-toolbar-title">${escapeHtml(courseTitle(course))}</div>
           <div class="course-toolbar-actions">
-            <button class="secondary-btn" id="toggle-fav-course">${isFavorite(course.path) ? "★ Favorito" : "☆ Favoritar"}</button>
+            <button class="secondary-btn" id="toggle-fav-course">${isFavorite(course.path, course.libId) ? "★ Favorito" : "☆ Favoritar"}</button>
             ${courseSubtitleBtn}
             <button class="secondary-btn" id="clear-course-progress">Limpar progresso do curso</button>
           </div>
@@ -5514,6 +6250,7 @@ function renderCourse(app, coursePath, lessonPath, editMode) {
         <div id="materials-slot"></div>
         <div id="subtitle-editor-slot"></div>
       </div>
+      <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
       <div class="sidebar">
         <div class="sidebar-title"><span class="sidebar-course-name">${escapeHtml(courseTitle(course))}</span> <span class="pct">${pct}%</span></div>
         <div class="sidebar-progress">
@@ -5533,7 +6270,7 @@ function renderCourse(app, coursePath, lessonPath, editMode) {
   document
     .getElementById("toggle-fav-course")
     ?.addEventListener("click", () => {
-      toggleFavorite(course.path);
+      toggleFavorite(course.path, course.libId);
       route();
     });
   document
@@ -5546,7 +6283,7 @@ function renderCourse(app, coursePath, lessonPath, editMode) {
         confirmLabel: "Limpar",
         cancelLabel: "Cancelar",
         danger: true,
-        onConfirm: () => clearProgress(course.path),
+        onConfirm: () => clearProgress(course.path, course.libId),
       });
     });
   document
@@ -5558,7 +6295,7 @@ function renderCourse(app, coursePath, lessonPath, editMode) {
       btn.textContent = "Enfileirando…";
       try {
         const res = await fetch(
-          "/api/subtitles/generate-course?path=" + encodeURIComponent(course.path),
+          "/api/subtitles/generate-course?path=" + encodeURIComponent(course.path) + libQuery(course),
           { method: "POST" },
         );
         const data = await res.json().catch(() => ({}));
@@ -5625,10 +6362,26 @@ function route() {
 
   const app = document.getElementById("app");
   const hash = location.hash.slice(1) || "/";
-  if (hash.startsWith("/course/")) {
-    const rest = hash.slice("/course/".length);
-    const [coursePathEnc, query] = rest.split("?");
-    const coursePath = decodeURIComponent(coursePathEnc);
+  if (hash.startsWith("/course/") || hash.startsWith("/topic/")) {
+    // #/course/<path> (curso) e #/topic/<path> (tópico) caem no mesmo parse;
+    // renderCourse decide pelo type do nó (topic → renderTopic).
+    const prefix = hash.startsWith("/course/") ? "/course/" : "/topic/";
+    const rest = hash.slice(prefix.length);
+    const [nodePathEnc, query] = rest.split("?");
+    // Prefixo de biblioteca (legado): o primeiro segmento pode ser um id de
+    // biblioteca não-padrão. O path restante vem 100% encoded (nunca `/` cru),
+    // então um `/` real separa o id do path.
+    let libId = null;
+    let pathEnc = nodePathEnc;
+    const slashIdx = nodePathEnc.indexOf("/");
+    if (slashIdx !== -1) {
+      const first = decodeURIComponent(nodePathEnc.slice(0, slashIdx));
+      if (getLibById(first)) {
+        libId = first;
+        pathEnc = nodePathEnc.slice(slashIdx + 1);
+      }
+    }
+    const nodePath = decodeURIComponent(pathEnc);
     let lessonPath = null;
     let editMode = false;
     if (query) {
@@ -5637,7 +6390,7 @@ function route() {
         lessonPath = decodeURIComponent(params.get("lesson"));
       editMode = params.get("editSubtitles") === "1";
     }
-    renderCourse(app, coursePath, lessonPath, editMode);
+    renderCourse(app, nodePath, lessonPath, editMode, libId);
   } else if (hash === "/settings" || hash.startsWith("/settings/")) {
     // #/settings → "Geral"; #/settings/<cat> → categoria específica.
     renderSettings(app);
@@ -5664,12 +6417,16 @@ async function init() {
   registerShortcutCaptureListener();
   registerShortcuts();
 
-  // Fecha os popovers do player (volume/velocidade) ao clicar/tocar fora.
+  // Fecha os popovers do player (volume/velocidade/CC/⋮) ao clicar/tocar fora.
   document.addEventListener("pointerdown", (e) => {
     const volPop = document.getElementById("pc-vol-pop");
     const volBtn = document.getElementById("pc-vol-btn");
     const speedMenu = document.getElementById("pc-speed-menu");
     const speedBtn = document.getElementById("pc-speed-btn");
+    const ccMenu = document.getElementById("pc-cc-menu");
+    const ccBtn = document.getElementById("pc-cc-btn");
+    const moreMenu = document.getElementById("pc-more-menu");
+    const moreBtn = document.getElementById("pc-more-btn");
     if (volPop && !volPop.hidden && !e.target.closest(".pc-group-vol")) {
       volPop.hidden = true;
       volBtn?.setAttribute("aria-expanded", "false");
@@ -5677,6 +6434,14 @@ async function init() {
     if (speedMenu && !speedMenu.hidden && !e.target.closest(".pc-group-speed")) {
       speedMenu.hidden = true;
       speedBtn?.setAttribute("aria-expanded", "false");
+    }
+    if (ccMenu && !ccMenu.hidden && !e.target.closest(".pc-group-cc")) {
+      ccMenu.hidden = true;
+      ccBtn?.setAttribute("aria-expanded", "false");
+    }
+    if (moreMenu && !moreMenu.hidden && !e.target.closest(".pc-group-more")) {
+      moreMenu.hidden = true;
+      moreBtn?.setAttribute("aria-expanded", "false");
     }
   });
 
@@ -5706,10 +6471,12 @@ async function init() {
     const first = state.lastSearchResults[0];
     if (!first) return;
     event.preventDefault();
-    if (first.lessonPath) {
-      location.hash = `/course/${encodeURIComponent(first.coursePath)}?lesson=${encodeURIComponent(first.lessonPath)}`;
+    if (first.type === "topic") {
+      location.hash = topicRoute({ path: first.path, libId: first.libId });
+    } else if (first.lessonPath) {
+      location.hash = courseRoute({ path: first.coursePath, libId: first.libId }) + `?lesson=${encodeURIComponent(first.lessonPath)}`;
     } else {
-      location.hash = `/course/${encodeURIComponent(first.coursePath)}`;
+      location.hash = courseRoute({ path: first.coursePath, libId: first.libId });
     }
   });
   document.getElementById("rescan-btn").addEventListener("click", async (e) => {

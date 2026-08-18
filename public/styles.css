@@ -749,6 +749,9 @@ body {
   align-items: center;
   justify-content: center;
   padding: 20px;
+  /* iPhone com home indicator: a margem inferior ganha o respiro da safe-area
+     (env() é 0 no desktop — visual atual preservado). */
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
   background: rgba(0, 0, 0, 0.62);
   animation: fade-in 0.15s ease;
 }
@@ -760,6 +763,12 @@ body {
   padding: 20px;
   width: 100%;
   max-width: 420px;
+  /* Mensagens longas não empurram o modal para fora da viewport (scroll
+     interno); no desktop nunca chega a rolar para os diálogos atuais. A
+     segunda declaração desconta a safe-area inferior (env() = 0 no desktop). */
+  max-height: calc(100dvh - 40px);
+  max-height: calc(100dvh - 40px - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
 }
 .modal-title {
   font-size: 16px;
@@ -950,6 +959,62 @@ body {
 .course-card-meta {
   font-size: 12px;
   color: var(--text-dim);
+}
+/* Tag discreta de card de tópico: distingue do card de curso sem virar
+   um elemento novo — reusa o grid/card existentes. */
+.topic-card-tag {
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  background: var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+/* ---------- Visão de tópico (navegação hierárquica) ---------- */
+.topic-view {
+  padding-top: 8px;
+}
+.topic-breadcrumb {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 14px;
+}
+.breadcrumb-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+.breadcrumb-link:hover {
+  text-decoration: underline;
+}
+.topic-title {
+  font-size: 24px;
+  margin: 0 0 22px;
+  overflow-wrap: break-word;
+}
+.topic-view .course-grid {
+  margin-bottom: 0;
+}
+/* Lista defensiva (vídeo/material direto dentro de um tópico — não deve
+   ocorrer, mas sem card quebrado se acontecer). */
+.topic-loose {
+  margin: 0 0 24px;
+  padding-left: 20px;
+  line-height: 1.9;
+}
+.topic-loose a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.topic-loose a:hover {
+  text-decoration: underline;
 }
 
 .progress-bar {
@@ -1364,10 +1429,11 @@ body {
   width: 100%;
   aspect-ratio: 16/9;
   /* Limite vertical fluido: em janelas baixas o player cede a altura (o vídeo
-     faz letterbox dentro do wrap). dvh = altura "dinâmica" real do navegador
-     (varia com barra de URL/modo janela); vh fica como fallback. */
+     faz letterbox dentro do wrap). svh = altura "estável" (small viewport):
+     não reage ao colapso/expansão da barra de URL durante o scroll (dvh
+     causava resize no landscape/wide); vh fica como fallback. */
   max-height: min(72vh, 780px);
-  max-height: min(72dvh, 780px);
+  max-height: min(72svh, 780px);
   min-height: 0;
   background: linear-gradient(180deg, #020304, #0e1015);
   border-radius: calc(var(--radius) + 4px);
@@ -1402,6 +1468,9 @@ body {
 }
 .player-wrap:fullscreen .pc-bottom {
   padding: 18px 24px 12px;
+  /* iPhone em landscape fullscreen: home indicator pode encostar nos
+     controles; o env() dá o respiro só onde existe safe-area (desktop = 0). */
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 .player-wrap:fullscreen .pc-center {
   width: 72px;
@@ -2333,10 +2402,17 @@ body {
   /* Títulos longos de curso quebram em vez de estourar a toolbar. */
   overflow-wrap: break-word;
 }
-/* Bloco do título encolhe (min-width:0) para o breadcrumb truncar em vez de
-   empurrar os botões Anterior/Próxima para fora da viewport. */
-.lesson-header .lesson-title-block {
+/* Bloco do título + botão "☰ Aulas": o bloco encolhe (min-width:0) para o
+   breadcrumb truncar em vez de empurrar a navegação para fora da viewport. */
+.lesson-header .lesson-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
   flex: 1 1 220px;
+  min-width: 0;
+}
+.lesson-header .lesson-title-block {
+  flex: 1;
   min-width: 0;
 }
 .lesson-header h2 {
@@ -2396,6 +2472,17 @@ body {
 .nav-buttons button:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* Botão "☰ Aulas" (drawer mobile): visível apenas em ≤900px (media query
+   correspondente re-exibe o botão). No desktop o sumário usa o item ⋮. */
+.lesson-sidebar-toggle {
+  display: none;
+}
+/* Backdrop do drawer: fora do media query é descartado (nunca vira terceiro
+   item do grid no desktop). O comportamento de overlay vem da media query. */
+.sidebar-backdrop {
+  display: none;
 }
 
 .materials {
@@ -2831,31 +2918,101 @@ body {
   body {
     background-attachment: scroll;
   }
+  /* Desativa o overscroll vertical/pull-to-refresh nativo do navegador (Chrome
+     Android escala a página inteira durante o gesto, fazendo o player "encolher"
+     visualmente em portrait). O app tem botão próprio de atualizar ("⟳"),
+     então o pull-to-refresh nativo não é usado. Só em telas pequenas (touch);
+     desktop não é afetado. Scroll normal intacto. */
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+  /* Guarda de overflow horizontal do drawer: o sumário fechado fica off-canvas
+     (position:fixed, translateX(102%)) e, em janelas ≤~340px, o box fora da
+     tela ainda conta no overflow rolável da raiz (docScrollWidth > innerWidth),
+     gerando uma rolagem horizontal fantasma de ~20px. `overflow-x: clip`
+     elimina a contribuição sem criar um novo scroll container (o topbar
+     sticky continua grudando no viewport). Padrão standard de off-canvas. */
+  html,
+  body {
+    overflow-x: hidden;
+  }
+  @supports (overflow: clip) {
+    html,
+    body {
+      overflow-x: clip;
+    }
+  }
   .course-view {
     grid-template-columns: 1fr;
     gap: var(--gap-col);
   }
-  /* Modo Teatro em telas estreitas: o sumário nunca vira coluna espremida ao
-     lado do player. Aberto, ele empilha abaixo (bloco normal); fechado, some. */
+  /* Modo Teatro em telas estreitas: nunca vira coluna espremida ao lado do
+     player — o sumário vira DRAWER off-canvas (regras abaixo). */
   .course-view.theater,
   .course-view.theater.summary-open {
     grid-template-columns: 1fr;
   }
-  .course-view.theater .sidebar {
-    min-width: 0;
-    overflow: visible;
+  /* Drawer mobile: o sumário sai do fluxo e desliza da direita quando
+     .drawer-open é adicionado ao .course-view (helpers em app.js). Fechado,
+     fica fora da tela e invisível (nada tabulável — a ocultação vence o
+     visibility:hidden que o teatro aplica no desktop). O estado não é
+     persistido: trocar de aula re-renderiza e fecha o drawer.
+     A posição fixa vive SEMPRE em .drawer-host (não em :not(.drawer-open)):
+     num estado-dependente, adicionar .drawer-open derrubaria position/top/
+     right/bottom/z-index e o sumário "saltaria" de volta ao fluxo da página,
+     empilhado abaixo do player. O :not() controla só o estado off-canvas. */
+  .course-view.drawer-host .sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(340px, 86vw);
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    border-left: 1px solid var(--border);
+    z-index: 60;
+    visibility: hidden;
+    transform: translateX(102%);
+    transition: transform 0.25s ease, visibility 0.25s ease;
+    box-shadow: -16px 0 40px rgba(0, 0, 0, 0.4);
+    /* Respiro para home-indicator (iOS) no fim da árvore rolável. */
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
-  .course-view.theater:not(.summary-open) .sidebar {
-    display: none;
+  .course-view.drawer-host:not(.drawer-open) .sidebar {
+    visibility: hidden;
+    transform: translateX(102%);
   }
-  .sidebar {
-    position: static;
-    /* Sumário empilhado abaixo do player com altura limitada à janela real
-       (dvh) + scroll interno: em 641–900px a árvore não vira uma página
-       infinita. O #tree-slot volta ao comportamento base rolável. */
-    max-height: min(56vh, 500px);
-    max-height: min(56dvh, 500px);
-    margin-top: 8px;
+  .course-view.drawer-host.drawer-open .sidebar {
+    visibility: visible;
+    transform: translateX(0);
+  }
+  .course-view.drawer-host.drawer-open #tree-slot {
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex: 1 1 auto;
+  }
+  .course-view .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 59;
+    background: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  .course-view.drawer-host.drawer-open .sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+    /* Gestos sobre o backdrop fecham o drawer (tap) em vez de rolar a página. */
+    touch-action: none;
+  }
+  /* Botão "☰ Aulas": só existe no mobile (escondido no desktop). */
+  .lesson-sidebar-toggle {
+    display: inline-flex;
   }
   .player-wrap {
     min-height: 320px;
@@ -2913,6 +3070,24 @@ body {
   .pc-center {
     width: 58px;
     height: 58px;
+  }
+  /* Seek: área de toque maior sem mudar o visual (trilha continua fina). */
+  .pc-progress {
+    height: 28px;
+  }
+  .pc-seek {
+    height: 28px;
+  }
+  /* Navegação de aula e materiais: área de toque sem mudar o visual. */
+  .nav-buttons button,
+  .lesson-sidebar-toggle {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .materials a {
+    min-height: 40px;
+    align-items: center;
   }
 }
 
@@ -3338,6 +3513,102 @@ body {
   .pc-more-menu {
     max-height: min(60dvh, 430px);
     overflow-y: auto;
+  }
+}
+
+/* ---------- Composição mobile do cabeçalho da aula (≤600px) ----------
+   Hierarquia clara no celular:
+     Título da aula ............... [☰ Aulas]
+     breadcrumb compacto
+     ┌─────────────┐
+     │   VÍDEO     │
+     └─────────────┘
+     [‹ Anterior]              [Próxima ›]
+     Materiais da aula
+   O "☰ Aulas" sai dos controles do player (é navegação do curso, não controle
+   multimídia) e ganha a própria linha com o título. Anterior/Próxima formam
+   uma linha própria e equilibrada (mesma largura/altura, alvo de toque amplo).
+   Ações secundárias (aparência, velocidade, legendas) ficam no menu ⋮. */
+@media (max-width: 600px) {
+  .lesson-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .lesson-title-row {
+    width: 100%;
+    flex: none;
+    gap: 10px;
+  }
+  .lesson-title-block {
+    flex: 1;
+    min-width: 0;
+  }
+  .lesson-title-block h2 {
+    font-size: 15px;
+    margin: 0 0 2px;
+  }
+  .lesson-header .breadcrumb {
+    font-size: 11px;
+  }
+  /* "☰ Aulas": navegação do curso, sempre visível e com alvo de toque amplo
+     (não compete mais com os controles multimídia). */
+  .lesson-sidebar-toggle {
+    flex-shrink: 0;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 13px;
+    align-self: flex-start;
+  }
+  .player-controls {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+    flex-shrink: 1;
+  }
+  .nav-buttons {
+    flex: 1;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .nav-buttons button {
+    flex: 1;
+    min-height: 44px;
+    padding: 12px 8px;
+    font-size: 13px;
+  }
+  /* "Aa Aparência" sai da toolbar → menu ⋮ > Aparência da legenda. */
+  #subtitle-style-btn {
+    display: none;
+  }
+  .subtitle-style-panel {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  /* Volume: esconde o % no botão da barra (o popover continua mostrando os
+     valores exatos); o badge EXTRA permanece como indicador compacto. */
+  .pc-vol-label {
+    display: none;
+  }
+  .pc-vol-btn {
+    padding: 0 10px;
+  }
+  /* Controles numa única linha (▶ tempo 🔊 fullscreen ⋮) quando couber:
+     reduz a altura da barra (o seek + 1 linha ≈ 90px em vez de 2 linhas
+     ≈ 140px) e devolve área tocável ao vídeo — o centro do quadro volta a
+     ser o vídeo/play grande em vez de cair sobre o seek em telas mais altas.
+     Em 320px, se o tempo for longo, o flex-wrap reflui os secundários para a
+     segunda linha naturalmente (sem overflow). */
+  .pc-secondary {
+    flex-basis: auto;
+    justify-content: flex-end;
+  }
+  .pc-bottom {
+    padding: 8px 8px 6px;
   }
 }
 
@@ -4155,4 +4426,110 @@ body {
     margin-left: 0;
     width: 100%;
   }
+}
+
+/* --- Settings: Bibliotecas --- */
+.lib-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+.lib-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card);
+  flex-wrap: wrap;
+}
+.lib-row-main {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.lib-row-name {
+  font-weight: 600;
+}
+.lib-row-path {
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.lib-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.2);
+  margin-left: 6px;
+  vertical-align: 1px;
+  color: var(--text-dim);
+}
+.lib-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.lib-badge-ok {
+  color: var(--success);
+  background: rgba(51, 201, 111, 0.12);
+}
+.lib-badge-warn {
+  color: var(--accent);
+  background: rgba(255, 138, 61, 0.12);
+}
+.lib-badge-off {
+  color: var(--text-dim);
+  background: rgba(128, 128, 128, 0.16);
+}
+.lib-row-count {
+  font-size: 12px;
+  color: var(--text-mid);
+  white-space: nowrap;
+}
+.lib-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.lib-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.lib-btn:hover {
+  background: var(--bg-hover);
+}
+.lib-btn-danger {
+  color: var(--danger);
+  border-color: rgba(255, 91, 91, 0.45);
+}
+.lib-btn-danger:hover {
+  background: rgba(255, 91, 91, 0.12);
+}
+.lib-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.lib-field {
+  margin: 10px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }

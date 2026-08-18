@@ -1,15 +1,93 @@
 # Como validar alterações
 
-Checklist completo do Local Player. No `CLAUDE.md` fica o resumo rápido; aqui está o passo a passo completo.
+Checklist operacional. Rode os passos que se aplicarem à sua mudança. A base é
+a suíte automatizada; o restante é exercício manual do fluxo real.
 
-1. `node --check server.js public/app.js` (sintaxe).
-2. Rode o servidor (`npm start`) e exercite: scan, navegação, player (originais compatíveis sem transcode), busca, favoritos, progresso (recarregar a página preserva posição), atalhos, Configurações.
-3. Fallback de transcode: toque um formato incompatível (ex.: `.mkv`/`.avi`) e confirme badge → início da reprodução em segundos → `[TRANSCODE] progresso` no log → arquivo final em `data/transcoded/`; seek após o trecho convertido aguarda/416; `POST /api/transcode/clear` limpa cache e cancela jobs.
-4. Persistência: escreva progresso, derrube o servidor no meio de uma gravação (ou simule `progress.json` corrompido) e confirme recuperação do backup.
-5. Path traversal: chame `/media/../../etc/passwd`, `/api/video/fallback?path=../../etc/passwd`, e (no Windows) variantes com `\`, `..\..\`, e caminhos absolutos `C:\Windows\...`/`D:\...` → 404/400, nunca conteúdo fora de `ROOT`.
-6. Duas instâncias: suba a segunda na mesma porta → mensagem clara + exit.
-7. IA sem nada instalado: `GET /api/ai/status` → whisper/moonshine `available:false` honesto, `GET /api/ai/config` sem nenhuma chave; Configurações → Central de IA renderiza as 6 abas (a aba Transcrição lista idiomas/modelos mesmo com whisper indisponível).
-8. Geração (com whisper fake ou real em `WHISPER_BIN`): `POST /api/subtitles/generate` → log `[SUBTITLE]` por etapa → `data/subtitles/raw/<hash>.json` criado → `GET /api/subtitles/status` → `GET /subtitles/<hash>.vtt?rel=` serve o **VTT canônico** `ROOT/<curso>/.courseplayer/subtitles/<hash>.vtt` (end>start, máx. 2 linhas). Re-POST do mesmo vídeo → "cache encontrado" sem re-extração; `touch` no vídeo → re-extração (raw com source velho é descartado); 2 POSTs concorrentes → `alreadyRunning:true`. **Fila priorizada**: enfileirar 3+ vídeos → todos completam (o antigo bug de travar após `subtitleMax` sumiu); abrir aula Y com primeira-aula do curso X rodando em P2 → Y (P0) ganha o slot (preempção `extracting`/`transcribing` dentro de `PREEMPT_GRACE_MS`) e X volta à fila em P3 e completa depois; rescan → só a primeira aula de cada curso entra em P2; aula seguinte entra em P1 (`pregenNextLesson`); com `background` e fila P0–P2 vazia → lote ≤ `BACKGROUND_BATCH` em P3; `generate-course` → vídeos do curso sem legenda em P3.
-9. LLM: off ⇒ sem chamadas e legenda normal; on válido ⇒ `correctedByLlm:true`; inalcançável/timeout ⇒ "LLM ignorado (erro)" e legenda concluída; mock que inventa/duplica/omite id ou encurta ⇒ guardrail rejeita e original é preservado. Conferir que nenhum log imprime chave/token.
-10. Concorrência de IA: enquanto um transcode roda, a geração de legenda fica na fila (`heavySlots`) e vice-versa — sem simultaneidade. Persistência: reiniciar o servidor no meio de um job retoma de "processing" (raw existe) ou "queued" (sem artefato) — nunca trava. VAD/threads/progresso: com o build atual (`capabilities.vad:false`) o pipeline **não passa `-vad`** e o VAD aparece como não suportado na UI (honesto); `advanced.transcriptionThreads>0` → `-t N`; com `-pp`, `percent` aparece no status conforme `progress = N%` no stderr (nunca porcentagem inventada). Se algum dia se re-habilitar `vad:true` num build que rejeite → o erro "não gerou saída JSON" propaga stderr e o retry-once repete sem a flag (erro original preservado se ambos falharem).
-11. **Editor**: abrir `#/course/<curso>?lesson=<aula>&editSubtitles=1` → lista com o mesmo nº de segmentos do processed; editar texto + `input` → badge "alterações não salvas" e preview ao vivo no overlay; Salvar → `data/subtitles/edited/<hash>.json` (ids estáveis, `version` +1) + VTT derivado (espelho e canônico); reabrir → edição mantida. Undo/redo (focar o textarea antes), nudge ±0,5/±1s, "Definir início/fim" (marca o `currentTime`), split/merge/add/delete, click navega o vídeo, highlight do segmento atual. **Conflito**: salvar com `version` velho (outra aba salvou) → 409 → diálogo "Conflito de edição" → Recarregar recarrega do servidor. **Dirty guard**: sair do editor com alterações → confirmação; confirmar descarta. **Exportar** VTT/SRT. "Corrigir com IA" com LLM off → mensagem honesta sem chamada; com mock → mapa de correções aplicado na cópia de trabalho (nada gravado até Salvar). Regenerar → backup da edição em `data/subtitles/backup/` + edição ativa removida (legenda volta ao estado gerado). Conferir que raw NUNCA muda e que edição manual some ao `clear` do vídeo.
+## 1. Suíte automatizada
+
+```bash
+node --check server.js public/app.js public/scope.js
+git diff --check
+node --test test/progress.test.js test/topics.test.js test/libraries.test.js \
+  test/scope.test.js test/sidebar.test.js test/sidebar-runtime-smoke.js \
+  test/progress-invariance.test.js test/progress-persistence.test.js \
+  test/progress-forensic.test.js
+```
+
+`progress`, `sidebar-runtime-smoke`, `progress-invariance`,
+`progress-persistence` e `progress-forensic` sobem servidor real com
+`LP_DATA_DIR` em diretório temporário; os demais são puros.
+
+## 2. Exercício manual da UI
+
+Suba com `npm start` e verifique:
+
+- **Scan/navegação**: Home com cards; abrir curso e tópico; busca
+  (accent-insensitive) achando curso, aula, tópico e material.
+- **Player**: reprodução de original compatível sem transcode; progresso salvo
+  (recarregar preserva a posição); favoritos; atalhos; Configurações.
+- **Materiais**: arquivos de apoio abaixo do player; sidebar só com aulas.
+
+## 3. Fallback de transcoding
+
+Use um `.mkv`/`.avi` (ou formato que o navegador não reproduza):
+
+1. o player tenta o original → badge não-bloqueante de preparação;
+2. `[TRANSCODE] progresso` no log do servidor;
+3. arquivo final em `data/transcoded/` (`.tmp` só vira final após exit 0);
+4. seek além do trecho convertido aguarda ou responde 416;
+5. `POST /api/transcode/clear` limpa o cache e cancela jobs **sem tocar**
+   `progress.json`.
+
+## 4. Persistência de progresso
+
+- Escreva progresso, derrube o servidor (inclusive no meio de gravação) e
+  reinicie → posição preservada (restauração do backup).
+- Corrompa `progress.json` (ou remova) → no boot o arquivo danificado é
+  preservado como `.corrupt-<ts>` e o main é restaurado do melhor backup.
+- Rescan (`⟳ Atualizar`/`POST /api/rescan`) **não** remove chaves de progresso.
+- Clear explícito é o único caminho que remove entradas.
+
+## 5. Path traversal e bibliotecas
+
+- `/media/../../etc/passwd`, `/api/video/fallback?path=../../etc/passwd` e
+  variantes Windows (`\`, `..\..\`, absolutos `C:\`/`D:\`) → 404/400, nunca
+  conteúdo fora da biblioteca.
+- Duas instâncias na mesma porta → mensagem clara + exit.
+- Biblioteca externa: adicionar (path inválido/aninhado/proibido → erro),
+  navegar/tocar/persistir com chave `libId\0rel`, remover é config-only (jobs
+  ativos → 409; padrão não remove).
+
+## 6. IA e legendas
+
+- **Sem nada instalado**: `GET /api/ai/status` → `available:false` honesto;
+  `GET /api/ai/config` sem chaves; Central de IA renderiza as 6 abas.
+- **Geração** (com whisper em `WHISPER_BIN`): `POST /api/subtitles/generate` →
+  log por etapa → raw criado → VTT canônico no `.courseplayer/subtitles/` e
+  espelho em `data/subtitles/`. Re-POST dedup (`alreadyRunning`/cache); `force=1`
+  regenera; `touch` no vídeo invalida o raw antigo.
+- **Fila P0–P3**: abrir aula enfileira P0; próxima em P1; após scan, 1ª aula de
+  cada curso em P2; background em P3. Não gera a biblioteca inteira.
+- **LLM**: off → sem chamadas; on válido → correção aplicada; falha/timeout →
+  original preservado; saída que inventa/omite id ou encurta → guardrail
+  rejeita. Nenhum log imprime chave/token.
+- **Concorrência**: transcode e whisper compartilham slots (não rodam juntos
+  por padrão); LLM não consome slot.
+
+## 7. Tópicos e escopo
+
+- Biblioteca de teste com `.topic`/`(TP)` aninhados e cursos diretos: Home
+  mostra cards de tópico (marcador explícito; `Projeto TP`/`(TP) Curso`/`Aula
+  TP` não viram tópicos); breadcrumb; curso dentro de tópico abre o player.
+- Escopo: "Seu progresso"/"Continuar assistindo" global na Home (com fallback
+  quando não há curso direto) e restrito à subárvore dentro de tópicos;
+  `TI` não alcança `TI2` (comparação por segmentos).
+
+## 8. Mobile e desktop
+
+- Viewports mobile (320–430px): drawer de aulas, cabeçalho compacto, controles
+  em uma linha, sem overflow horizontal; arrastar no topo **não** aciona o
+  pull-to-refresh (overscroll desativado) e o player mantém 16/9.
+- Landscape/wide: player respeita o limite vertical (`72svh`) sem resize
+  dinâmico durante scroll.
+- Desktop: player, fullscreen, controles, legendas e layout inalterados.

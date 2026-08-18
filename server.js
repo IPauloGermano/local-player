@@ -14,12 +14,22 @@ const { spawn } = require("child_process");
 
 const ROOT = path.resolve(__dirname, ".."); // pasta-pai do app (raiz da biblioteca)
 const APP_DIR_NAME = path.basename(__dirname); // "_LocalPlayer" - ignorado no scan
-const DATA_DIR = path.join(__dirname, "data");
+// Override de dados (testes em sandbox): aponta progresso/caches/registry para
+// um diretório temporário, sem tocar o data/ real. Uso normal não define a env.
+const DATA_DIR = process.env.LP_DATA_DIR
+  ? path.resolve(process.env.LP_DATA_DIR)
+  : path.join(__dirname, "data");
 const PROGRESS_FILE = path.join(DATA_DIR, "progress.json");
 const PROGRESS_BACKUP_FILE = path.join(DATA_DIR, "progress.json.bak");
 // Segunda geração de backup (rotação): escrito em momento diferente do bak,
 // então uma remoção brusca do pendrive raramente o atinge junto dos demais.
 const PROGRESS_BACKUP2_FILE = path.join(DATA_DIR, "progress.json.bak.1");
+// Registry de bibliotecas: ÚNICA fonte das raízes permitidas (config confiável).
+// Semeada com a biblioteca padrão (ROOT) na primeira execução — o usuário atual
+// não configura nada. Mesmo contrato de durabilidade do progresso (atômico +
+// .bak + .corrupt-<ts>).
+const LIBRARIES_FILE = path.join(DATA_DIR, "libraries.json");
+const DEFAULT_LIBRARY_ID = "default";
 const PORT = process.env.PORT || 4173;
 // Interface de escuta. Por padrão o servidor escuta em todas as interfaces
 // (documentado no README: acesso pela rede local é comportamento atual).
@@ -137,6 +147,20 @@ const IMAGE_EXT = new Set([
   ".bmp",
   ".avif",
 ]);
+// Tipos com CONTEÚDO ATIVO que o navegador pode executar quando renderizados no
+// top-level (HTML/SVG/XML/JS/JSON). Materiais desses tipos são servidos como
+// download (Content-Disposition: attachment) para nunca rodarem no origin da
+// app; `X-Content-Type-Options: nosniff` cobre o restante (anti MIME-sniff).
+const ACTIVE_EXT = new Set([
+  ".html",
+  ".htm",
+  ".xhtml",
+  ".svg",
+  ".xml",
+  ".js",
+  ".mjs",
+  ".json",
+]);
 const IGNORED_EXT = new Set([".ini", ".db", ".lnk"]);
 const COVER_NAME_HINTS = [
   "cover",
@@ -147,7 +171,10 @@ const COVER_NAME_HINTS = [
   "img",
 ];
 
-let treeCache = null;
+// Cache de árvore POR biblioteca (multi-biblioteca). Uma biblioteca indisponível
+// não corrompe o cache das demais; `POST /api/libraries/:id/rescan` força só a
+// dela. A árvore padrão (ROOT) vive aqui com o mesmo id de antes.
+const treeCaches = new Map(); // libraryId -> { status, error, tree, lastScanAt }
 
 function naturalSort(a, b) {
   return a.name.localeCompare(b.name, "pt-BR", {
@@ -223,6 +250,7 @@ const TITLE_KEEP_CASE = {
   "juniors": "Juniors",
   "nocode": "NoCode",
   "startup": "StartUp",
+  "ti": "TI",
   "python": "Python",
   "docker": "Docker",
   "linux": "Linux",
@@ -394,6 +422,10 @@ function normalizeDisplayTitle(rawName, opts = {}) {
   const { isVideo = false, keepNumber = false } = opts;
   let t = String(rawName || "").trim();
   if (isVideo) t = t.replace(VIDEO_EXT_STRIP_RE, "");
+  // Sufixo explícito de tópico "(TP)" no final do nome real da pasta:
+  // removido SÓ do título de exibição (o `name` original permanece intacto —
+  // a classificação de tipo acontece no scan). Vídeos não são afetados.
+  if (!isVideo) t = t.replace(/\(TP\)\s*$/i, "").trim();
   // truncamento: "Lendo e Escrevendo Arq..." -> "Lendo e Escrevendo Arq"
   t = t.replace(TRAILING_DOTS_RE, "");
   let moduleNumber = null;
@@ -411,6 +443,8 @@ function normalizeDisplayTitle(rawName, opts = {}) {
       if (remainder && !/^[.\d]/.test(remainder)) t = remainder;
     }
     t = t.replace(AUTHOR_SUFFIX_RE, "");
+    // Numeração inicial removida para todos os tipos (cursos, módulos e
+    // tópicos): "1. Language" -> "Language".
     t = removeLeadingNumbering(t);
     // "01 - 1AULA~1.mp4": sufixo de nome curto 8.3 do Windows (artefato)
     t = t.replace(/\s*~\d+\s*$/, "");
@@ -498,14 +532,28 @@ async function scanDir(absDir, relDir) {
   try {
     entries = await fs.readdir(absDir, { withFileTypes: true });
   } catch {
-    return { children: [], videoCount: 0, coverImage: null };
+    return { children: [], videoCount: 0, coverImage: null, type: "folder" };
   }
 
   const dirs = [];
   const files = [];
+  // Marcador explícito `.topic` (arquivo vazio) dentro da pasta declara que
+  // ela é um TÓPICO. É dotfile: ignorado pelo scan (nunca vira material nem
+  // resultado de busca) e pelo static — não pode ser confundido com
+  // `.courseplayer` (pasta de artefatos de legenda, propósito diferente).
+  let hasTopicMarker = false;
   for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
+    if (entry.name.startsWith(".")) {
+      if (entry.name === ".topic" && !entry.isDirectory()) hasTopicMarker = true;
+      continue;
+    }
     if (relDir === "" && entry.name === APP_DIR_NAME) continue;
+    // Sem suporte a symlinks/junctions (invariante multiplataforma): um link
+    // dentro da biblioteca pode apontar para FORA dela. Não indexar diretórios
+    // linkados (evita recursão fora da raiz) nem arquivos linkados (não podem
+    // ser servidos/processados). O realpath containment no serve/processo é a
+    // segunda barreira para paths vindos do frontend.
+    if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) dirs.push(entry);
     else files.push(entry);
   }
@@ -522,12 +570,21 @@ async function scanDir(absDir, relDir) {
     const sub = await scanDir(entryAbs, entryRel);
     videoCount += sub.videoCount;
     children.push({
-      type: "folder",
+      // Classificação explícita: "topic" (marcador `.topic` ou nome com "(TP)")
+      // ou "folder" (curso/module — comportamento normal). Sem heurística.
+      type: sub.type,
       name: entry.name,
       path: entryRel,
-      // Módulos/tópicos mantêm o número no título de exibição ("01 - …")
-      // para o usuário saber em qual está; aulas não exibem numeração.
-      title: normalizeDisplayTitle(entry.name, { keepNumber: true }),
+      // Tópicos: título normalizado sem prefixo de módulo e sem numeração
+      // inicial ("1. Language" -> "Language", "(TP)" removido); a primeira
+      // letra vem sempre maiúscula (toDisplayCase). Módulos/cursos mantêm a
+      // numeração.
+      title: normalizeDisplayTitle(
+        entry.name,
+        sub.type === "topic"
+          ? { keepNumber: false }
+          : { keepNumber: true },
+      ),
       children: sub.children,
       videoCount: sub.videoCount,
       coverImage: sub.coverImage,
@@ -597,29 +654,96 @@ async function scanDir(absDir, relDir) {
     }
   }
 
+  // Classificação explícita e previsível (sem inferência estrutural):
+  //   - arquivo `.topic` dentro da pasta  ⇒ TÓPICO
+  //   - nome real terminando em "(TP)"    ⇒ TÓPICO
+  //   - senão                             ⇒ folder (curso/módulo normal)
+  // Todo o restante (conteúdo direto, subpastas, profundidade, contagens de
+  // vídeo/aula) NÃO influencia. O `name` real nunca muda; "(TP)" é removido
+  // só do título de exibição em normalizeDisplayTitle.
+  const isTopicBySuffix = /\(TP\)\s*$/i.test(path.basename(absDir));
+  const type = hasTopicMarker || isTopicBySuffix ? "topic" : "folder";
+
   const coverImage = chooseCoverImage(directCover, childCoverCandidates);
 
-  return { children, videoCount, coverImage };
+  return { children, videoCount, coverImage, type };
 }
 
-async function getTree(force) {
-  if (!treeCache || force) {
-    const result = await scanDir(ROOT, "");
-    treeCache = {
-      children: result.children,
-      videoCount: result.videoCount,
-      scannedAt: Date.now(),
+// Scan de UMA biblioteca com try/catch próprio: uma biblioteca indisponível
+// retorna { status:"unavailable", error } sem lançar e não derruba as demais.
+async function scanLibrary(lib) {
+  try {
+    // Caminho inexistente/inacessível ⇒ unavailable. O scanDir sozinho
+    // engoliria ENOENT e devolveria árvore vazia com status "ok", mascarando
+    // um drive desmontado como biblioteca válida sem cursos.
+    const st = await fs.stat(lib.path);
+    if (!st.isDirectory()) {
+      return { status: "unavailable", error: "not a directory", tree: null };
+    }
+    const result = await scanDir(lib.path, "");
+    return {
+      status: "ok",
+      error: null,
+      tree: {
+        children: result.children,
+        videoCount: result.videoCount,
+        scannedAt: Date.now(),
+      },
+    };
+  } catch (err) {
+    return {
+      status: "unavailable",
+      error: sanitizeTestError(err.message || "scan error"),
+      tree: null,
     };
   }
-  return treeCache;
 }
 
-// Garante que um caminho relativo pedido pelo cliente não escapa da raiz da biblioteca.
-function resolveSafeRelPath(relPath) {
+// Re-escaneia UMA biblioteca (deduplicado por id) e atualiza o cache dela.
+// Retorna o summary com status/lastScanAt/error atuais.
+async function rescanLibrary(lib) {
+  if (scanningLibraryIds.has(lib.id)) {
+    // Scan já em andamento: devolve o estado atual sem duplicar.
+    return librarySummary(lib, treeCaches.get(lib.id) || {});
+  }
+  scanningLibraryIds.add(lib.id);
+  try {
+    const scanned = await scanLibrary(lib);
+    scanned.lastScanAt = Date.now();
+    treeCaches.set(lib.id, scanned);
+    return librarySummary(lib, scanned);
+  } finally {
+    scanningLibraryIds.delete(lib.id);
+  }
+}
+
+// Árvore consolidada (opção A da auditoria): lista de { library, tree }.
+// Scan SEQUENCIAL das bibliotecas habilitadas (pendrive/disco externo: paralelo
+// martela o barramento/USB). `force` re-escaneia tudo; desativadas não escaneiam.
+async function getTree(force) {
+  await loadLibraries();
+  const libraries = getLibraries().filter((l) => l.enabled !== false);
+  const results = [];
+  for (const lib of libraries) {
+    const cached = treeCaches.get(lib.id);
+    if (!cached || force) {
+      results.push(await rescanLibrary(lib));
+    } else {
+      results.push(librarySummary(lib, cached));
+    }
+  }
+  return { libraries: results };
+}
+
+// Garante que um caminho relativo pedido pelo cliente não escapa da raiz da
+// biblioteca. `base` opcional ancorra a resolução no path canônico de uma
+// biblioteca (default: ROOT — caso particular da biblioteca padrão).
+function resolveSafeRelPath(relPath, base) {
   if (typeof relPath !== "string" || !relPath) return null;
   const normalized = path.normalize(relPath).replace(/^([/\\])+/, "");
-  const abs = path.resolve(ROOT, normalized);
-  if (abs !== ROOT && !abs.startsWith(ROOT + path.sep)) return null;
+  const rootBase = base || ROOT;
+  const abs = path.resolve(rootBase, normalized);
+  if (abs !== rootBase && !abs.startsWith(rootBase + path.sep)) return null;
   // `rel` é SEMPRE canônico com "/" — mesmo formato da árvore do scan e das
   // URLs (multiplataforma). No Windows, `path.normalize` devolveria "\" e as
   // chaves de progresso deixariam de bater com os paths vindos do scan. O
@@ -627,13 +751,51 @@ function resolveSafeRelPath(relPath) {
   return { abs, rel: normalized.split(path.sep).join("/") };
 }
 
+// Análogo ao resolveSafeRelPath, ancorado no path CANÔNICO de uma biblioteca
+// (config confiável) — nunca num path enviado pelo navegador. O rel volta com
+// "/" (mesmo contrato); `abs` com o separador nativo do filesystem.
+function resolveLibraryRel(lib, rel) {
+  if (!lib || typeof lib.path !== "string" || !lib.path) return null;
+  return resolveSafeRelPath(rel, lib.path);
+}
+
+// Requer que o arquivo esteja DENTRO do path canônico da biblioteca depois de
+// resolver symlinks/junctions (realpath). `resolveSafeRelPath` é puramente
+// lexical: um symlink DENTRO da biblioteca apontando para fora (ex.:
+// link → /etc/passwd, link → o data/ de outra biblioteca) passaria por ele e o
+// sendFile/ffmpeg/whisper seguiria o link. Este check fecha a brecha em todos
+// os pontos que ABREM o arquivo — nunca servir/processar um alvo que escapa da
+// biblioteca autorizada. Sem dependência de suporte a symlink (multiplataforma).
+async function fileWithinLibrary(lib, abs) {
+  if (!lib || typeof lib.path !== "string" || !lib.path || !abs) return false;
+  let realDir;
+  try {
+    realDir = await fs.realpath(lib.path);
+  } catch {
+    return false;
+  }
+  let realFile;
+  try {
+    realFile = await fs.realpath(abs);
+  } catch {
+    return false;
+  }
+  const sep = path.sep;
+  const normEnd = (p) => (p.endsWith(sep) ? p.slice(0, -1) : p);
+  const rd = normEnd(realDir);
+  return realFile === rd || realFile.startsWith(rd + sep);
+}
+
 // BUG-001: o primeiro segmento do rel canônico é a pasta do app? O app vive
 // DENTRO de ROOT, então `resolveSafeRelPath` deixa passar `_LocalPlayer/*`;
 // este check fecha essa brecha em qualquer rota que resolva path de cliente.
-// Case-exato no Linux, case-insensitive no Windows (filesystem nativo). Só o
-// nome exato é bloqueado — cursos com nomes parecidos continuam acessíveis.
-function isAppDirRel(safe) {
+// Só se aplica à biblioteca PADRÃO (a única que contém a pasta do app): numa
+// biblioteca externa, uma pasta literalmente chamada "_LocalPlayer" não é o
+// app e não deve ser bloqueada. Case-exato no Linux, case-insensitive no
+// Windows (filesystem nativo).
+function isAppDirRel(safe, lib) {
   if (!safe) return false;
+  if (lib && !lib.isDefault) return false;
   const first = safe.rel.split("/")[0];
   return (
     first === APP_DIR_NAME ||
@@ -697,6 +859,50 @@ async function readProgress() {
     }
   }
   return {};
+}
+
+// Restaura o arquivo PRINCIPAL de progresso a partir do melhor backup válido
+// quando o principal está ausente/corrompido. Regra de negócio (caso B do
+// recovery): "progress.json ausente + backup válido → restaurar backup". O
+// arquivo corrompido é preservado como `.corrupt-<ts>` (evidência para
+// diagnóstico — nunca apagado). Só é chamado no boot (initPersistence), antes
+// de o servidor aceitar saves, então não há corrida com a fila de escrita.
+// Retorna true quando restaurou. Nunca sobrescreve um principal VÁLIDO.
+async function restoreProgressFromBackup() {
+  const main = await readJsonFile(PROGRESS_FILE);
+  if (main.ok) return false; // principal válido — nada a fazer
+
+  if (main.raw !== null) {
+    // Corrompido (existe mas não é JSON válido): preserva a evidência.
+    console.error(
+      "progress.json corrompido; preservando o arquivo e restaurando do backup…",
+    );
+    await fs
+      .rename(PROGRESS_FILE, `${PROGRESS_FILE}.corrupt-${Date.now()}`)
+      .catch(() => {});
+  }
+
+  for (const backupFile of [PROGRESS_BACKUP_FILE, PROGRESS_BACKUP2_FILE]) {
+    const backup = await readJsonFile(backupFile);
+    if (backup.ok) {
+      console.log(
+        `[PROGRESS] recovery: restaurando progresso de ${path.basename(backupFile)}`,
+      );
+      await writeFileAtomic(PROGRESS_FILE, backup.raw);
+      return true;
+    }
+    // Backup corrompido: preserva a evidência (.corrupt-<ts>) e tenta o
+    // próximo na cadeia — nunca apaga arquivo danificado (diagnóstico).
+    if (backup.raw !== null) {
+      console.error(
+        `${path.basename(backupFile)} corrompido; preservando e tentando o próximo…`,
+      );
+      await fs
+        .rename(backupFile, `${backupFile}.corrupt-${Date.now()}`)
+        .catch(() => {});
+    }
+  }
+  return false;
 }
 
 // Escrita atômica e durável: o conteúdo vai para um arquivo temporário
@@ -776,19 +982,118 @@ function requestVolumeSync(file) {
 
 // Escritas serializadas (fila): o corpo da task SÓ roda depois da anterior
 // terminar (execução deferida), tornando o read-modify-write atômico e
-// evitando colisão no arquivo temporário.
+// evitando colisão no arquivo temporário. `opts.allowShrink` habilita a única
+// operação que pode REMOVER chaves (o clear explícito). `opts.
+// allowCompletedRegression` habilita o toggle manual de conclusão (o ✓ da
+// sidebar). Todo o resto é protegido contra escrita regressiva POR CONTEÚDO.
 let progressWriteQueue = Promise.resolve();
 
-function updateProgress(mutator) {
+// sha256 curto do estado serializado — identifica exatamente quando o arquivo
+// muda entre duas escritas (forense).
+function progressHash(obj) {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(obj))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+// Diferença entre dois estados de progresso (forense + guarda regressiva).
+// Devolve os grupos de mudança; não imprime valores além das chaves.
+function progressDiff(before, after) {
+  const bKeys = new Set(Object.keys(before));
+  const aKeys = new Set(Object.keys(after));
+  const removed = [];
+  const added = [];
+  const changed = [];
+  const completedRegressions = []; // completed true → não-true
+  const durationLost = []; // duration válida (>0) → ausente/0
+  const positionAbsent = []; // position válida → ausência
+  for (const k of bKeys) {
+    if (!aKeys.has(k)) { removed.push(k); continue; }
+    const b = before[k];
+    const a = after[k];
+    if (JSON.stringify(b) !== JSON.stringify(a)) {
+      changed.push(k);
+      if (b && a && typeof b === "object" && typeof a === "object") {
+        if (b.completed === true && a.completed !== true) completedRegressions.push(k);
+        if (Number.isFinite(b.duration) && b.duration > 0 && !(Number.isFinite(a.duration) && a.duration > 0)) durationLost.push(k);
+        if (Number.isFinite(b.position) && b.position >= 0 && (a.position === undefined || a.position === null || !Number.isFinite(a.position))) positionAbsent.push(k);
+      }
+    }
+  }
+  for (const k of aKeys) if (!bKeys.has(k)) added.push(k);
+  return { removed, added, changed, completedRegressions, durationLost, positionAbsent };
+}
+
+// Modo forense (env LP_PROGRESS_FORENSIC=1): cada escrita registra hash/diff/
+// stack e grava snapshot antes, para descobrir QUEM/QUANDO/POR QUE o estado
+// muda. Nunca ativo em uso normal.
+const progressForensic = process.env.LP_PROGRESS_FORENSIC === "1" || process.env.LP_PROGRESS_FORENSIC === "true";
+
+function updateProgress(mutator, opts = {}) {
   // BUG-002: no shutdown, novos saves são rejeitados — a fila em andamento
   // é drenada com timeout pelo shutdownNow antes do exit.
   if (shuttingDown) {
     return Promise.reject(new Error("servidor em desligamento"));
   }
+  const allowShrink = opts.allowShrink === true;
+  const allowCompletedRegression = opts.allowCompletedRegression === true;
+  const requestId = opts.requestId || crypto.randomUUID();
   const run = progressWriteQueue.then(async () => {
-    const progress = await readProgress();
-    await mutator(progress);
-    const serialized = JSON.stringify(progress, null, 2);
+    const state = await readProgress();
+    // Snapshot do estado ANTES da mutação (para hash/diff/guarda).
+    const beforeState = JSON.parse(JSON.stringify(state));
+    const beforeHash = progressHash(state);
+    await mutator(state);
+    const afterHash = progressHash(state);
+    const diff = progressDiff(beforeState, state);
+    const entryCountBefore = Object.keys(beforeState).length;
+    const entryCountAfter = Object.keys(state).length;
+
+    // Guarda anti-perda POR CONTEÚDO: um save NORMAL nunca pode
+    //   - remover chaves;
+    //   - virar um estado vazio a partir de um não-vazio;
+    //   - regredir completed de true para false (exceto toggle manual);
+    //   - perder uma duration válida;
+    //   - perder uma position válida (virar ausência).
+    // A redução de POSIÇÃO é permitida (reassistir/voltar e pausar é regra
+    // atual do player — a proteção de reassistir concluído vive no frontend).
+    if (!allowShrink) {
+      const regressionReasons = [];
+      if (diff.removed.length) regressionReasons.push(`removedKeys=${JSON.stringify(diff.removed)}`);
+      if (entryCountBefore > 0 && entryCountAfter === 0) regressionReasons.push("estado vazio a partir de não-vazio");
+      if (!allowCompletedRegression && diff.completedRegressions.length) regressionReasons.push(`completedRegressions=${JSON.stringify(diff.completedRegressions)}`);
+      if (diff.durationLost.length) regressionReasons.push(`durationLost=${JSON.stringify(diff.durationLost)}`);
+      if (diff.positionAbsent.length) regressionReasons.push(`positionAbsent=${JSON.stringify(diff.positionAbsent)}`);
+      if (regressionReasons.length) {
+        console.error(
+          `[PROGRESS] rejected invalid state (${entryCountBefore} → ${entryCountAfter} entradas, requestId=${requestId}): ${regressionReasons.join("; ")}; estado persistido preservado`,
+        );
+        throw new Error("refusing regressive progress write");
+      }
+    }
+
+    // Forense: registra a tentativa de escrita (hash antes/depois, diff, stack)
+    // e grava snapshot em disco — só com LP_PROGRESS_FORENSIC=1.
+    if (progressForensic) {
+      console.log(
+        `[PROGRESS-WRITE] ${new Date().toISOString()} reason=save requestId=${requestId} isClear=${allowShrink} entryCountBefore=${entryCountBefore} entryCountAfter=${entryCountAfter} added=${diff.added.length} removed=${diff.removed.length} changed=${diff.changed.length} beforeHash=${beforeHash} afterHash=${afterHash}`,
+      );
+      if (diff.removed.length) console.log(`[PROGRESS-WRITE] removedKeys=${JSON.stringify(diff.removed)}`);
+      if (diff.changed.length) console.log(`[PROGRESS-WRITE] changedKeys=${JSON.stringify(diff.changed)}`);
+      if (diff.completedRegressions.length) console.log(`[PROGRESS-WRITE] completedRegressions=${JSON.stringify(diff.completedRegressions)}`);
+      console.log(`[PROGRESS-WRITE] stack:\n${new Error().stack.split("\n").slice(0, 7).join("\n")}`);
+      try {
+        const snap = path.join(DATA_DIR, `progress.snapshot.${Date.now()}.${requestId}.json`);
+        await fs.writeFile(
+          snap,
+          JSON.stringify({ ts: Date.now(), requestId, isClear: allowShrink, beforeHash, afterHash, before: beforeState, after: state }, null, 2),
+        );
+      } catch {}
+    }
+
+    const serialized = JSON.stringify(state, null, 2);
     // Antes de sobrescrever, mantém o último estado válido como backup —
     // é dele que a recuperação automática parte após uma corrupção.
     const current = await readJsonFile(PROGRESS_FILE);
@@ -820,6 +1125,9 @@ function updateProgress(mutator) {
 }
 
 async function initPersistence() {
+  // Multi-biblioteca: carrega o registry ANTES de reconciliar jobs de legenda
+  // (que resolvem `rel` → `abs` pelo libraryId persistido no job).
+  await initLibraries();
   // Remove temporários órfãos de escritas interrompidas em execuções anteriores.
   try {
     const files = await fs.readdir(DATA_DIR);
@@ -842,6 +1150,11 @@ async function initPersistence() {
     );
   } catch {}
 
+  // Restaura o progresso do melhor backup quando o principal está
+  // ausente/corrompido (preservando o arquivo danificado como .corrupt-<ts>).
+  // Antes do servidor aceitar saves — sem corrida com a fila de escrita.
+  await restoreProgressFromBackup();
+
   // Semeia o backup com o estado atual na primeira execução após a correção,
   // para que a recuperação automática já tenha um ponto de partida.
   const [main, backup, backup2] = await Promise.all([
@@ -862,6 +1175,219 @@ async function initPersistence() {
   // Depois da reconciliação, varre artefatos derivados órfãos (WAV / saída do
   // whisper) deixados por um crash — libera espaço e não interfere em jobs vivos.
   await cleanupSubtitleOrphans();
+
+  // Multi-biblioteca: migra as chaves de progresso legadas (sem `\0`) para o
+  // namespace da biblioteca padrão. Idempotente.
+  await migrateProgressKeys();
+}
+
+// ==========================================================================
+// Registry de bibliotecas (multi-biblioteca)
+// --------------------------------------------------------------------------
+// data/libraries.json é a ÚNICA fonte das raízes permitidas (config confiável).
+// A biblioteca padrão (id "default") aponta para ROOT e é semeada na primeira
+// execução — quem só tem ROOT não configura nada. Paths propostos pelo frontend
+// são validados/canonicalizados UMA vez na criação e nunca reutilizados como
+// confiáveis em operações de mídia (que sempre recebem libraryId + rel).
+// ==========================================================================
+
+let librariesCache = null; // [{ id, name, path, enabled, isDefault, createdAt }]
+let scanningLibraryIds = new Set(); // bibliotecas com scan em andamento
+
+function defaultLibraryEntry() {
+  return {
+    id: DEFAULT_LIBRARY_ID,
+    name: path.basename(ROOT) || "Biblioteca padrão",
+    path: ROOT,
+    enabled: true,
+    isDefault: true,
+    createdAt: Date.now(),
+  };
+}
+
+function getLibraries() {
+  return librariesCache || [];
+}
+
+function getLibraryById(id) {
+  if (typeof id !== "string") return null;
+  return getLibraries().find((l) => l.id === id) || null;
+}
+
+function getDefaultLibrary() {
+  return (
+    getLibraries().find((l) => l.isDefault) ||
+    getLibraries()[0] ||
+    defaultLibraryEntry()
+  );
+}
+
+// Resolve a biblioteca de uma requisição: `libraryId` explícito (query/body) ou
+// a biblioteca padrão quando ausente. Id desconhecido → null (o caller responde
+// 400 — nunca degrada silenciosamente para a padrão num id digitado errado).
+function requestLibrary(req) {
+  const id =
+    (req.query && typeof req.query.libraryId === "string" && req.query.libraryId) ||
+    (req.body && typeof req.body.libraryId === "string" && req.body.libraryId) ||
+    "";
+  if (!id) return getDefaultLibrary();
+  return getLibraryById(id);
+}
+
+async function persistLibraries() {
+  const data = { libraries: getLibraries(), updatedAt: Date.now() };
+  const serialized = JSON.stringify(data, null, 2);
+  const current = await readJsonFile(LIBRARIES_FILE);
+  if (current.ok && current.raw === serialized) return;
+  await writeFileAtomic(LIBRARIES_FILE, serialized);
+}
+
+// Carrega o registry (lazy, memoizado). Arquivo ausente → semeia a biblioteca
+// padrão; corrompido → preserva o original como .corrupt-<ts> e re-semeia.
+async function loadLibraries() {
+  if (librariesCache) return librariesCache;
+  const read = await readJsonFile(LIBRARIES_FILE);
+  let entries = null;
+  if (read.ok && read.parsed && Array.isArray(read.parsed.libraries)) {
+    entries = read.parsed.libraries.filter(
+      (l) => l && typeof l.id === "string" && typeof l.path === "string",
+    );
+  } else if (read.raw !== null) {
+    console.log(
+      `[LIBRARIES] ${path.basename(LIBRARIES_FILE)} ilegível; renomeado para .corrupt-<ts> e re-semeado`,
+    );
+    await fs
+      .rename(LIBRARIES_FILE, `${LIBRARIES_FILE}.corrupt-${Date.now()}`)
+      .catch(() => {});
+  }
+  const def = defaultLibraryEntry();
+  const defEntry = (entries || []).find((l) => l.id === DEFAULT_LIBRARY_ID);
+  if (defEntry) {
+    // A biblioteca padrão tem path IMUTÁVEL (== ROOT). Renomear/desativar sim.
+    defEntry.path = ROOT;
+    defEntry.isDefault = true;
+    if (typeof defEntry.name !== "string" || !defEntry.name) defEntry.name = def.name;
+    if (typeof defEntry.enabled !== "boolean") defEntry.enabled = true;
+    entries = [
+      defEntry,
+      ...(entries || []).filter((l) => l.id !== DEFAULT_LIBRARY_ID),
+    ];
+  } else {
+    entries = [def, ...(entries || [])];
+  }
+  librariesCache = entries;
+  await persistLibraries();
+  return librariesCache;
+}
+
+async function initLibraries() {
+  await loadLibraries();
+  return getLibraries();
+}
+
+// Valida e canonicaliza um path proposto de biblioteca. NUNCA toca o filesystem
+// além do realpath (resolve symlinks/junctions). Regras da auditoria §6/§13:
+// absoluto obrigatório, sem NUL/traversal, dir proibido (app/data/public/
+// node_modules) e sem aninhamento com bibliotecas existentes.
+async function validateLibraryPath(inputPath) {
+  if (typeof inputPath !== "string") {
+    return { ok: false, error: "path deve ser uma string" };
+  }
+  const p = inputPath.trim();
+  if (!p) return { ok: false, error: "path vazio" };
+  if (p.includes("\0")) return { ok: false, error: "path inválido" };
+  if (!path.isAbsolute(p)) return { ok: false, error: "path deve ser absoluto" };
+  let abs = path.resolve(p);
+  try {
+    abs = await fs.realpath(abs); // resolve symlinks/junctions → canônico
+  } catch {}
+  const sep = path.sep;
+  const norm = (x) => (x.endsWith(sep) ? x.slice(0, -1) : x);
+  const absN = norm(abs);
+  // Diretórios proibidos: a pasta do app (e subdirs) e a pasta de dados.
+  const forbidden = [
+    __dirname,
+    path.join(__dirname, "public"),
+    path.join(__dirname, "node_modules"),
+    DATA_DIR,
+  ];
+  for (const dir of forbidden) {
+    let canon;
+    try {
+      canon = await fs.realpath(dir);
+    } catch {
+      canon = path.resolve(dir);
+    }
+    const c = norm(canon);
+    if (c === absN || absN.startsWith(c + sep)) {
+      return { ok: false, error: "diretório proibido (pasta do app/data)" };
+    }
+  }
+  // Aninhamento com bibliotecas existentes (ancestral/descendente) — evita
+  // raízes ambíguas e double-scan.
+  for (const lib of getLibraries()) {
+    const c = norm(lib.path);
+    if (c === absN || absN.startsWith(c + sep) || c.startsWith(absN + sep)) {
+      return {
+        ok: false,
+        error: "path conflita com biblioteca existente (aninhado ou igual)",
+      };
+    }
+  }
+  return { ok: true, path: abs };
+}
+
+// Migra chaves de progresso legadas (sem "\0") para o namespace da biblioteca
+// padrão. Idempotente: chaves já com "\0" ficam intactas; nada é perdido. A
+// escrita atômica + backup preservam o estado pré-migração (reversível).
+async function migrateProgressKeys() {
+  const read = await readJsonFile(PROGRESS_FILE);
+  if (!read.ok || !read.parsed || typeof read.parsed !== "object") return;
+  const prefix = `${DEFAULT_LIBRARY_ID}\0`;
+  let changed = false;
+  for (const key of Object.keys(read.parsed)) {
+    if (key.includes("\0")) continue; // já migrado (ou de biblioteca explícita)
+    const value = read.parsed[key];
+    delete read.parsed[key];
+    read.parsed[prefix + key] = value;
+    changed = true;
+  }
+  if (!changed) return;
+  console.log(
+    `[PROGRESS] migrando chaves legadas para a biblioteca padrão (${DEFAULT_LIBRARY_ID})…`,
+  );
+  await writeFileAtomic(PROGRESS_FILE, JSON.stringify(read.parsed, null, 2));
+  // O backup também precisa ser migrado? Não: o backup é o estado pré-mudança
+  // (reversível); a recuperação automática já cobre chaves sem "\0".
+}
+
+// Formato público de uma biblioteca para /api/libraries e /api/tree (status
+// computado; nunca expõe estado interno).
+function librarySummary(lib, cached) {
+  const tree = cached && cached.tree;
+  let courseCount = 0;
+  if (tree && Array.isArray(tree.children)) {
+    const count = (nodes) =>
+      nodes.reduce(
+        (acc, n) =>
+          acc +
+          (n.type === "folder" ? 1 + count(n.children || []) : 0),
+        0,
+      );
+    courseCount = count(tree.children);
+  }
+  return {
+    id: lib.id,
+    name: lib.name,
+    path: lib.path,
+    enabled: lib.enabled !== false,
+    isDefault: lib.isDefault === true,
+    status: cached ? cached.status : "unknown",
+    error: cached ? cached.error : null,
+    lastScanAt: cached ? cached.lastScanAt : null,
+    courseCount,
+    tree,
+  };
 }
 
 // ==========================================================================
@@ -894,11 +1420,17 @@ async function ensureTools() {
   if (ffprobeAvailable === null) ffprobeAvailable = await detectTool(FFPROBE_BIN);
 }
 
-// Nome de cache determinístico e seguro a partir do caminho relativo: sha1
-// evita colisão entre cursos ("Curso A/Aula 01.mkv" ≠ "Curso B/Aula 01.mkv")
-// e nunca expõe o nome real do arquivo em um path do cliente.
-function transcodeCacheName(rel) {
-  return crypto.createHash("sha1").update(rel).digest("hex").slice(0, 24) + ".mp4";
+// Nome de cache determinístico e seguro a partir da identidade da biblioteca +
+// caminho relativo: sha1 evita colisão entre cursos de bibliotecas distintas
+// ("Curso A/Aula 01.mkv" na biblioteca X ≠ na Y) e nunca expõe o nome real do
+// arquivo em um path do cliente. A mudança de namespace deixa caches antigos
+// órfãos (descartáveis; regeneram sob demanda — nada é apagado).
+function transcodeCacheName(libId, rel) {
+  return crypto
+    .createHash("sha1")
+    .update(`${libId}\0${rel}`)
+    .digest("hex")
+    .slice(0, 24) + ".mp4";
 }
 
 function execFileAsync(bin, args) {
@@ -1001,7 +1533,7 @@ const transcodeQueue = []; // jobs aguardando um slot
 let activeTranscodes = 0;
 
 // Deduplica: várias requisições do mesmo vídeo compartilham UM job/ffmpeg.
-function startTranscodeJob(cacheName, rel, srcAbs, tmpPath, finalPath, probe) {
+function startTranscodeJob(libraryId, cacheName, rel, srcAbs, tmpPath, finalPath, probe) {
   const existing = transcodeJobs.get(cacheName);
   if (existing) {
     existing.lastConsumerAt = Date.now();
@@ -1010,6 +1542,7 @@ function startTranscodeJob(cacheName, rel, srcAbs, tmpPath, finalPath, probe) {
   const duration = probe && probe.format ? Number(probe.format.duration) : null;
   const job = {
     cacheName,
+    libraryId,
     rel,
     srcAbs,
     tmpPath,
@@ -1189,15 +1722,26 @@ setInterval(() => {
 // Plano de fallback: cache -> job -> probe de compatibilidade -> novo job
 // --------------------------------------------------------------------------
 
-function mediaUrlFromRel(rel) {
-  return "/media/" + rel.split("/").map(encodeURIComponent).join("/");
+// URL de mídia: a biblioteca PADRÃO usa o formato legado "/media/<rel>"
+// (back-compat de links/bookmarks); as demais prefixam "/media/<libId>/<rel>".
+function mediaUrlFromRel(lib, rel) {
+  const enc = rel.split("/").map(encodeURIComponent).join("/");
+  return lib && lib.id !== DEFAULT_LIBRARY_ID
+    ? `/media/${encodeURIComponent(lib.id)}/${enc}`
+    : `/media/${enc}`;
 }
 
-async function getTranscodePlan(rel, abs) {
+async function getTranscodePlan(lib, rel, abs) {
   await ensureTools();
-  const cacheName = transcodeCacheName(rel);
+  const cacheName = transcodeCacheName(lib.id, rel);
   const finalPath = path.join(TRANSCODE_DIR, cacheName);
   const tmpPath = finalPath + ".tmp";
+
+  // Symlink/junction apontando para fora da biblioteca: recusa antes de passar
+  // o caminho ao ffprobe/ffmpeg (ssrf/filesystem — nunca analisar alvo externo).
+  if (!(await fileWithinLibrary(lib, abs))) {
+    return { error: true, message: "Arquivo não encontrado." };
+  }
 
   const origStat = await fs.stat(abs).catch(() => null);
   if (!origStat) return { error: true, message: "Arquivo não encontrado." };
@@ -1223,7 +1767,7 @@ async function getTranscodePlan(rel, abs) {
   // O navegador reproduz o original? Não transcodifica (spec 2).
   const probe = await probeMedia(abs);
   if (probe && isBrowserCompatibleVideo(probe)) {
-    return { compatible: true, url: mediaUrlFromRel(rel) };
+    return { compatible: true, url: mediaUrlFromRel(lib, rel) };
   }
 
   if (!ffmpegAvailable) {
@@ -1234,7 +1778,7 @@ async function getTranscodePlan(rel, abs) {
     };
   }
 
-  const job = startTranscodeJob(cacheName, rel, abs, tmpPath, finalPath, probe);
+  const job = startTranscodeJob(lib.id, cacheName, rel, abs, tmpPath, finalPath, probe);
   return { compatible: false, status: "transcoding", url: `/transcoded/${cacheName}` };
 }
 
@@ -2145,28 +2689,36 @@ const MAX_CONCURRENT_TRANSCRIPTIONS = Math.max(
   parseInt(process.env.MAX_CONCURRENT_TRANSCRIPTIONS || "1", 10),
 );
 
-// Chave de cache determinística e segura: sha1 do caminho relativo (24 hex).
-// Nunca o nome do vídeo/curso em URLs — mesmo padrão do cache de transcoding.
-function subtitleCacheName(rel) {
-  return crypto.createHash("sha1").update(rel).digest("hex").slice(0, 24);
+// Chave de cache determinística e segura: sha1 da identidade `libraryId\0rel`
+// (24 hex). O namespace por biblioteca garante que o MESMO rel em duas
+// bibliotecas ("Curso A/Aula 1.mkv" no SSD e no pendrive) não colide em
+// raw/processed/edited/backup nem em jobs.json. Nunca o nome do vídeo/curso em
+// URLs. Mudança de namespace ⇒ raws antigos órfãos (nada é apagado).
+function subtitleCacheName(libId, rel) {
+  return crypto
+    .createHash("sha1")
+    .update(`${libId}\0${rel}`)
+    .digest("hex")
+    .slice(0, 24);
 }
 
 // Caminho do artefato FINAL dentro da pasta do curso (legenda canônica, viaja
-// com o curso). Se o vídeo estiver na raiz (rel sem "/"), não há curso — aí só
-// o espelho em data/subtitles/ serve. A pasta .courseplayer é ignorada pelo
-// scan da biblioteca (começa com "."), então nunca vira um "curso".
-function courseSubtitlePath(rel, hash) {
+// com o curso). Ancorado no path da BIBLIOTECA (lib.path), não em ROOT — o
+// artefato move com a biblioteca. Se o vídeo estiver na raiz (rel sem "/"),
+// não há curso — aí só o espelho em data/subtitles/ serve. A pasta
+// .courseplayer é ignorada pelo scan da biblioteca (começa com ".").
+function courseSubtitlePath(lib, rel, hash) {
   const idx = rel.indexOf("/");
   if (idx <= 0) return null;
   const courseName = rel.slice(0, idx);
-  return path.join(ROOT, courseName, COURSE_SUBTITLE_DIR, hash + ".vtt");
+  return path.join(lib.path, courseName, COURSE_SUBTITLE_DIR, hash + ".vtt");
 }
 
 // Escreve o artefato FINAL dentro da pasta do curso. Se a pasta do curso for
 // somente-leitura (ex.: pendrive protegido), cai para o espelho em
 // data/subtitles/ e loga — a geração nunca falha por causa disso.
-async function writeCourseSubtitle(rel, hash, vttText) {
-  const dest = courseSubtitlePath(rel, hash);
+async function writeCourseSubtitle(lib, rel, hash, vttText) {
+  const dest = courseSubtitlePath(lib, rel, hash);
   if (!dest) return false;
   try {
     await fs.mkdir(path.dirname(dest), { recursive: true });
@@ -2181,15 +2733,15 @@ async function writeCourseSubtitle(rel, hash, vttText) {
 }
 
 // Remover o VTT do curso (clear de um vídeo). Nunca lança.
-async function removeCourseSubtitle(rel, hash) {
-  const dest = courseSubtitlePath(rel, hash);
+async function removeCourseSubtitle(lib, rel, hash) {
+  const dest = courseSubtitlePath(lib, rel, hash);
   if (dest) await fs.rm(dest, { force: true }).catch(() => {});
 }
 
 // O artefato final existe? Prioriza o VTT da pasta do curso (canônico) e cai
 // para o espelho de data/subtitles/ (vídeos na raiz / resiliência).
-async function hasFinalVtt(rel, hash) {
-  const courseVtt = courseSubtitlePath(rel, hash);
+async function hasFinalVtt(lib, rel, hash) {
+  const courseVtt = courseSubtitlePath(lib, rel, hash);
   if (courseVtt) {
     const st = await fs.stat(courseVtt).catch(() => null);
     if (st && st.size > 0) return true;
@@ -2198,30 +2750,38 @@ async function hasFinalVtt(rel, hash) {
   return !!(st && st.size > 0);
 }
 
-// Remove todos os VTTs finais de .courseplayer/subtitles da biblioteca (clear
-// global). Não toca nos arquivos originais nem nos materiais dos cursos.
+// Remove todos os VTTs finais de .courseplayer/subtitles de TODAS as
+// bibliotecas (clear global). Não toca nos arquivos originais nem nos
+// materiais dos cursos.
 async function sweepCourseSubtitles() {
-  let names = [];
-  try {
-    names = await fs.readdir(ROOT);
-  } catch {
-    return;
-  }
+  const roots = getLibraries()
+    .filter((l) => l.enabled !== false)
+    .map((l) => l.path);
   await Promise.all(
-    names
-      .filter((n) => !n.startsWith(".") && n !== APP_DIR_NAME)
-      .map(async (n) => {
-        const courseSub = path.join(ROOT, n, COURSE_SUBTITLE_DIR);
-        await fs.rm(courseSub, { recursive: true, force: true }).catch(() => {});
-        // Remove o `.courseplayer` se ficou vazio (a pasta nasce só para as
-        // legendas; não remover deixaria um diretório órfão na biblioteca).
-        const parent = path.join(ROOT, n, ".courseplayer");
-        const st = await fs.stat(parent).catch(() => null);
-        if (st && st.isDirectory()) {
-          const items = await fs.readdir(parent).catch(() => []);
-          if (items.length === 0) await fs.rm(parent, { recursive: true, force: true }).catch(() => {});
-        }
-      }),
+    roots.map(async (root) => {
+      let names = [];
+      try {
+        names = await fs.readdir(root);
+      } catch {
+        return;
+      }
+      await Promise.all(
+        names
+          .filter((n) => !n.startsWith(".") && n !== APP_DIR_NAME)
+          .map(async (n) => {
+            const courseSub = path.join(root, n, COURSE_SUBTITLE_DIR);
+            await fs.rm(courseSub, { recursive: true, force: true }).catch(() => {});
+            // Remove o `.courseplayer` se ficou vazio (a pasta nasce só para as
+            // legendas; não remover deixaria um diretório órfão na biblioteca).
+            const parent = path.join(root, n, ".courseplayer");
+            const st = await fs.stat(parent).catch(() => null);
+            if (st && st.isDirectory()) {
+              const items = await fs.readdir(parent).catch(() => []);
+              if (items.length === 0) await fs.rm(parent, { recursive: true, force: true }).catch(() => {});
+            }
+          }),
+      );
+    }),
   );
 }
 
@@ -2237,14 +2797,14 @@ const BACKGROUND_BATCH = 20; // limite de P3 por varredura (controle claro)
 
 // Já existe legenda válida (processed + VTT)? Skip-if-ready — evita enfileirar
 // o que já está pronto e mantém a fila enxuta (sem ruído "cache encontrado").
-async function hasValidSubtitle(rel, abs) {
+async function hasValidSubtitle(lib, rel, abs) {
   const sourceStat = await fs.stat(abs).catch(() => null);
   if (!sourceStat) return false;
-  const hash = subtitleCacheName(rel);
+  const hash = subtitleCacheName(lib.id, rel);
   const processedPath = path.join(SUBTITLE_PROCESSED_DIR, hash + ".json");
   const doc = await loadValidProcessed(processedPath, abs, sourceStat);
   if (!doc) return false;
-  return hasFinalVtt(rel, hash);
+  return hasFinalVtt(lib, rel, hash);
 }
 
 // Primeiro vídeo de um curso em ordem natural (DFS: pastas antes dos arquivos,
@@ -2270,15 +2830,29 @@ async function maybePregenFirstLessons(tree) {
   const avail = await transcriptionAvailability(cfg);
   if (!avail.available) return; // sem binário/modelo: nada a enfileirar
   await loadSubtitleJobs();
-  const courses = (tree.children || []).filter((c) => c.type === "folder");
-  for (const course of courses) {
-    const first = firstVideoOfCourse(course);
-    if (!first) continue;
-    const safe = resolveSafeRelPath(first.path);
-    if (!safe) continue;
-    if (await hasValidSubtitle(safe.rel, safe.abs)) continue;
-    startSubtitleJob(safe.rel, safe.abs, { priority: PRIORITY_FIRST });
-    console.log(`[SUBTITLE] pré-geração P2 (primeira aula): ${safe.rel}`);
+  // P2: "primeira aula de cada curso". Com tópicos, um curso é uma pasta de
+  // tipo "folder" cujo pai não é outro "folder" (senão seria módulo) — módulos
+  // e tópicos ficam de fora da pré-geração de primeira aula.
+  // Percorre TODAS as bibliotecas escaneadas com sucesso (auditoria §7).
+  for (const lib of (tree.libraries || []).filter((l) => l.tree)) {
+    const courses = [];
+    const collectCourseRoots = (node, parentType) => {
+      for (const child of node.children || []) {
+        if (child.type !== "folder") continue;
+        if (parentType !== "folder") courses.push(child);
+        collectCourseRoots(child, child.type);
+      }
+    };
+    collectCourseRoots(lib.tree, "root"); // a raiz da biblioteca não é um curso
+    for (const course of courses) {
+      const first = firstVideoOfCourse(course);
+      if (!first) continue;
+      const safe = resolveLibraryRel(lib, first.path);
+      if (!safe) continue;
+      if (await hasValidSubtitle(lib, safe.rel, safe.abs)) continue;
+      startSubtitleJob(lib, safe.rel, safe.abs, { priority: PRIORITY_FIRST });
+      console.log(`[SUBTITLE] pré-geração P2 (primeira aula): ${lib.id} ${safe.rel}`);
+    }
   }
 }
 
@@ -2295,21 +2869,25 @@ async function maybePregenBackground(tree) {
     (j) => active.includes(j.status) && j.priority < PRIORITY_BG,
   );
   if (pendingHigher) return; // nunca disputa slot com demanda/primeira aula
-  const videos = [];
-  const walk = (node) => {
+  const videos = []; // { lib, node }
+  const walk = (lib, node) => {
     for (const c of node.children || []) {
-      if (c.type === "folder") walk(c);
-      else if (c.type === "video") videos.push(c);
+      if (c.type === "folder") walk(lib, c);
+      else if (c.type === "video") videos.push({ lib, node: c });
     }
   };
-  for (const course of (tree.children || []).filter((c) => c.type === "folder")) walk(course);
+  for (const lib of (tree.libraries || []).filter((l) => l.tree)) {
+    for (const course of (lib.tree.children || []).filter((c) => c.type === "folder")) {
+      walk(lib, course);
+    }
+  }
   let enqueued = 0;
-  for (const v of videos) {
+  for (const { lib, node: v } of videos) {
     if (enqueued >= BACKGROUND_BATCH) break;
-    const safe = resolveSafeRelPath(v.path);
+    const safe = resolveLibraryRel(lib, v.path);
     if (!safe) continue;
-    if (await hasValidSubtitle(safe.rel, safe.abs)) continue;
-    startSubtitleJob(safe.rel, safe.abs, { priority: PRIORITY_BG });
+    if (await hasValidSubtitle(lib, safe.rel, safe.abs)) continue;
+    startSubtitleJob(lib, safe.rel, safe.abs, { priority: PRIORITY_BG });
     enqueued += 1;
   }
   if (enqueued > 0) {
@@ -2362,6 +2940,7 @@ function isDeviceUnavailableCode(code) {
 function subtitleJobPersistShape(job) {
   return {
     hash: job.hash,
+    libraryId: job.libraryId,
     rel: job.rel,
     status: job.status,
     createdAt: job.createdAt,
@@ -2410,6 +2989,7 @@ async function loadSubtitleJobs() {
     if (!rec || typeof rec.hash !== "string" || !rec.hash) continue;
     const job = {
       hash: rec.hash,
+      libraryId: rec.libraryId || DEFAULT_LIBRARY_ID,
       rel: rec.rel || "",
       status: rec.status || "cancelled",
       priority: Number.isInteger(rec.priority)
@@ -2430,9 +3010,10 @@ async function loadSubtitleJobs() {
     };
     // `abs` não é persistido — reconstrói do rel (o pipeline usa job.abs para
     // o fs.stat; sem isso um job retomado após restart falharia com "Arquivo
-    // de vídeo não encontrado").
+    // de vídeo não encontrado"). Resolve pelo libraryId persistido no job.
     if (job.rel) {
-      const safe = resolveSafeRelPath(job.rel);
+      const lib = getLibraryById(job.libraryId);
+      const safe = lib ? resolveLibraryRel(lib, job.rel) : resolveSafeRelPath(job.rel);
       job.abs = safe ? safe.abs : null;
     }
     // Jobs que estavam "waiting-source" voltam a ser vigiados pelo watcher.
@@ -2480,8 +3061,8 @@ function updateSubtitleJob(hash, patch, persist = true) {
 // segundo POST enquanto o primeiro roda recebe {alreadyRunning:true}. Quando a
 // nova requisição é MAIS prioritária, o job ativo é PROMOVIDO (mesma execução,
 // prioridade elevada) — nunca cria um segundo job para o mesmo vídeo.
-function startSubtitleJob(rel, abs, opts = {}) {
-  const hash = subtitleCacheName(rel);
+function startSubtitleJob(lib, rel, abs, opts = {}) {
+  const hash = subtitleCacheName(lib.id, rel);
   const priority = Number.isInteger(opts.priority)
     ? Math.min(3, Math.max(0, opts.priority))
     : PRIORITY_DEMAND;
@@ -2500,6 +3081,7 @@ function startSubtitleJob(rel, abs, opts = {}) {
   }
   const job = {
     hash,
+    libraryId: lib.id,
     rel,
     abs, // apenas runtime (não persistido — ver persistShape)
     status: "queued",
@@ -2595,8 +3177,10 @@ function cancelSubtitleJob(hash, opts = {}) {
 async function subtitleJobPublic(hash) {
   const job = subtitleJobs.get(hash);
   if (!job) return null;
+  const lib = getLibraryById(job.libraryId) || getDefaultLibrary();
   return {
     hash: job.hash,
+    libraryId: job.libraryId,
     rel: job.rel,
     status: job.status,
     stage: job.status, // estado do pipeline (legado: "status" também)
@@ -2609,7 +3193,7 @@ async function subtitleJobPublic(hash) {
     language: job.language,
     provider: job.provider,
     model: job.model,
-    hasVtt: await hasFinalVtt(job.rel, job.hash),
+    hasVtt: await hasFinalVtt(lib, job.rel, job.hash),
   };
 }
 
@@ -2774,6 +3358,10 @@ async function loadValidProcessed(processedPath, abs, sourceStat) {
 async function runSubtitlePipeline(job) {
   const hash = job.hash;
   const rel = job.rel;
+  // A biblioteca do job (persistida) resolve o path canônico do VTT e o abs do
+  // vídeo. Um job de biblioteca removida cai na padrão e falha honesto ("Arquivo
+  // não encontrado") — best-effort, nunca quebra o pipeline dos demais.
+  const lib = getLibraryById(job.libraryId) || getDefaultLibrary();
   try {
     const cfg = await loadAiConfig();
     refreshHeavyMax(cfg.advanced.maxConcurrentAiJobs);
@@ -2835,6 +3423,19 @@ async function runSubtitlePipeline(job) {
       return;
     }
 
+    // Symlink/junction apontando para fora da biblioteca: o raw/extrato seria
+    // gerado a partir de um arquivo fora da biblioteca (ex.: link → /etc/passwd,
+    // link → data/ de outra lib). Recusa antes de extrair com ffmpeg/whisper.
+    if (!(await fileWithinLibrary(lib, job.abs))) {
+      updateSubtitleJob(hash, {
+        status: "failed",
+        progress: "",
+        error: "Arquivo fora da biblioteca.",
+      });
+      console.log(`[SUBTITLE] recusado (fora da biblioteca): ${rel}`);
+      return;
+    }
+
     // 0) force (botão "Regenerar"): descarta artefatos existentes para a
     // transcrição rodar de novo — cache, raw e VTTs (espelho + curso). A
     // versão EDITADA manualmente é preservada em backup/ (nunca apagada em
@@ -2849,7 +3450,7 @@ async function runSubtitlePipeline(job) {
         path.join(SUBTITLE_PROCESSED_DIR, hash + ".json"),
         path.join(SUBTITLE_DIR, hash + ".vtt"),
       ];
-      const courseVtt = courseSubtitlePath(rel, hash);
+      const courseVtt = courseSubtitlePath(lib, rel, hash);
       if (courseVtt) targets.push(courseVtt);
       await Promise.all(targets.map(p => fs.rm(p, { force: true }).catch(() => {})));
     }
@@ -3012,7 +3613,7 @@ async function runSubtitlePipeline(job) {
     // Espelho (cache de registro validado por mtime+size) + artefato final na
     // pasta do curso (Curso/.courseplayer/subtitles/<hash>.vtt).
     await writeFileAtomic(path.join(SUBTITLE_DIR, hash + ".vtt"), vttText);
-    await writeCourseSubtitle(rel, hash, vttText);
+    await writeCourseSubtitle(lib, rel, hash, vttText);
 
     updateSubtitleJob(hash, { status: "completed", progress: "", error: null, percent: null });
     console.log(
@@ -3455,8 +4056,8 @@ function renderVtt(segments) {
 // Resolve o VTT final de um vídeo: canônico na pasta do curso primeiro, depois
 // o espelho em data/subtitles/ (vídeos na raiz / resiliência). Mesma regra da
 // rota /subtitles/*.
-async function resolveSubtitleVttPath(rel, hash) {
-  const courseVtt = courseSubtitlePath(rel, hash);
+async function resolveSubtitleVttPath(lib, rel, hash) {
+  const courseVtt = courseSubtitlePath(lib, rel, hash);
   if (courseVtt) {
     const st = await fs.stat(courseVtt).catch(() => null);
     if (st && st.size > 0) return courseVtt;
@@ -3506,7 +4107,7 @@ function parseVttSegments(vttText) {
 
 // Documento editável de um vídeo: edição manual > processed (gerado) > VTT
 // (curso copiado). Nunca o raw (transcrição bruta do ASR é imutável).
-async function loadEditableDoc(rel, hash, abs, sourceStat) {
+async function loadEditableDoc(lib, rel, hash, abs, sourceStat) {
   // 1) Edição manual (fonte preferida; preservada mesmo se o vídeo mudou —
   //    o flag staleSource avisa a UI, mas nunca descarta o trabalho).
   const editedPath = path.join(SUBTITLE_EDITED_DIR, hash + ".json");
@@ -3554,7 +4155,7 @@ async function loadEditableDoc(rel, hash, abs, sourceStat) {
     }
   }
   // 3) VTT final (ex.: curso copiado sem o data/ local).
-  const vttPath = await resolveSubtitleVttPath(rel, hash);
+  const vttPath = await resolveSubtitleVttPath(lib, rel, hash);
   if (vttPath) {
     const txt = await fs.readFile(vttPath, "utf8").catch(() => null);
     if (txt) {
@@ -3615,7 +4216,7 @@ function validateEditorSegments(segments) {
 // espelho e na pasta do curso. Concorrência entre abas via `version`: se o
 // cliente mandou uma versão que não é a atual, recusa com 409 (nunca sobrescreve
 // em silêncio uma edição mais recente).
-async function saveEditedSubtitle(rel, hash, abs, segments, expectedVersion, sourceStat) {
+async function saveEditedSubtitle(lib, rel, hash, abs, segments, expectedVersion, sourceStat) {
   const editedPath = path.join(SUBTITLE_EDITED_DIR, hash + ".json");
   const cur = await readJsonFile(editedPath);
   const curVersion =
@@ -3639,7 +4240,7 @@ async function saveEditedSubtitle(rel, hash, abs, segments, expectedVersion, sou
   await writeFileAtomic(editedPath, JSON.stringify(doc, null, 2));
   const vttText = renderVtt(segments);
   await writeFileAtomic(path.join(SUBTITLE_DIR, hash + ".vtt"), vttText);
-  await writeCourseSubtitle(rel, hash, vttText);
+  await writeCourseSubtitle(lib, rel, hash, vttText);
   return { conflict: false, version, updatedAt: now };
 }
 
@@ -3837,6 +4438,18 @@ function applyLlmGuardrail(original, corrected) {
 
 const app = express();
 
+// Headers de segurança baseline em TODA resposta (JSON/erros/HTML/arquivos):
+// nosniff evita MIME-sniffing (material não pode ser renderizado como outro
+// tipo); Referrer-Policy evita vazar paths/nomes de cursos no Referer ao abrir
+// links externos; X-Frame-Options impede a UI de ser embutida num iframe de
+// outro site (clickjacking).
+app.use((req, res, next) => {
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("Referrer-Policy", "no-referrer");
+  res.set("X-Frame-Options", "DENY");
+  next();
+});
+
 
 app.use(express.json({ limit: "100kb" }));
 
@@ -3846,15 +4459,17 @@ app.use(express.json({ limit: "100kb" }));
 // do overlay do player (estruturado, sem duplicar parser de VTT no frontend).
 app.get("/api/subtitles/editor", async (req, res) => {
   const rel = typeof req.query.path === "string" ? req.query.path : "";
-  const safe = resolveSafeRelPath(rel);
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
+  const safe = resolveLibraryRel(lib, rel);
   if (!safe) return res.status(400).json({ error: "invalid path" });
   const ext = path.extname(safe.abs).toLowerCase();
   if (!VIDEO_EXT.has(ext)) return res.status(400).json({ error: "not a video" });
   try {
     await loadSubtitleJobs();
     const sourceStat = await fs.stat(safe.abs).catch(() => null);
-    const hash = subtitleCacheName(safe.rel);
-    const doc = await loadEditableDoc(safe.rel, hash, safe.abs, sourceStat);
+    const hash = subtitleCacheName(lib.id, safe.rel);
+    const doc = await loadEditableDoc(lib, safe.rel, hash, safe.abs, sourceStat);
     if (!doc) {
       return res.json({
         hash,
@@ -3866,7 +4481,7 @@ app.get("/api/subtitles/editor", async (req, res) => {
         ready: false,
       });
     }
-    const ready = !!(sourceStat && (await hasFinalVtt(safe.rel, hash)));
+    const ready = !!(sourceStat && (await hasFinalVtt(lib, safe.rel, hash)));
     const cfg = await loadAiConfig();
     const avail = await transcriptionAvailability(cfg);
     res.json({
@@ -3884,7 +4499,9 @@ app.get("/api/subtitles/editor", async (req, res) => {
 // derivado). Concorrência: version divergente → 409 (alterada em outra aba).
 app.post("/api/subtitles/save", async (req, res) => {
   const rel = typeof req.query.path === "string" ? req.query.path : "";
-  const safe = resolveSafeRelPath(rel);
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
+  const safe = resolveLibraryRel(lib, rel);
   if (!safe) return res.status(400).json({ error: "invalid path" });
   const ext = path.extname(safe.abs).toLowerCase();
   if (!VIDEO_EXT.has(ext)) return res.status(400).json({ error: "not a video" });
@@ -3896,8 +4513,9 @@ app.post("/api/subtitles/save", async (req, res) => {
     await loadSubtitleJobs();
     const sourceStat = await fs.stat(safe.abs).catch(() => null);
     if (!sourceStat) return res.status(404).json({ error: "video not found" });
-    const hash = subtitleCacheName(safe.rel);
+    const hash = subtitleCacheName(lib.id, safe.rel);
     const result = await saveEditedSubtitle(
+      lib,
       safe.rel,
       hash,
       safe.abs,
@@ -3927,13 +4545,15 @@ app.post("/api/subtitles/save", async (req, res) => {
 app.get("/api/subtitles/export", async (req, res) => {
   const rel = typeof req.query.path === "string" ? req.query.path : "";
   const format = req.query.format === "srt" ? "srt" : "vtt";
-  const safe = resolveSafeRelPath(rel);
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
+  const safe = resolveLibraryRel(lib, rel);
   if (!safe) return res.status(400).json({ error: "invalid path" });
   try {
     await loadSubtitleJobs();
     const sourceStat = await fs.stat(safe.abs).catch(() => null);
-    const hash = subtitleCacheName(safe.rel);
-    const doc = await loadEditableDoc(safe.rel, hash, safe.abs, sourceStat);
+    const hash = subtitleCacheName(lib.id, safe.rel);
+    const doc = await loadEditableDoc(lib, safe.rel, hash, safe.abs, sourceStat);
     if (!doc) return res.status(404).json({ error: "sem legenda" });
     const text = format === "srt" ? formatSrt(doc.segments) : renderVtt(doc.segments);
     res.set(
@@ -3954,7 +4574,9 @@ app.get("/api/subtitles/export", async (req, res) => {
 // trabalho (o usuário revisa e salva; nada é gravado automaticamente).
 app.post("/api/subtitles/ai-corrections", async (req, res) => {
   const rel = typeof req.query.path === "string" ? req.query.path : "";
-  const safe = resolveSafeRelPath(rel);
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
+  const safe = resolveLibraryRel(lib, rel);
   if (!safe) return res.status(400).json({ error: "invalid path" });
   const raw = req.body && req.body.segments;
   if (!Array.isArray(raw) || raw.length === 0) {
@@ -3993,9 +4615,8 @@ app.post("/api/subtitles/ai-corrections", async (req, res) => {
 
 app.get("/api/tree", async (req, res) => {
   const force = req.query.rescan === "1";
-  const fresh = force || !treeCache; // scan novo (não o cache)
   const tree = await getTree(force);
-  if (fresh) scheduleSubtitlePregen(tree); // P2/P3 pós-scan (fire-and-forget)
+  if (force) scheduleSubtitlePregen(tree); // P2/P3 pós-scan (fire-and-forget)
   res.json(tree);
 });
 
@@ -4005,26 +4626,190 @@ app.post("/api/rescan", async (req, res) => {
   res.json(tree);
 });
 
+// --------------------------------------------------------------------------
+// Bibliotecas: CRUD + rescan. Config-only — o filesystem NUNCA é tocado pela
+// remoção (REQUISITO OBRIGATÓRIO); jobs ativos bloqueiam com 409.
+// --------------------------------------------------------------------------
+
+// Jobs ativos que bloqueiam a remoção de uma biblioteca: transcode `processing`
+// (ffmpeg rodando), legenda em fase pesada do pipeline (extracting/transcribing/
+// processing/correcting/formatting) e scan em andamento. Jobs APENAS enfileirados
+// NÃO bloqueiam — são descartados na remoção (nunca deixam job apontando para
+// biblioteca inexistente).
+function libraryHasActiveJobs(id) {
+  for (const job of transcodeJobs.values()) {
+    if (job.libraryId === id && job.status === "processing") return true;
+  }
+  const activeSub = new Set([
+    "extracting", "transcribing", "processing", "correcting", "formatting",
+  ]);
+  for (const job of subtitleJobs.values()) {
+    if (job.libraryId === id && activeSub.has(job.status)) return true;
+  }
+  if (scanningLibraryIds.has(id)) return true;
+  return false;
+}
+
+// Descarta jobs ENFILEIRADOS de uma biblioteca após a remoção (a política
+// permite remover biblioteca com fila parada; jobs ativos foram bloqueados).
+function discardQueuedJobsForLibrary(id) {
+  for (const [cacheName, job] of transcodeJobs) {
+    if (job.libraryId === id && job.status === "queued") {
+      const idx = transcodeQueue.indexOf(job);
+      if (idx >= 0) transcodeQueue.splice(idx, 1);
+      transcodeJobs.delete(cacheName);
+      console.log(`[TRANSCODE] descartado (biblioteca removida): ${job.rel}`);
+    }
+  }
+  let discarded = 0;
+  for (const [hash, job] of subtitleJobs) {
+    if (job.libraryId === id && job.status === "queued") {
+      cancelSubtitleJob(hash);
+      discarded += 1;
+    }
+  }
+  if (discarded) persistSubtitleJobs().catch(() => {});
+}
+
+app.get("/api/libraries", async (req, res) => {
+  await loadLibraries();
+  res.json({ libraries: getLibraries().map((l) => librarySummary(l)) });
+});
+
+// Cria uma biblioteca: `{ name?, path }`. Path validado/canonicalizado UMA vez
+// (nunca reutilizado em operações de mídia — ver auditoria §11). Id estável =
+// randomUUID, imune a rename de nome/path.
+app.post("/api/libraries", async (req, res) => {
+  await loadLibraries();
+  const proposed = req.body && typeof req.body.path === "string" ? req.body.path : "";
+  const v = await validateLibraryPath(proposed);
+  if (!v.ok) return res.status(400).json({ error: v.error });
+  const name =
+    req.body && typeof req.body.name === "string" && req.body.name.trim()
+      ? req.body.name.trim()
+      : path.basename(v.path) || v.path;
+  const entry = {
+    id: crypto.randomUUID(),
+    name,
+    path: v.path,
+    enabled: true,
+    isDefault: false,
+    createdAt: Date.now(),
+  };
+  librariesCache = getLibraries().concat(entry);
+  await persistLibraries();
+  console.log(`[LIBRARIES] criada: ${name} (${entry.id}) → ${v.path}`);
+  res.status(201).json(librarySummary(entry));
+});
+
+// Atualiza `{ name?, enabled?, path? }`. Path da PADRÃO é imutável (403); para
+// as demais, path é revalidado como no POST (400/409). Renomear nunca muda o id.
+app.patch("/api/libraries/:id", async (req, res) => {
+  await loadLibraries();
+  const lib = getLibraryById(req.params.id);
+  if (!lib) return res.status(404).json({ error: "library not found" });
+  if (lib.isDefault && req.body && typeof req.body.path === "string") {
+    return res.status(403).json({ error: "o path da biblioteca padrão é imutável" });
+  }
+  let newPath = null;
+  if (req.body && typeof req.body.path === "string") {
+    const v = await validateLibraryPath(req.body.path);
+    if (!v.ok) return res.status(400).json({ error: v.error });
+    newPath = v.path;
+  }
+  if (req.body && typeof req.body.name === "string") {
+    lib.name = req.body.name.trim() || lib.name;
+  }
+  if (req.body && typeof req.body.enabled === "boolean") {
+    lib.enabled = req.body.enabled;
+  }
+  if (newPath) {
+    treeCaches.delete(lib.id);
+    lib.path = newPath;
+  }
+  await persistLibraries();
+  res.json(librarySummary(lib));
+});
+
+// Remove da CONFIGURAÇÃO. Nunca aceita `?path=` nem body com absolute path (a
+// decisão é por id). Default → 403; id inexistente → 404; jobs ativos → 409.
+// NENHUM arquivo da biblioteca é tocado; progresso e caches permanecem intactos.
+app.delete("/api/libraries/:id", async (req, res) => {
+  if (
+    (req.query && req.query.path !== undefined) ||
+    (req.body && typeof req.body.path === "string")
+  ) {
+    return res.status(400).json({ error: "remoção é por id; não aceita path" });
+  }
+  await loadLibraries();
+  const lib = getLibraryById(req.params.id);
+  if (!lib) return res.status(404).json({ error: "library not found" });
+  if (lib.isDefault) {
+    return res.status(403).json({ error: "a biblioteca padrão não pode ser removida" });
+  }
+  if (libraryHasActiveJobs(lib.id)) {
+    return res.status(409).json({ error: "há jobs ativos para esta biblioteca" });
+  }
+  discardQueuedJobsForLibrary(lib.id);
+  treeCaches.delete(lib.id);
+  scanningLibraryIds.delete(lib.id);
+  librariesCache = getLibraries().filter((l) => l.id !== lib.id);
+  await persistLibraries();
+  console.log(`[LIBRARIES] removida da configuração: ${lib.name} (${lib.id})`);
+  res.json({ ok: true });
+});
+
+// Força o scan de UMA biblioteca. Scan já em andamento → 409 (dedup). Diretório
+// sumiu → 200 com `status:"unavailable"` (não é erro de rota — pendrive removível).
+app.post("/api/libraries/:id/rescan", async (req, res) => {
+  await loadLibraries();
+  const lib = getLibraryById(req.params.id);
+  if (!lib) return res.status(404).json({ error: "library not found" });
+  if (scanningLibraryIds.has(lib.id)) {
+    return res.status(409).json({ error: "scan já em andamento para esta biblioteca" });
+  }
+  res.json(await rescanLibrary(lib));
+});
+
 app.get("/api/progress", async (req, res) => {
   res.json(await readProgress());
 });
 
 app.post("/api/progress", async (req, res) => {
   const { path: relPath, position, duration, completed } = req.body || {};
-  const safe = resolveSafeRelPath(relPath);
+  const requestId =
+    req.body && typeof req.body.requestId === "string" ? req.body.requestId : undefined;
+  // Toggle manual de conclusão (✓ na sidebar): a única operação normal que
+  // pode regredir `completed` de true para false (ação explícita do usuário).
+  const explicitToggle = !!(req.body && req.body.explicitToggle);
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
+  const safe = resolveLibraryRel(lib, relPath);
   if (!safe) return res.status(400).json({ error: "invalid path" });
-  if (typeof position !== "number" || typeof duration !== "number") {
+  // Validação estrita de finitos: NaN/Infinity não podem ser persistidos
+  // (uma entrada corrompida nunca deve substituir um estado válido).
+  if (
+    typeof position !== "number" ||
+    !Number.isFinite(position) ||
+    typeof duration !== "number" ||
+    !Number.isFinite(duration)
+  ) {
     return res.status(400).json({ error: "invalid position/duration" });
   }
+  const key = `${lib.id}\0${safe.rel}`;
   try {
-    await updateProgress((progress) => {
-      progress[safe.rel] = {
-        position: Math.max(0, position),
-        duration: Math.max(0, duration),
-        completed: !!completed,
-        updatedAt: Date.now(),
-      };
-    });
+    await updateProgress(
+      (progress) => {
+        progress[key] = {
+          position: Math.max(0, position),
+          duration: Math.max(0, duration),
+          completed: !!completed,
+          updatedAt: Date.now(),
+        };
+      },
+      { requestId, allowCompletedRegression: explicitToggle },
+    );
+    console.log(`[PROGRESS] save: ${safe.rel}${requestId ? ` requestId=${requestId}` : ""}`);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "failed to save progress" });
@@ -4033,26 +4818,43 @@ app.post("/api/progress", async (req, res) => {
 
 app.post("/api/progress/clear", async (req, res) => {
   const { coursePath } = req.body || {};
+  const requestId =
+    req.body && typeof req.body.requestId === "string" ? req.body.requestId : undefined;
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
   const safeCourse =
-    coursePath != null ? resolveSafeRelPath(coursePath) : null;
+    coursePath != null ? resolveLibraryRel(lib, coursePath) : null;
   if (coursePath != null && !safeCourse)
     return res.status(400).json({ error: "invalid course path" });
 
+  const beforeKeys = Object.keys(await readProgress());
   try {
-    await updateProgress((progress) => {
-      if (safeCourse) {
-        const prefix = `${safeCourse.rel}/`;
-        for (const key of Object.keys(progress)) {
-          if (key === safeCourse.rel || key.startsWith(prefix)) {
+    // allowShrink: esta é a ÚNICA operação autorizada a remover chaves de
+    // progresso. Todo o resto (startup, rescan, reload, scan, migração…)
+    // nunca pode reduzir o estado persistido.
+    await updateProgress(
+      (progress) => {
+        if (safeCourse) {
+          // Chave = `<libId>\0<rel>`; limpa por prefixo de biblioteca + curso.
+          const prefix = `${lib.id}\0${safeCourse.rel}`;
+          for (const key of Object.keys(progress)) {
+            if (key === prefix || key.startsWith(prefix + "/")) {
+              delete progress[key];
+            }
+          }
+        } else {
+          for (const key of Object.keys(progress)) {
             delete progress[key];
           }
         }
-      } else {
-        for (const key of Object.keys(progress)) {
-          delete progress[key];
-        }
-      }
-    });
+      },
+      { allowShrink: true, requestId },
+    );
+    const afterKeys = Object.keys(await readProgress());
+    const removedKeys = beforeKeys.filter((k) => !afterKeys.includes(k));
+    console.log(
+      `[PROGRESS-CLEAR] ${new Date().toISOString()} escopo=${safeCourse ? safeCourse.rel : "global"} biblioteca=${lib.id} antes=${beforeKeys.length} depois=${afterKeys.length} removidas=${removedKeys.length}${requestId ? ` requestId=${requestId}` : ""}`,
+    );
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "failed to clear progress" });
@@ -4065,13 +4867,15 @@ app.post("/api/progress/clear", async (req, res) => {
 // serve o arquivo em crescimento.
 app.get("/api/video/fallback", async (req, res) => {
   const rel = typeof req.query.path === "string" ? req.query.path : "";
-  const safe = resolveSafeRelPath(rel);
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
+  const safe = resolveLibraryRel(lib, rel);
   if (!safe) return res.status(400).json({ error: "invalid path" });
   // BUG-001: não tocar o ffprobe/ffmpeg em arquivos da pasta do app
   // (server.js, data/ai-config.json) mesmo estando dentro de ROOT.
-  if (isAppDirRel(safe)) return res.status(404).json({ error: "invalid path" });
+  if (isAppDirRel(safe, lib)) return res.status(404).json({ error: "invalid path" });
   try {
-    const plan = await getTranscodePlan(safe.rel, safe.abs);
+    const plan = await getTranscodePlan(lib, safe.rel, safe.abs);
     res.json(plan);
   } catch (err) {
     console.error("[TRANSCODE] erro ao preparar fallback:", err.message);
@@ -4374,8 +5178,8 @@ app.post("/api/ai/llm/test", async (req, res) => {
 
 // Estado combinado (legenda pronta? job ativo? pode gerar?) para o player e a
 // Central de IA.
-async function subtitleStatusFor(rel, abs) {
-  const hash = subtitleCacheName(rel);
+async function subtitleStatusFor(lib, rel, abs) {
+  const hash = subtitleCacheName(lib.id, rel);
   const cfg = await loadAiConfig();
   const job = subtitleJobs.get(hash);
   const sourceStat = await fs.stat(abs).catch(() => null);
@@ -4383,7 +5187,7 @@ async function subtitleStatusFor(rel, abs) {
   if (sourceStat) {
     const processedPath = path.join(SUBTITLE_PROCESSED_DIR, hash + ".json");
     const doc = await loadValidProcessed(processedPath, abs, sourceStat);
-    if (doc && (await hasFinalVtt(rel, hash))) ready = true;
+    if (doc && (await hasFinalVtt(lib, rel, hash))) ready = true;
   }
   const avail = await transcriptionAvailability(cfg);
   const activeStatus = new Set([
@@ -4424,10 +5228,16 @@ async function subtitleStatusFor(rel, abs) {
 
 app.post("/api/subtitles/generate", async (req, res) => {
   const rel = typeof req.query.path === "string" ? req.query.path : "";
-  const safe = resolveSafeRelPath(rel);
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
+  const safe = resolveLibraryRel(lib, rel);
   if (!safe) return res.status(400).json({ error: "invalid path" });
   // BUG-001: não rodar extração sobre arquivos da pasta do app.
-  if (isAppDirRel(safe)) return res.status(400).json({ error: "invalid path" });
+  if (isAppDirRel(safe, lib)) return res.status(400).json({ error: "invalid path" });
+  // Symlink apontando para fora da biblioteca: recusa na porta de entrada.
+  if (!(await fileWithinLibrary(lib, safe.abs))) {
+    return res.status(400).json({ error: "invalid path" });
+  }
   const ext = path.extname(safe.abs).toLowerCase();
   if (!VIDEO_EXT.has(ext)) return res.status(400).json({ error: "not a video" });
   const priority = Number.isInteger(Number(req.query.priority))
@@ -4439,11 +5249,11 @@ app.post("/api/subtitles/generate", async (req, res) => {
     await loadSubtitleJobs(); // reconcilia antes do dedup
     if (skipIfReady && !force) {
       // Skip-if-ready (usado por P1/P2/P3): legenda já válida ⇒ não enfileira.
-      if (await hasValidSubtitle(safe.rel, safe.abs)) {
+      if (await hasValidSubtitle(lib, safe.rel, safe.abs)) {
         return res.json({ ok: true, skipped: true, alreadyRunning: false, status: "completed" });
       }
     }
-    const { job, alreadyRunning, promoted } = startSubtitleJob(safe.rel, safe.abs, {
+    const { job, alreadyRunning, promoted } = startSubtitleJob(lib, safe.rel, safe.abs, {
       priority: priority ?? PRIORITY_DEMAND,
       force,
     });
@@ -4463,14 +5273,18 @@ app.post("/api/subtitles/generate", async (req, res) => {
 // hash). Só vídeos sem legenda válida são enfileirados. `path` = rel do curso.
 app.post("/api/subtitles/generate-course", async (req, res) => {
   const courseRel = typeof req.query.path === "string" ? req.query.path : "";
-  const safe = resolveSafeRelPath(courseRel);
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
+  const safe = resolveLibraryRel(lib, courseRel);
   if (!safe) return res.status(400).json({ error: "invalid path" });
   try {
     await loadSubtitleJobs();
     const tree = await getTree(false);
-    const course = (tree.children || []).find(
-      (c) => c.type === "folder" && c.path === safe.rel,
-    );
+    const libEntry = (tree.libraries || []).find((l) => l.id === lib.id);
+    const course = (libEntry && libEntry.tree
+      ? libEntry.tree.children || []
+      : []
+    ).find((c) => c.type === "folder" && c.path === safe.rel);
     if (!course) return res.status(404).json({ error: "course not found" });
     const videos = [];
     const walk = (node) => {
@@ -4483,13 +5297,13 @@ app.post("/api/subtitles/generate-course", async (req, res) => {
     let enqueued = 0;
     let skipped = 0;
     for (const v of videos) {
-      const vsafe = resolveSafeRelPath(v.path);
+      const vsafe = resolveLibraryRel(lib, v.path);
       if (!vsafe) continue;
-      if (await hasValidSubtitle(vsafe.rel, vsafe.abs)) {
+      if (await hasValidSubtitle(lib, vsafe.rel, vsafe.abs)) {
         skipped += 1;
         continue;
       }
-      startSubtitleJob(vsafe.rel, vsafe.abs, { priority: PRIORITY_BG });
+      startSubtitleJob(lib, vsafe.rel, vsafe.abs, { priority: PRIORITY_BG });
       enqueued += 1;
     }
     console.log(`[SUBTITLE] generate-course: ${enqueued} enfileirados, ${skipped} já prontos (${safe.rel})`);
@@ -4501,11 +5315,13 @@ app.post("/api/subtitles/generate-course", async (req, res) => {
 
 app.get("/api/subtitles/status", async (req, res) => {
   const rel = typeof req.query.path === "string" ? req.query.path : "";
-  const safe = resolveSafeRelPath(rel);
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
+  const safe = resolveLibraryRel(lib, rel);
   if (!safe) return res.status(400).json({ error: "invalid path" });
   try {
     await loadSubtitleJobs();
-    res.json(await subtitleStatusFor(safe.rel, safe.abs));
+    res.json(await subtitleStatusFor(lib, safe.rel, safe.abs));
   } catch (err) {
     res.status(500).json({ error: sanitizeTestError(err.message || "status error") });
   }
@@ -4559,11 +5375,13 @@ app.get("/api/subtitles/list", async (req, res) => {
 
 app.post("/api/subtitles/cancel", async (req, res) => {
   const rel = typeof req.query.path === "string" ? req.query.path : "";
-  const safe = resolveSafeRelPath(rel);
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
+  const safe = resolveLibraryRel(lib, rel);
   if (!safe) return res.status(400).json({ error: "invalid path" });
   try {
     await loadSubtitleJobs();
-    const cancelled = cancelSubtitleJob(subtitleCacheName(safe.rel));
+    const cancelled = cancelSubtitleJob(subtitleCacheName(lib.id, safe.rel));
     res.json({ ok: true, cancelled });
   } catch (err) {
     res.status(500).json({ error: sanitizeTestError(err.message || "cancel error") });
@@ -4573,26 +5391,28 @@ app.post("/api/subtitles/cancel", async (req, res) => {
 // Exclui a legenda de um vídeo (path) ou todo o cache de legendas (sem path).
 app.post("/api/subtitles/clear", async (req, res) => {
   const { path: relPath } = req.body || {};
+  const lib = requestLibrary(req);
+  if (!lib) return res.status(400).json({ error: "unknown library" });
   let rel = null;
   if (relPath != null) {
-    const safe = resolveSafeRelPath(relPath);
+    const safe = resolveLibraryRel(lib, relPath);
     if (!safe) return res.status(400).json({ error: "invalid path" });
     rel = safe.rel;
   }
   try {
     await loadSubtitleJobs();
     if (rel) {
-      const hash = subtitleCacheName(rel);
+      const hash = subtitleCacheName(lib.id, rel);
       cancelSubtitleJob(hash);
       await Promise.all([
         fs.rm(path.join(SUBTITLE_RAW_DIR, hash + ".json"), { force: true }),
         fs.rm(path.join(SUBTITLE_PROCESSED_DIR, hash + ".json"), { force: true }),
         fs.rm(path.join(SUBTITLE_DIR, hash + ".vtt"), { force: true }),
         fs.rm(path.join(SUBTITLE_EDITED_DIR, hash + ".json"), { force: true }),
-        removeCourseSubtitle(rel, hash),
+        removeCourseSubtitle(lib, rel, hash),
       ]);
       subtitleJobs.delete(hash);
-      console.log(`[SUBTITLE] legenda excluída: ${rel}`);
+      console.log(`[SUBTITLE] legenda excluída: ${rel} (${lib.id})`);
     } else {
       for (const hash of [...subtitleJobs.keys()]) cancelSubtitleJob(hash);
       await Promise.all([
@@ -4645,15 +5465,16 @@ app.get("/subtitles/*", async (req, res, next) => {
   const m = /^([0-9a-f]{24})\.vtt$/.exec(name);
   if (!m) return next();
   const hash = m[1];
-  // O frontend envia ?rel=<videoPath> para servir o VTT canônico da pasta do
-  // curso. Só aceita quando o hash bate com sha1(rel)[0:24] — nunca serve um
-  // arquivo arbitrário. Sem rel, cai para o espelho de data/subtitles/.
+  // O frontend envia ?rel=<videoPath>&libraryId=<id> para servir o VTT canônico
+  // da pasta do curso. Só aceita quando o hash bate com sha1(libId+"\0"+rel)[0:24]
+  // — nunca serve um arquivo arbitrário. Sem rel, cai para o espelho de data/subtitles/.
   let vttPath = null;
   const relParam = typeof req.query.rel === "string" ? req.query.rel : "";
   if (relParam) {
-    const safe = resolveSafeRelPath(relParam);
-    if (safe && subtitleCacheName(safe.rel) === hash) {
-      const courseVtt = courseSubtitlePath(safe.rel, hash);
+    const lib = requestLibrary(req);
+    const safe = lib ? resolveLibraryRel(lib, relParam) : null;
+    if (safe && subtitleCacheName(lib.id, safe.rel) === hash) {
+      const courseVtt = courseSubtitlePath(lib, safe.rel, hash);
       if (courseVtt) {
         const st = await fs.stat(courseVtt).catch(() => null);
         if (st && st.size > 0) vttPath = courseVtt;
@@ -4672,27 +5493,57 @@ app.get("/subtitles/*", async (req, res, next) => {
   });
 });
 
-// BUG-001 (auditoria): a pasta do app fica DENTRO de ROOT, então o
-// express.static(ROOT) abaixo (materiais não-vídeo) expunha data/ai-config.json,
-// data/progress.json, server.js etc. O scan já exclui a pasta; aqui fechamos o
-// serviço de arquivos. Bloqueia explicitamente /media/<APP_DIR_NAME>/* antes da
-// rota de vídeo e do static. A comparação usa o PRIMEIRO segmento do caminho
-// canônico (path.normalize via resolveSafeRelPath), case-exato no Linux e
-// case-insensitive no Windows (onde o filesystem é case-insensitive). Não há
-// regex de caminho; só o nome exato da pasta do app é bloqueado — cursos com
-// nomes parecidos (ex.: "_LocalPlayer 2") continuam acessíveis.
-app.use("/media", (req, res, next) => {
-  let rel = req.path.replace(/^\/media\/?/, "");
+// Parseia um caminho /media/<libId>/<rel> (ou /media/<rel> legado → biblioteca
+// padrão). O primeiro segmento só é tratado como id de biblioteca quando casa
+// com um id REGISTRADO não-padrão; senão todo o caminho é rel contra a padrão
+// (back-compat de links/bookmarks). Retorna `{ lib, safe }` ou null (malformado
+// / escapa da raiz da biblioteca).
+function parseMediaRequest(req) {
+  // No middleware montado em "/media", o Express deixa `req.path` RELATIVO ao
+  // mount (sem o prefixo "/media"); na rota "/media/*" (fallback) o path é
+  // completo. Normaliza ambos: tira "/media" se presente, depois o(s) "/" inicial(is).
+  let raw = req.path.replace(/^\/media\/?/, "").replace(/^\/+/, "");
   try {
-    rel = decodeURIComponent(rel);
+    raw = decodeURIComponent(raw);
   } catch {
-    return res.status(400).end();
+    return null;
   }
-  const safe = resolveSafeRelPath(rel);
-  if (!safe) return next(); // escapa de ROOT: handlers/static respondem 404
-  if (isAppDirRel(safe)) return res.status(404).end();
+  let lib = getDefaultLibrary();
+  let rel = raw;
+  const firstSlash = raw.indexOf("/");
+  if (firstSlash !== -1) {
+    const head = raw.slice(0, firstSlash);
+    const candidate = getLibraryById(head);
+    if (candidate && !candidate.isDefault) {
+      lib = candidate;
+      rel = raw.slice(firstSlash + 1);
+    }
+  }
+  const safe = resolveLibraryRel(lib, rel);
+  if (!safe) return null;
+  return { lib, safe };
+}
+
+// Bloqueia dotfiles em /media (paridade com o antigo `dotfiles: "ignore"` do
+// static): o scan já ignora `.courseplayer`/`.topic`; servir por URL não
+// reintroduz vazamento. Um segmento começando com "." → 404.
+function hasDotSegment(rel) {
+  return rel.split("/").some((s) => s.startsWith("."));
+}
+
+// BUG-001 (auditoria): a pasta do app fica DENTRO de ROOT. O static abaixo foi
+// substituído por resolução por-biblioteca + sendFile (materiais e vídeos
+// seguem o mesmo caminho); bloqueia explicitamente a pasta do app na biblioteca
+// PADRÃO (nas externas, uma pasta chamada "_LocalPlayer" é legítima).
+app.use("/media", (req, res, next) => {
+  const parsed = parseMediaRequest(req);
+  if (!parsed) return next(); // malformado/escapa: fallback responde 404
+  req.mediaParsed = parsed;
+  if (isAppDirRel(parsed.safe, parsed.lib)) return res.status(404).end();
+  if (hasDotSegment(parsed.safe.rel)) return res.status(404).end();
   next();
 });
+
 
 // Serve vídeos e materiais com suporte nativo a Range requests e proteção
 // contra path traversal. O arquivo original é enviado SEMPRE diretamente,
@@ -4700,28 +5551,27 @@ app.use("/media", (req, res, next) => {
 // Accept-Ranges, Content-Length e Content-Type e trata o header Range
 // (respostas 206), que é o que o <video> usa para seek e buffering.
 app.get("/media/*", async (req, res, next) => {
-  let mediaRelPath = req.path.replace(/^\/media\/?/, "");
-  try {
-    mediaRelPath = decodeURIComponent(mediaRelPath);
-  } catch {
-    return res.status(400).end();
+  const parsed = req.mediaParsed || parseMediaRequest(req);
+  if (!parsed) return res.status(404).end();
+  // Symlink/junction apontando para fora da biblioteca: recusa (404) antes de
+  // qualquer stat/sendFile — o original pode estar em qualquer lugar do disco.
+  if (!(await fileWithinLibrary(parsed.lib, parsed.safe.abs))) {
+    return res.status(404).end();
   }
-
-  const safe = resolveSafeRelPath(mediaRelPath);
-  if (!safe) return res.status(404).end();
-
-  const ext = path.extname(safe.abs).toLowerCase();
-  if (!VIDEO_EXT.has(ext)) return next();
-
-  return res.sendFile(safe.abs, (err) => {
+  const st = await fs.stat(parsed.safe.abs).catch(() => null);
+  if (!st) return res.status(404).end();
+  // Materiais com conteúdo ativo (HTML/SVG/XML/JS/JSON) são servidos como
+  // download: nunca renderizados no origin da app (XSS via material). nosniff
+  // vale para todos os tipos (anti MIME-sniffing). Vídeos/imagens continuam
+  // inline (o <video>/<img> precisa renderizar).
+  res.set("X-Content-Type-Options", "nosniff");
+  if (ACTIVE_EXT.has(path.extname(parsed.safe.abs).toLowerCase())) {
+    res.set("Content-Disposition", "attachment");
+  }
+  return res.sendFile(parsed.safe.abs, (err) => {
     if (err && err.code !== "ECONNRESET") next(err);
   });
 });
-
-app.use(
-  "/media",
-  express.static(ROOT, { dotfiles: "ignore", index: false, redirect: false }),
-);
 
 // Serve o cache de transcoding. Nome validado estritamente (hash hex): nunca
 // um caminho do usuário. Com job ativo, entrega o .tmp em crescimento
@@ -4985,7 +5835,19 @@ app.get("/", async (req, res, next) => {
     .send(UNAVAILABLE_HTML);
 });
 
-app.use(express.static(path.join(__dirname, "public")));
+app.use(
+  express.static(path.join(__dirname, "public"), {
+    setHeaders: (res) => {
+      // CSP só na SPA (assets próprios, sem recursos externos; inline styles
+      // vêm de atributos style gerados pelo app). Não é aplicado à página de
+      // indisponibilidade (servida de memória com script inline próprio).
+      res.set(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      );
+    },
+  }),
+);
 
 // Erros assíncronos não tratados não devem derrubar o servidor (o usuário
 // perde o player e o progresso corre risco de gravação incompleta).
@@ -4996,28 +5858,62 @@ process.on("uncaughtException", (err) => {
   console.error("uncaughtException:", err);
 });
 
-ensureTools();
-initPersistence();
+let server;
 
-const server = app.listen(PORT, HOST, () => {
-  console.log(
-    `Local Player rodando em http://${HOST || "0.0.0.0"}:${PORT}`,
-  );
-  console.log(`Biblioteca: ${ROOT}`);
-});
+// O servidor só sobe quando executado diretamente (`node server.js`). Quando
+// `require`'d (testes com node:test), expõe as funções puras do scan sem bindar
+// porta nem tocar em data/ (ensureTools/initPersistence ficam de fora).
+if (require.main === module) {
+  ensureTools();
+  // Sobe o listener SÓ depois que a persistência (registro de bibliotecas,
+  // migração de progresso, jobs) terminar — o log de boot reflete a realidade
+  // e nenhuma requisição chega antes do registry estar carregado.
+  initPersistence()
+    .then(() => {
+      server = app.listen(PORT, HOST, () => {
+        console.log(
+          `Local Player rodando em http://${HOST || "0.0.0.0"}:${PORT}`,
+        );
+        const libCount = getLibraries().length;
+        console.log(`Bibliotecas: ${libCount} (padrão: ${ROOT})`);
+      });
 
-// Duas instâncias simultâneas escrevendo no mesmo progress.json podem
-// corromper o arquivo. Em vez de virar um processo zumbi silencioso
-// (o handler de uncaughtException engolia o erro), sai com mensagem clara.
-server.on("error", (err) => {
-  if (err.code === "EADDRINUSE") {
-    console.error(
-      `A porta ${PORT} já está em uso: outra instância do Local Player já está rodando. Encerre-a antes de iniciar novamente.`,
-    );
-    process.exit(1);
-  }
-  throw err;
-});
+      // Duas instâncias simultâneas escrevendo no mesmo progress.json podem
+      // corromper o arquivo. Em vez de virar um processo zumbi silencioso
+      // (o handler de uncaughtException engolia o erro), sai com mensagem clara.
+      server.on("error", (err) => {
+        if (err.code === "EADDRINUSE") {
+          console.error(
+            `A porta ${PORT} já está em uso: outra instância do Local Player já está rodando. Encerre-a antes de iniciar novamente.`,
+          );
+          process.exit(1);
+        }
+        throw err;
+      });
+    })
+    .catch((err) => {
+      console.error("Falha ao iniciar persistência:", err && err.message);
+      process.exit(1);
+    });
+} else {
+  module.exports = {
+    scanDir,
+    resolveSafeRelPath,
+    resolveLibraryRel,
+    normalizeDisplayTitle,
+    validateLibraryPath,
+    getLibraries,
+    getLibraryById,
+    getDefaultLibrary,
+    initLibraries,
+    persistLibraries,
+    migrateProgressKeys,
+    transcodeCacheName,
+    subtitleCacheName,
+    courseSubtitlePath,
+    scanLibrary,
+  };
+}
 
 // --------------------------------------------------------------------------
 // Shutdown/cancelamento robusto (Fase 3). Num pendrive/HD externo, derrubar o
