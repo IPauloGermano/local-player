@@ -44,6 +44,17 @@ Chave `sha1(rel).slice(0,24)` (nunca nome de vídeo/curso); invalidação por `m
 
 `runLlmCorrection`, genérica via registry): recebe só `{id,text}`, devolve só `{id,text}`; config+chave resolvidas no backend. Guardrail (`applyLlmGuardrail`) rejeita ids faltando/duplicados/inventados e conteúdo <40% ou >4x do original → usa a versão anterior. Falha/timeout/saída inválida ⇒ LLM ignorado, legenda **nunca** bloqueada.
 
+## Tradução de legendas (LLM, sob demanda)
+
+Aula em outro idioma (ex. inglês) ganha legenda traduzida via LLM, **somente quando o usuário seleciona o idioma** no menu CC do player (P0). Whisper **não traduz para PT** (o `-tr` dele traduz apenas para inglês) — a tradução é sempre LLM.
+
+- **Config** (`defaultAiConfig`): `translation: { enabled, targetLanguage: "pt", keepTerms: true }`, aplicado em `sanitizeAiConfig`/`applyAiPatch`/`maskAiConfig` (campo novo exige os três). Reusa **o mesmo provider+modelo da correção** (`cfg.correction`) — uma única config de LLM.
+- **Artefato derivado**: `translationCacheName(hash, lang)` = `baseHash-lang` (espelho `data/subtitles/<hash>-lang.vtt` + canônico `.courseplayer/subtitles/<hash>-lang.vtt` + doc `data/subtitles/translations/<hash>-lang.json`). **Nunca** toca raw/processed/original; cache validado por `mtime+size` do vídeo (mesma regra de processed).
+- **Job**: chave `hash-lang` em `subtitleJobs` (`kind:"translation"`, `lang`, `baseHash`); estados `queued → translating → formatting → completed`. Não passa por extração/whisper (consome o processed) e **não** consome `heavySlots` (LLM é rede). No boot, job de tradução retoma como `queued` (regenera do processed; idempotente).
+- **Prompt/guardrail**: `runLlmTranslation` envia só `{id,text}` (timestamps nunca saem) com prompt de tradução fiel + regra `keepTerms` (preservar termos técnicos/código/marcas/siglas). `applyLlmTranslationGuardrail` exige ids exatos e ordem controlada pelo app, com limites de tamanho mais folgados que a correção (0.25×–6×) por ser transição de idioma. Falha/timeout ⇒ legenda original, nunca bloqueia.
+- **Rotas**: `GET /api/subtitles/status?lang=`, `POST /api/subtitles/generate?lang=` (sem processed válido → `needTranscription` e enfileira a transcrição; frontend encadeia), `GET /api/subtitles/editor?lang=` (serve o doc traduzido; `lang` == fonte → original), `GET /subtitles/<hash>-lang.vtt` (regex `^[0-9a-f]{24}(?:-[a-z]{2,10})?\.vtt$`), `POST /api/subtitles/clear` apaga `hash-*`.
+- **UI**: menu CC monta `Original (<língua>)` / `<Idioma>` / `Desativado`; sem LLM, selecionar tradução mostra "Tradução indisponível — configure um LLM" (sem job morto). Mobile: seletor só no grupo "Legendas" do menu ⋮.
+
 ## Concorrência
 
 Transcode ffmpeg e whisper compartilham o MESMO semáforo `heavySlots` (nunca simultâneos por padrão). `MAX_CONCURRENT_AI_JOBS` env (default 1) inicializa; `advanced.maxConcurrentAiJobs` ajusta em runtime via `refreshHeavyMax`. LLM (rede, não CPU) **não** consome slot. Preempção só libera slot extra para quem é mais prioritário.

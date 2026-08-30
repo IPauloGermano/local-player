@@ -11,7 +11,7 @@ git diff --check
 node --test test/progress.test.js test/topics.test.js test/libraries.test.js \
   test/scope.test.js test/sidebar.test.js test/sidebar-runtime-smoke.js \
   test/progress-invariance.test.js test/progress-persistence.test.js \
-  test/progress-forensic.test.js
+  test/progress-forensic.test.js test/translation.test.js
 ```
 
 `progress`, `sidebar-runtime-smoke`, `progress-invariance`,
@@ -73,6 +73,15 @@ Use um `.mkv`/`.avi` (ou formato que o navegador não reproduza):
   rejeita. Nenhum log imprime chave/token.
 - **Concorrência**: transcode e whisper compartilham slots (não rodam juntos
   por padrão); LLM não consome slot.
+- **Tradução de legendas** (LLM, sob demanda): aula EN com `translation.enabled`
+  e LLM da correção configurado → menu CC mostra **Original (en)** e
+  **Português**; selecionar PT enfileira P0 (`hash-lang`), vira
+  `.courseplayer/subtitles/<hash>-pt.vtt` + espelho `data/subtitles/<hash>-pt.vtt`;
+  a original **nunca** é tocada (raw/processed intactos). Sem LLM → só Original
+  (status "Tradução indisponível", sem job morto). Falha/timeout do LLM →
+  original preservado. Clear por vídeo/global apaga traduções (`hash-*`);
+  `?lang=` em status/generate/editor; `/subtitles/<hash>-pt.vtt` servido com
+  regex `^[0-9a-f]{24}(?:-[a-z]{2,10})?\.vtt$`.
 
 ## 7. Tópicos e escopo
 
@@ -91,3 +100,7 @@ Use um `.mkv`/`.avi` (ou formato que o navegador não reproduza):
 - Landscape/wide: player respeita o limite vertical (`72svh`) sem resize
   dinâmico durante scroll.
 - Desktop: player, fullscreen, controles, legendas e layout inalterados.
+- **Mobile ≤600px**: seletor de idioma **só no menu ⋮** (`pc-more-cc-group`); o
+  popover CC da barra não abre em telas estreitas (mesma regra de volume/
+  velocidade); sem estouro horizontal; drawer/cabeçalho intactos; seleção por
+  toque não bloqueia a reprodução; dot CC informa estado (gerando/traduzindo).

@@ -239,6 +239,11 @@ funciona normal.**
 - **LLM guardada** (ids + <40%/>4x rejeitados; falha ⇒ original). **Raw nunca
   sobrescrito**. **VTT canônico em `.courseplayer/subtitles/`**; clear apaga
   canônico + espelho.
+- **Tradução de legendas** (`translation` na config): LLM reusa o provider da
+  correção; artefato derivado `baseHash-<lang>` (chave em `subtitleJobs`
+  `hash-lang`, `kind:"translation"`); **nunca toca raw/processed/original**;
+  só sob demanda (P0, no player); sem LLM → "Tradução indisponível". Whisper
+  **não** traduz para PT (o `-tr` dele é EN-only).
 - **Nunca gerar a biblioteca inteira** (P0–P3); preempção só de jobs baratos.
   Transcode + whisper compartilham `heavySlots`; LLM não.
 - **Editor**: edição nunca sobrescreve raw/processed; save com `version`

@@ -15,6 +15,8 @@ const {
   collectCoursesInScope,
   collectDirectCourses,
   buildContinueItems,
+  getNodeProgressStats,
+  getLibraryProgressSummary,
 } = require("../public/scope.js");
 
 // ---- Fixtures ---------------------------------------------------------------
@@ -375,4 +377,99 @@ test("escopo: progresso aninhado em tópicos (chave libId\\0rel) é encontrado p
   assert.strictEqual(direct.length, 0, "sem curso direto na raiz");
   assert.strictEqual(progressScope.length, 1, "fallback usa o escopo global (curso em tópico contado)");
   assert.strictEqual(progressScope[0].path, "TI/Python/Curso X");
+});
+
+// ---- "Seu progresso": agregação de tempo estudado (watchedSeconds) ----------
+// getNodeProgressStats/getLibraryProgressSummary são PURAS (progressOf injetado).
+// REGRESSÃO corrigida: aulas CONCLUÍDAS com `position` zerada (✓ manual no
+// sidebar ou dados legados) contribuíam ZERO para o tempo estudado — 27 aulas
+// concluídas podiam renderizar "11 segundos". Aula concluída deve contar a
+// DURAÇÃO completa do registro de progresso.
+
+test("progresso: tempo estudado conta a duração de aulas concluídas mesmo com position zerada", () => {
+  const course = folder("Curso", [
+    video("Curso/Aula 01.mp4"),
+    video("Curso/Aula 02.mp4"),
+    video("Curso/Aula 03.mp4"),
+    video("Curso/Aula 04.mp4"),
+  ]);
+  const progress = {
+    // Concluída via playback (position == duration) — registro bem-formado.
+    "Curso/Aula 01.mp4": { position: 600, duration: 600, completed: true },
+    // Concluída via ✓ manual / legado: position zerada, mas duração conhecida.
+    "Curso/Aula 02.mp4": { position: 0, duration: 1323.05, completed: true },
+    // Concluída sem nenhuma métrica de tempo (duration 0) → contribui 0.
+    "Curso/Aula 03.mp4": { position: 0, duration: 0, completed: true },
+    // Em andamento: conta a posição (limitada à duração).
+    "Curso/Aula 04.mp4": { position: 120, duration: 600, completed: false },
+  };
+  const s = getNodeProgressStats(course, progressFor(progress));
+  // 600 (A01) + 1323.05 (A02) + 0 (A03) + 120 (A04) = 2043.05.
+  assert.ok(
+    Math.abs(s.watchedSeconds - 2043.05) < 0.0001,
+    `watchedSeconds=${s.watchedSeconds} deve ser 2043.05 (não só a posição da última)`,
+  );
+  assert.strictEqual(s.done, 3);
+  assert.strictEqual(s.inProgress, 1);
+  assert.strictEqual(s.total, 4);
+  assert.strictEqual(s.pct, 75);
+});
+
+test("progresso: cenário do bug — 27 aulas concluídas com position zerada não viram poucos segundos", () => {
+  const videos = [];
+  const progress = {};
+  for (let i = 1; i <= 27; i++) {
+    const p = `Curso/Aula ${i}.mp4`;
+    videos.push(video(p));
+    progress[p] = { position: 0, duration: 300 + i, completed: true };
+  }
+  const course = folder("Curso", videos);
+  const s = getNodeProgressStats(course, progressFor(progress));
+  // Antes da correção, watchedSeconds era a soma das POSIÇÕES (todas 0) →
+  // o frontend renderizaria "0s" apesar das 27 concluídas. Agora soma as durações.
+  assert.ok(s.watchedSeconds > 27 * 300, `watchedSeconds=${s.watchedSeconds} deve somar as durações das 27 concluídas`);
+  assert.strictEqual(s.done, 27);
+});
+
+test("progresso: sem progresso → zero; posição de em andamento limitada à duração", () => {
+  const course = folder("Curso", [video("Curso/Aula 01.mp4")]);
+  assert.strictEqual(getNodeProgressStats(course, () => null).watchedSeconds, 0);
+  assert.strictEqual(getNodeProgressStats(course, progressFor({})).done, 0);
+
+  const clamped = folder("Curso", [video("Curso/Aula 01.mp4")]);
+  const over = getNodeProgressStats(
+    clamped,
+    progressFor({ "Curso/Aula 01.mp4": { position: 900, duration: 600, completed: false } }),
+  );
+  assert.strictEqual(over.watchedSeconds, 600, "posição acima da duração é limitada");
+
+  const noDur = getNodeProgressStats(
+    clamped,
+    progressFor({ "Curso/Aula 01.mp4": { position: 30, duration: 0, completed: false } }),
+  );
+  assert.strictEqual(noDur.watchedSeconds, 30, "sem duração conta a posição");
+});
+
+test("progresso: agregação por escopo — startedCourses e isolamento entre cursos/tópicos", () => {
+  const tree = buildTree();
+  const progress = {
+    "TI/Programação/Python/Curso Python/Aula 01.mp4": { position: 0, duration: 300, completed: true },
+    "TI/Linux/Curso Linux/Aula 01.mp4": { position: 60, duration: 200, completed: false },
+    "Design/Photoshop/Curso Photoshop/Aula 01.mp4": { position: 0, duration: 0, completed: true },
+  };
+  const scopedTi = getLibraryProgressSummary(
+    collectCoursesInScope(findNodeByPath(tree, "TI")),
+    progressFor(progress),
+  );
+  // Python concluída conta 300s; Linux em andamento conta 60s. Photoshop (Design) fica FORA do escopo TI.
+  assert.strictEqual(scopedTi.doneLessons, 1);
+  assert.strictEqual(scopedTi.inProgressLessons, 1);
+  assert.strictEqual(scopedTi.startedCourses, 2);
+  assert.strictEqual(scopedTi.watchedSeconds, 360);
+
+  const global = getLibraryProgressSummary(collectCoursesInScope(tree), progressFor(progress));
+  // Global inclui Design: 1 conclusão extra (pos=0, dur=0 → 0s de tempo).
+  assert.strictEqual(global.doneLessons, 2);
+  assert.strictEqual(global.startedCourses, 3);
+  assert.strictEqual(global.watchedSeconds, 360);
 });

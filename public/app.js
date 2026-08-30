@@ -31,6 +31,8 @@ const {
   collectCoursesInScope,
   collectDirectCourses,
   buildContinueItems,
+  getNodeProgressStats,
+  getLibraryProgressSummary,
 } = window.LocalPlayerScope;
 
 // Marca cada nó de uma árvore com o id da biblioteca a que pertence — o rel
@@ -447,7 +449,7 @@ async function loadAll() {
   const treeData = await treeRes.json();
   const libraries = Array.isArray(treeData.libraries) ? treeData.libraries : [];
   state.libraries = libraries;
-  const defaultLib = libraries.find((l) => l.isDefault);
+  const defaultLib = libraries.find((l) => l.isDefault) || libraries[0] || null;
   state.tree = (defaultLib && defaultLib.tree) || null;
   for (const lib of libraries) annotateLibId(lib.tree, lib.id);
   const progress = await progRes.json();
@@ -519,58 +521,6 @@ function flattenMaterials(node, out = []) {
     for (const c of node.children) flattenMaterials(c, out);
   }
   return out;
-}
-
-function getNodeProgressStats(node) {
-  const videos = flattenVideos(node, []);
-  let done = 0;
-  let inProgress = 0;
-  let watchedSeconds = 0;
-
-  for (const video of videos) {
-    const p = progFor(video);
-    if (!p) continue;
-    const duration = Number(p.duration) || 0;
-    const position = Number(p.position) || 0;
-    const played =
-      duration > 0
-        ? Math.min(duration, Math.max(0, position))
-        : Math.max(0, position);
-    watchedSeconds += played;
-    if (p.completed) done += 1;
-    else if (played > 5) inProgress += 1;
-  }
-
-  const total = videos.length;
-  const pct = total ? Math.round((done / total) * 100) : 0;
-  return { total, done, inProgress, watchedSeconds, pct };
-}
-
-function getLibraryProgressSummary(courses) {
-  let totalLessons = 0;
-  let doneLessons = 0;
-  let inProgressLessons = 0;
-  let watchedSeconds = 0;
-  let startedCourses = 0;
-
-  for (const course of courses) {
-    const s = getNodeProgressStats(course);
-    totalLessons += s.total;
-    doneLessons += s.done;
-    inProgressLessons += s.inProgress;
-    watchedSeconds += s.watchedSeconds;
-    if (s.done > 0 || s.inProgress > 0) startedCourses += 1;
-  }
-
-  const pct = totalLessons ? Math.round((doneLessons / totalLessons) * 100) : 0;
-  return {
-    totalLessons,
-    doneLessons,
-    inProgressLessons,
-    watchedSeconds,
-    startedCourses,
-    pct,
-  };
 }
 
 function buildSearchResults(roots, query) {
@@ -1103,20 +1053,12 @@ function renderSettingsBibliotecas() {
       const pathText = isDefault && !lib.path ? "Biblioteca da instalação" : lib.path;
       const actions = [
         `<button type="button" class="lib-btn" data-action="rescan">Reescanear</button>`,
+        `<button type="button" class="lib-btn" data-action="edit">Editar</button>`,
+        `<button type="button" class="lib-btn" data-action="toggle">${
+          lib.enabled === false ? "Ativar" : "Desativar"
+        }</button>`,
+        `<button type="button" class="lib-btn lib-btn-danger" data-action="remove">Remover</button>`,
       ];
-      if (!isDefault) {
-        actions.push(`<button type="button" class="lib-btn" data-action="edit">Editar</button>`);
-        actions.push(
-          `<button type="button" class="lib-btn" data-action="toggle">${
-            lib.enabled === false ? "Ativar" : "Desativar"
-          }</button>`,
-        );
-      }
-      actions.push(
-        `<button type="button" class="lib-btn lib-btn-danger" data-action="remove" ${
-          isDefault ? 'disabled title="A biblioteca padrão não pode ser removida"' : ""
-        }>Remover</button>`,
-      );
       return `
     <div class="lib-row" data-lib-id="${encodeURIComponent(lib.id)}">
       <div class="lib-row-main">
@@ -1965,8 +1907,15 @@ function aiGoToTab(tab) {
 
 function renderAiCorrection() {
   const co = aiState.config.correction;
+  const tr = aiState.config.translation || { enabled: false, targetLanguage: "pt", keepTerms: true };
   const pp = aiState.config.postprocessing || { capitalize: true, segment: true, technicalDictionary: false };
   const providers = aiState.config.llm.providers || [];
+  const trLangList =
+    (aiState.status?.transcription?.providers || []).find((p) => p.id === "whisper")?.languages ||
+    Object.keys(SUBTITLE_LANG_NAMES).map((id) => ({ id, name: SUBTITLE_LANG_NAMES[id] }));
+  const trLangOptions = trLangList
+    .map((l) => `<option value="${l.id}" ${l.id === tr.targetLanguage ? "selected" : ""}>${escapeHtml(l.name)}</option>`)
+    .join("");
   const ppSwitch = (id, label, on, desc) => `
     <div class="ai-field ai-field-switch">
       <button class="switch ${on ? "on" : ""}" id="${id}" type="button" role="switch" aria-checked="${on}">
@@ -1999,6 +1948,33 @@ function renderAiCorrection() {
       <label class="ai-label" for="ai-co-model">Modelo</label>
       <input class="ai-input" id="ai-co-model" type="text" value="${escapeHtml(co.model)}" placeholder="ex.: gpt-4o-mini, llama-3.1-8b, claude-…">
     </div>
+    <hr class="ai-sep">
+    <h4 class="ai-block-title">Tradução de legendas <span class="ai-block-tag">opcional</span></h4>
+    <div class="ai-field ai-field-switch">
+      <button class="switch ${tr.enabled ? "on" : ""}" id="ai-tr-tr-enabled" type="button" role="switch" aria-checked="${tr.enabled}">
+        <span class="switch-track"></span>
+        <span class="switch-thumb"></span>
+      </button>
+      <div class="ai-switch-text">
+        <label class="ai-label" for="ai-tr-tr-enabled">Traduzir legendas para outro idioma</label>
+        <p class="ai-field-desc">Uma aula em outro idioma (ex. inglês) ganha legenda traduzida sob demanda, selecionável no menu de legendas do player. Reusa o LLM da correção — a transcrição original nunca é alterada.</p>
+      </div>
+    </div>
+    <div class="ai-field">
+      <label class="ai-label" for="ai-tr-tr-lang">Idioma da legenda traduzida</label>
+      <select class="ai-select" id="ai-tr-tr-lang">${trLangOptions || '<option value="pt">Português</option>'}</select>
+    </div>
+    <div class="ai-field ai-field-switch">
+      <button class="switch ${tr.keepTerms ? "on" : ""}" id="ai-tr-tr-terms" type="button" role="switch" aria-checked="${tr.keepTerms}">
+        <span class="switch-track"></span>
+        <span class="switch-thumb"></span>
+      </button>
+      <div class="ai-switch-text">
+        <label class="ai-label" for="ai-tr-tr-terms">Preservar termos da língua original</label>
+        <p class="ai-field-desc">Mantém termos técnicos, código, marcas e siglas sem traduzir.</p>
+      </div>
+    </div>
+    <p class="ai-note">Sem LLM configurado, apenas a legenda original (língua do áudio) é exibida.</p>
     <p class="ai-note"><strong>A correção por LLM é opcional. A transcrição original é preservada.</strong> O guarda-raio aceita apenas a melhoria de pontuação e legibilidade: nunca altera o conteúdo falado, não traduz, não resume, não inventa e não mexe nos timestamps.</p>
   ` : `
     <h4 class="ai-block-title">Correção por LLM <span class="ai-block-tag">opcional</span></h4>
@@ -2036,6 +2012,25 @@ function bindAiCorrection(panel) {
   if (provEl) provEl.addEventListener("change", () => { cfg.correction.providerId = provEl.value; });
   const modelEl = document.getElementById("ai-co-model");
   if (modelEl) modelEl.addEventListener("input", () => { cfg.correction.model = modelEl.value; });
+  // Tradução de legendas (mesmo LLM da correção).
+  const trEnabled = document.getElementById("ai-tr-tr-enabled");
+  if (trEnabled) {
+    trEnabled.addEventListener("click", () => {
+      cfg.translation.enabled = !cfg.translation.enabled;
+      trEnabled.classList.toggle("on", cfg.translation.enabled);
+      trEnabled.setAttribute("aria-checked", String(cfg.translation.enabled));
+    });
+  }
+  const trLang = document.getElementById("ai-tr-tr-lang");
+  if (trLang) trLang.addEventListener("change", () => { cfg.translation.targetLanguage = trLang.value; });
+  const trTerms = document.getElementById("ai-tr-tr-terms");
+  if (trTerms) {
+    trTerms.addEventListener("click", () => {
+      cfg.translation.keepTerms = !cfg.translation.keepTerms;
+      trTerms.classList.toggle("on", cfg.translation.keepTerms);
+      trTerms.setAttribute("aria-checked", String(cfg.translation.keepTerms));
+    });
+  }
   // Switches de pós-processamento determinístico.
   const ppBind = (id, key) => {
     const el = document.getElementById(id);
@@ -2056,6 +2051,7 @@ function bindAiCorrection(panel) {
       try {
         await saveAiPatch({
           correction: cfg.correction,
+          translation: cfg.translation,
           postprocessing: cfg.postprocessing,
         });
         aiMsg("ai-co-msg", "ok", "Configurações de correção salvas.");
@@ -2605,7 +2601,7 @@ function renderNodeCard(node) {
         </a>
       </div>`;
   }
-  const stats = getNodeProgressStats(node);
+  const stats = getNodeProgressStats(node, progFor);
   const pct = stats.pct;
   const coverImage = node.coverImage ? mediaUrl(node.coverImage, node.libId) : null;
   const href = courseRoute(node);
@@ -2779,9 +2775,9 @@ function renderHome(app) {
   // direto (ex.: biblioteca toda organizada em tópicos), cai para o GLOBAL,
   // para o progresso existente não ficar invisível na Home (persistência é a
   // fonte de verdade; o bloco nunca some por organização em tópicos).
-  const continueSummary = getLibraryProgressSummary(allCourses);
+  const continueSummary = getLibraryProgressSummary(allCourses, progFor);
   const progressScope = directCourses.length ? directCourses : allCourses;
-  const librarySummary = getLibraryProgressSummary(progressScope);
+  const librarySummary = getLibraryProgressSummary(progressScope, progFor);
   state.lastSearchResults = results;
   // Tópicos têm path (sem coursePath); cursos/aulas/materiais têm coursePath.
   const matchedPaths = new Set(
@@ -2857,7 +2853,11 @@ function renderHome(app) {
     html += `<div class="section-title">${sectionLabel} <span class="count">(${totalShown})</span></div>`;
   }
   if (!totalShown) {
-    html += `<div class="empty-state">Nenhum curso encontrado na biblioteca.</div>`;
+    if (!libs.length) {
+      html += `<div class="empty-state">Nenhuma biblioteca configurada. Adicione uma pasta em <a href="#/settings" style="text-decoration:underline;color:inherit;font-weight:600;">Configurações → Bibliotecas</a>.</div>`;
+    } else {
+      html += `<div class="empty-state">Nenhum curso encontrado na biblioteca.</div>`;
+    }
   }
   for (const s of sections) {
     if (!s.filtered.length) continue;
@@ -3121,7 +3121,7 @@ function updateProgressUI() {
   if (!slot || (!slot.matches(":hover") && !drawerOpen)) {
     renderTree(state.currentCourseNode, false);
   }
-  const stats = getNodeProgressStats(state.currentCourseNode);
+  const stats = getNodeProgressStats(state.currentCourseNode, progFor);
   const pct = stats.pct;
   const titleEl = document.querySelector(".sidebar-title .pct");
   if (titleEl) titleEl.textContent = `${pct}%`;
@@ -3749,11 +3749,18 @@ function renderPlayerAndLesson() {
   wrap.innerHTML = `
     <video id="video-el" playsinline preload="auto" src="${mediaUrl(video.path, video.libId)}"></video>
     <div class="subtitle-overlay" id="subtitle-overlay" hidden>
-      <span class="subtitle-overlay-text"><span class="subtitle-overlay-inner"></span></span>
+      <span class="subtitle-overlay-text">
+        <span class="subtitle-grip" aria-hidden="true"></span>
+        <span class="subtitle-overlay-inner"></span>
+      </span>
     </div>
     <div class="player-preparing" id="player-preparing" hidden>
       <span class="pc-preparing-spinner"></span>
       <span>Preparando compatibilidade...</span>
+    </div>
+    <div class="player-substatus" id="player-substatus" hidden>
+      <span class="pc-preparing-spinner"></span>
+      <span id="player-substatus-text">Gerando legenda…</span>
     </div>
     <div class="player-status" id="player-status"></div>
     <div class="player-progress-warning" id="progress-save-warning" hidden>
@@ -3805,8 +3812,7 @@ function renderPlayerAndLesson() {
               <div class="pc-pop pc-cc-menu" id="pc-cc-menu" hidden>
                 <div class="pc-menu-group">
                   <span class="pc-menu-label">Idioma</span>
-                  <button type="button" class="pc-menu-item" data-cc="lang-pt" aria-pressed="true">Português (Brasil)</button>
-                  <button type="button" class="pc-menu-item" data-cc="off" aria-pressed="false">Desativado</button>
+                  <div class="pc-cc-langs" id="pc-cc-langs"></div>
                 </div>
                 <div class="pc-menu-group pc-menu-sep"></div>
                 <div class="pc-menu-group">
@@ -3828,8 +3834,7 @@ function renderPlayerAndLesson() {
                 </div>
                 <div class="pc-menu-group pc-more-narrow" id="pc-more-cc-group">
                   <span class="pc-menu-label">Legendas</span>
-                  <button type="button" class="pc-menu-item" data-cc="lang-pt">Português (Brasil)</button>
-                  <button type="button" class="pc-menu-item" data-cc="off">Desativado</button>
+                  <div class="pc-cc-langs" id="pc-more-cc-langs"></div>
                   <button type="button" class="pc-menu-item pc-cc-action" id="pc-more-cc-action" hidden></button>
                   <span class="pc-cc-status" id="pc-more-cc-status"></span>
                 </div>
@@ -3913,6 +3918,11 @@ function renderPlayerAndLesson() {
         <label>Contorno</label>
         <input type="checkbox" id="ssp-shadow" checked>
       </div>
+      <div class="ssp-row ssp-row-pos">
+        <label>Posição</label>
+        <button type="button" id="ssp-reset-pos">Restaurar posição padrão</button>
+      </div>
+      <p class="ssp-hint">Arraste a legenda dentro do vídeo para reposicionar (como no YouTube).</p>
       <div class="ssp-actions">
         <button type="button" id="ssp-reset">Restaurar padrão</button>
       </div>
@@ -4116,6 +4126,12 @@ function wirePlayerUI(videoEl) {
   if (centerBtn) centerBtn.addEventListener("click", () => togglePlay(videoEl));
   // Clique em área vazia do vídeo também alterna play/pause.
   wrap.addEventListener("click", (e) => {
+    // Soltar a legenda arrastada dispara um `click` sintético que não pode
+    // virar play/pause (o arraste é uma ação do usuário sobre a legenda).
+    if (subtitleDragSuppressClick) {
+      subtitleDragSuppressClick = false;
+      return;
+    }
     if (e.target.closest(".player-ui")) return;
     togglePlay(videoEl);
   });
@@ -4232,8 +4248,12 @@ function wirePlayerUI(videoEl) {
       closePopovers();
     } else if (cc.dataset.cc === "off") {
       setSubtitleEnabled(false);
-    } else if (cc.dataset.cc === "lang-pt") {
-      setSubtitleEnabled(true);
+    } else if (cc.dataset.cc === "lang-source") {
+      setSubtitleLang(null);
+      closePopovers();
+    } else if (cc.dataset.cc && cc.dataset.cc.indexOf("lang-") === 0) {
+      setSubtitleLang(cc.dataset.cc.slice(5));
+      closePopovers();
     }
   });
 
@@ -4267,6 +4287,9 @@ function wirePlayerUI(videoEl) {
 // (nunca um modal): "Legenda disponível", "Gerando legenda…", "Legenda
 // indisponível" ou "Erro ao gerar".
 let subtitlePollTimer = null;
+// Último idioma cujo overlay foi carregado (por aula); muda ⇒ recarrega mesmo
+// com `overlayLoaded` ligado (troca de idioma no menu CC).
+let subtitleLastLoadedLang = null;
 // Guarda de P1: só antecipa a próxima aula uma vez por montagem do player
 // (o backend já dedupa, mas isto evita POSTs repetidos a cada sondagem).
 let subtitlePregenNextPath = null;
@@ -4285,8 +4308,9 @@ let dirtyGuardSuppressed = false;
 const subtitleState = {
   hash: null,
   rel: null,
+  libId: null,
   ready: false,
-  source: null, // 'edited' | 'processed' | 'vtt' | null
+  source: null, // 'edited' | 'processed' | 'vtt' | 'translated' | null
   edited: false,
   staleSource: false,
   segments: [],
@@ -4299,6 +4323,20 @@ const subtitleState = {
   // (localStorage) decide se o overlay aparece mesmo com legenda pronta.
   ccKind: null,
   enabled: true,
+  // Idiomas (preenchidos pela sondagem do status): `lang` = idioma ativo
+  // (null = original), `sourceLang` = língua-fonte da transcrição, `targetLang`
+  // = idioma-alvo de tradução configurado, `canTranslate` = LLM habilitado.
+  lang: null,
+  sourceLang: null,
+  targetLang: null,
+  canTranslate: false,
+  // Posição arrastável da legenda (como no YouTube): normalizada e por aula —
+  // `pos.v` = fração da altura do quadro medida da base (0 = padrão, 1 = topo),
+  // `pos.h` = fração horizontal do centro (0.5 = centro). null = padrão.
+  // Reiniciada a cada aula (setupPlayerSubtitles), como o YouTube.
+  pos: null,
+  // Percentual real do job ativo (progresso do whisper via -pp), p/ o badge.
+  percent: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -4307,6 +4345,33 @@ const subtitleState = {
 // A preferência Ligado/Desativado fica no localStorage (nunca no servidor).
 // ---------------------------------------------------------------------------
 const SUBTITLES_ENABLED_KEY = "course-player-subtitles-enabled";
+// Idioma de exibição escolhido (localStorage, padrão global): "original" ou um
+// id de idioma de tradução (ex. "pt"). O id exibido cai para "original" quando
+// a aula não oferece tradução (língua-fonte == alvo ou sem LLM).
+const SUBTITLES_LANG_KEY = "course-player-subtitles-lang";
+// Nomes curtos (sem "Brasil" etc.) para o menu CC não alargar; o idioma-fonte
+// aparece como "Original (<nome>)".
+const SUBTITLE_LANG_NAMES = {
+  auto: "Detecção automática",
+  pt: "Português",
+  en: "Inglês",
+  es: "Espanhol",
+  fr: "Francês",
+  de: "Alemão",
+  it: "Italiano",
+  nl: "Holandês",
+  ja: "Japonês",
+  ko: "Coreano",
+  zh: "Chinês",
+  ru: "Russo",
+};
+function subtitleLangName(id) {
+  return SUBTITLE_LANG_NAMES[id] || id || "Original";
+}
+function getSubtitleLang() {
+  const v = localStorage.getItem(SUBTITLES_LANG_KEY) || "original";
+  return /^[a-z]{2,10}$/.test(v) ? v : null;
+}
 
 function getSubtitleEnabled() {
   return localStorage.getItem(SUBTITLES_ENABLED_KEY) !== "0";
@@ -4318,6 +4383,21 @@ function setSubtitleEnabled(v) {
   } catch {}
   applySubtitleVisibility();
   syncSubtitleCcUi();
+}
+
+// Troca o idioma de exibição da legenda da aula atual (null = original, ou o
+// id do idioma-alvo de tradução). Selecionar um idioma liga as legendas. A
+// sondagem (check) recarrega o overlay e dispara a geração da tradução se
+// preciso — sem nunca bloquear a reprodução.
+function setSubtitleLang(lang) {
+  subtitleState.lang = lang || null;
+  try {
+    localStorage.setItem(SUBTITLES_LANG_KEY, subtitleState.lang || "original");
+  } catch {}
+  if (lang) subtitleState.enabled = true; // escolher idioma implica ligar
+  syncSubtitleCcUi();
+  if (typeof subtitleCheckApi === "function") subtitleCheckApi();
+  applySubtitleVisibility();
 }
 
 // Mostra/esconde o overlay conforme prontidão + preferência, sem recarregar os
@@ -4370,6 +4450,9 @@ function syncSubtitleCcUi() {
   } else if (kind === "unavailable") {
     cls = "is-off";
     title = "Legendas indisponíveis — o menu permite gerar";
+  } else if (kind === "no-translate") {
+    cls = "is-off";
+    title = "Tradução indisponível — configure um LLM na Central de IA";
   } else if (kind === "off") {
     cls = "is-off";
     title = "Legendas desativadas";
@@ -4390,15 +4473,40 @@ function syncSubtitleCcUi() {
     dot.hidden = !showDot;
     dot.textContent = kind === "failed" || kind === "waiting" ? "!" : "";
   }
-  // Rádio Idioma (Português) x Desativado — nos dois menus (barra e ⋮ mobile).
-  document.querySelectorAll('[data-cc="lang-pt"]').forEach((it) => {
-    it.classList.toggle("is-active", enabled);
-    it.setAttribute("aria-pressed", String(enabled));
-  });
-  document.querySelectorAll('[data-cc="off"]').forEach((it) => {
-    const active = !enabled;
-    it.classList.toggle("is-active", active);
-    it.setAttribute("aria-pressed", String(active));
+  // Seletor de idioma (Original / <tradução> / Desativado) — montado nos dois
+  // menus (barra e ⋮ mobile). `activeLang` = idioma ativo; quando o escolhido
+  // é a língua-fonte ou a tradução não está disponível, o "Original" é o ativo.
+  const activeLang =
+    subtitleState.lang &&
+    subtitleState.targetLang &&
+    subtitleState.lang === subtitleState.targetLang &&
+    subtitleState.targetLang !== subtitleState.sourceLang
+      ? subtitleState.lang
+      : null;
+  const srcLabel =
+    "Original" +
+    (subtitleState.sourceLang
+      ? ` (${escapeHtml(subtitleLangName(subtitleState.sourceLang))})`
+      : "");
+  const langItems = [
+    `<button type="button" class="pc-menu-item${activeLang === null ? " is-active" : ""}" data-cc="lang-source" aria-pressed="${activeLang === null}">${escapeHtml(srcLabel)}</button>`,
+  ];
+  if (
+    subtitleState.targetLang &&
+    subtitleState.targetLang !== subtitleState.sourceLang
+  ) {
+    const t = subtitleState.targetLang;
+    langItems.push(
+      `<button type="button" class="pc-menu-item${activeLang === t ? " is-active" : ""}" data-cc="lang-${escapeHtml(t)}" aria-pressed="${activeLang === t}">${escapeHtml(subtitleLangName(t))}</button>`,
+    );
+  }
+  langItems.push(
+    `<button type="button" class="pc-menu-item${!enabled ? " is-active" : ""}" data-cc="off" aria-pressed="${!enabled}">Desativado</button>`,
+  );
+  const langsHtml = langItems.join("");
+  ["pc-cc-langs", "pc-more-cc-langs"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && el.innerHTML !== langsHtml) el.innerHTML = langsHtml;
   });
   // Ação contextual (Gerar/Regenerar) e linha de status.
   const statusEls = [
@@ -4414,6 +4522,7 @@ function syncSubtitleCcUi() {
   let showAction = false;
   if (kind === "generating") statusText = "Gerando legenda…";
   else if (kind === "waiting") statusText = "Aguardando o dispositivo…";
+  else if (kind === "no-translate") statusText = "Tradução indisponível — configure um LLM";
   else if (kind === "failed") {
     statusText = "Erro ao gerar — tente novamente";
     actionText = "Gerar legenda";
@@ -4433,11 +4542,40 @@ function syncSubtitleCcUi() {
     el.textContent = actionText;
     el.hidden = !showAction;
   });
+  updateSubtitleBadge();
+}
+
+// Badge não-bloqueante sobre o player: feedback VISÍVEL de que a legenda está
+// sendo gerada (ou aguardando a fonte) — o dot do botão CC sozinho era sutil
+// demais. Some quando pronto/falha/desativado. Reusa o spinner do transcode.
+function updateSubtitleBadge() {
+  const badge = document.getElementById("player-substatus");
+  if (!badge) return;
+  const kind = subtitleState.ccKind || null;
+  let msg = "";
+  if (kind === "generating") {
+    const isTranslation =
+      subtitleState.lang &&
+      subtitleState.targetLang &&
+      subtitleState.lang === subtitleState.targetLang &&
+      subtitleState.targetLang !== subtitleState.sourceLang;
+    msg = isTranslation ? "Traduzindo…" : "Gerando legenda…";
+    if (typeof subtitleState.percent === "number") {
+      msg += " " + Math.round(subtitleState.percent) + "%";
+    }
+  } else if (kind === "waiting") {
+    msg = "Aguardando o dispositivo…";
+  }
+  badge.hidden = !msg;
+  const textEl = badge.querySelector("#player-substatus-text");
+  if (textEl && textEl.textContent !== msg) textEl.textContent = msg;
 }
 
 // Dispara a geração/regeneração da legenda da aula atual a partir do menu CC.
 // O backend dedupa; `force` regenera do zero quando já existe ou falhou.
 let subtitleGenerateApi = null; // preenchido em setupPlayerSubtitles
+// Re-sondagem do status (usado por setSubtitleLang ao trocar o idioma).
+let subtitleCheckApi = null; // preenchido em setupPlayerSubtitles
 function requestSubtitleGenerate() {
   if (subtitleGenerateApi) subtitleGenerateApi();
 }
@@ -4626,6 +4764,10 @@ function wireSubtitleStylePanel(wrap) {
     applySubtitleStyle(document.getElementById("subtitle-overlay"));
     applySubtitleGeometry();
   });
+  panel.querySelector("#ssp-reset-pos")?.addEventListener("click", () => {
+    subtitleState.pos = null;
+    applySubtitleGeometry();
+  });
   document.addEventListener("click", (e) => {
     if (!panel.hidden && !panel.contains(e.target) && e.target !== btn) subtitleStyleClose();
   });
@@ -4726,7 +4868,27 @@ function applySubtitleGeometry() {
   overlay.style.width = g.frame.width + "px";
   overlay.style.height = g.frame.height + "px";
   overlay.style.fontSize = fontPx + "px";
-  textEl.style.marginBottom = g.bottomInset + "px";
+  // Posição arrastável (YouTube): `pos` normalizada vira inset real, clampada
+  // para a legenda nunca sair do quadro nem ficar ATRÁS da barra de controles
+  // (o mínimo é o inset padrão, que já descola da barra). Sem `pos` → padrão.
+  let bottomInset = g.bottomInset;
+  let hOff = 0;
+  if (subtitleState.pos) {
+    const fh = g.frame.height;
+    const fw = g.frame.width;
+    const minInset = g.bottomInset; // nunca abaixo da barra de controles
+    const maxV = Math.max(minInset, fh - fontPx * 1.3 - 6);
+    bottomInset = Math.min(maxV, Math.max(minInset, subtitleState.pos.v * fh));
+    // Laterais: o texto inteiro (largura real medida) fica dentro do quadro,
+    // respeitando o padding de 3% do overlay — nunca atrás do player.
+    const tw = Math.min(textEl.offsetWidth || 0, fw * 0.94);
+    const minHOff = fw * 0.03 - fw / 2 + tw / 2;
+    const maxHOff = fw * 0.97 - fw / 2 - tw / 2;
+    hOff = (subtitleState.pos.h - 0.5) * fw;
+    hOff = Math.max(minHOff, Math.min(maxHOff, hOff));
+  }
+  textEl.style.marginBottom = bottomInset + "px";
+  textEl.style.transform = hOff ? `translateX(${hOff}px)` : "none";
 }
 
 // Remove observadores/listeners da montagem anterior (re-render troca o DOM).
@@ -4743,6 +4905,7 @@ function teardownSubtitleGeometry() {
     l.target.removeEventListener(l.type, l.fn);
   }
   subtitleGeoListeners = [];
+  teardownSubtitleDrag();
 }
 
 // Observa o que muda a geometria: resize do video/wrap/barra (ResizeObserver),
@@ -4771,6 +4934,123 @@ function wireSubtitleGeometry() {
   };
   addL(document, "fullscreenchange", applySubtitleGeometry);
   addL(window, "resize", applySubtitleGeometry);
+  wireSubtitleDrag();
+}
+
+// ---------------------------------------------------------------------------
+// Arraste da legenda (como no YouTube): pegar o TEXTO da legenda e mover para
+// qualquer ponto dentro do quadro. A posição é normalizada (frações do quadro)
+// e por aula (reset no setupPlayerSubtitles) — reposiciona corretamente em
+// resize/fullscreen. `pos` fica em memória (não é preferência persistida).
+// ---------------------------------------------------------------------------
+let subtitleDragPointerId = null;
+let subtitleDragStart = null; // {x, y, v, h}
+let subtitleDragMoved = false;
+let subtitleDragFn = null; // {target, onDown, onMove, onUp}
+// Suprime o `click` que o navegador dispara logo após um ARRASTE real (o
+// soltar não pode virar play/pause). Click simples continua alternando.
+let subtitleDragSuppressClick = false;
+
+function teardownSubtitleDrag() {
+  if (subtitleDragFn) {
+    subtitleDragFn.target.removeEventListener("pointerdown", subtitleDragFn.onDown);
+    if (subtitleDragPointerId !== null) {
+      subtitleDragFn.target.removeEventListener("pointermove", subtitleDragFn.onMove);
+      subtitleDragFn.target.removeEventListener("pointerup", subtitleDragFn.onUp);
+      subtitleDragFn.target.removeEventListener("pointercancel", subtitleDragFn.onUp);
+    }
+    subtitleDragFn.target.classList.remove("dragging");
+    subtitleDragFn = null;
+  }
+  subtitleDragPointerId = null;
+  subtitleDragStart = null;
+  subtitleDragMoved = false;
+  subtitleDragSuppressClick = false;
+}
+
+function wireSubtitleDrag() {
+  teardownSubtitleDrag();
+  const textEl = document.querySelector(".subtitle-overlay-text");
+  if (!textEl) return;
+  const frame = () => subtitleState.frame;
+
+  const onDown = (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const fr = frame();
+    if (!fr) return;
+    // Início = posição atual (padrão ou já arrastada), em frações do quadro.
+    let baseV = 0;
+    let baseH = 0.5;
+    if (subtitleState.pos) {
+      baseV = subtitleState.pos.v;
+      baseH = subtitleState.pos.h;
+    } else {
+      baseV = Math.min(1, (subtitleState.bottomInset || 0) / fr.height);
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    subtitleDragPointerId = e.pointerId;
+    subtitleDragStart = { x: e.clientX, y: e.clientY, v: baseV, h: baseH };
+    subtitleDragMoved = false;
+    textEl.classList.add("dragging");
+    try {
+      textEl.setPointerCapture(e.pointerId);
+    } catch {}
+    textEl.addEventListener("pointermove", onMove);
+    textEl.addEventListener("pointerup", onUp);
+    textEl.addEventListener("pointercancel", onUp);
+  };
+
+  const onMove = (e) => {
+    if (e.pointerId !== subtitleDragPointerId) return;
+    const fr = frame();
+    const start = subtitleDragStart;
+    if (!fr || !start) return;
+    e.preventDefault();
+    if (
+      Math.abs(e.clientX - start.x) + Math.abs(e.clientY - start.y) > 3
+    ) {
+      subtitleDragMoved = true;
+    }
+    const fh = fr.height;
+    const fw = fr.width;
+    // dy positivo = arrastou para cima (aumenta a distância da base).
+    const dy = start.y - e.clientY;
+    const dx = e.clientX - start.x;
+    const insetPx = start.v * fh + dy;
+    // Mínimo = inset padrão (descola a barra de controles) — a legenda nunca
+    // pode ficar atrás do player. Máximo = texto inteiro dentro do quadro.
+    const minInset = subtitleState.bottomInset || 6;
+    const maxInset = Math.max(minInset, fh - subtitleState.fontPx * 1.3 - 6);
+    const v = Math.min(1, Math.max(0, Math.min(maxInset, Math.max(minInset, insetPx)) / fh));
+    const h = Math.min(0.95, Math.max(0.05, start.h + dx / fw));
+    subtitleState.pos = { v, h };
+    applySubtitleGeometry();
+  };
+
+  const onUp = (e) => {
+    if (e.pointerId !== subtitleDragPointerId) return;
+    subtitleDragPointerId = null;
+    subtitleDragStart = null;
+    textEl.classList.remove("dragging");
+    try {
+      textEl.releasePointerCapture(e.pointerId);
+    } catch {}
+    textEl.removeEventListener("pointermove", onMove);
+    textEl.removeEventListener("pointerup", onUp);
+    textEl.removeEventListener("pointercancel", onUp);
+    // Arraste real: o `click` que vem a seguir não pode alternar play/pause.
+    if (subtitleDragMoved) {
+      subtitleDragSuppressClick = true;
+      setTimeout(() => {
+        subtitleDragSuppressClick = false;
+      }, 80);
+    }
+    subtitleDragMoved = false;
+  };
+
+  subtitleDragFn = { target: textEl, onDown, onMove, onUp };
+  textEl.addEventListener("pointerdown", onDown);
 }
 
 // Segmento ativo para o instante t (busca binária sobre start; segmentos são
@@ -4815,10 +5095,12 @@ function updateSubtitleOverlay(time) {
 
 // Carrega o documento editável do backend e liga o overlay à reprodução.
 // Usa /api/subtitles/editor (fonte: edited > processed > vtt; nunca raw).
-async function loadSubtitleOverlay(videoEl, rel, libId) {
+async function loadSubtitleOverlay(videoEl, rel, libId, lang) {
   let doc;
   try {
-    const res = await fetch("/api/subtitles/editor?path=" + encodeURIComponent(rel) + libQuery({ libId }));
+    let url = "/api/subtitles/editor?path=" + encodeURIComponent(rel) + libQuery({ libId });
+    if (lang) url += "&lang=" + encodeURIComponent(lang);
+    const res = await fetch(url);
     if (!res.ok) return false;
     doc = await res.json();
   } catch {
@@ -4827,6 +5109,7 @@ async function loadSubtitleOverlay(videoEl, rel, libId) {
   const segs = Array.isArray(doc.segments) ? doc.segments : [];
   subtitleState.hash = doc.hash || subtitleState.hash;
   subtitleState.rel = rel;
+  subtitleState.libId = libId || null;
   subtitleState.ready = doc.ready === true && segs.length > 0;
   subtitleState.source = doc.source || null;
   subtitleState.edited = doc.edited === true;
@@ -4863,7 +5146,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   subtitlePregenNextPath = null;
   teardownSubtitleGeometry();
   // Zera o estado do overlay e do botão CC (nova aula); a preferência
-  // Ligado/Desativado vem do localStorage.
+  // Ligado/Desativado e o idioma vêm do localStorage.
   subtitleState.hash = null;
   subtitleState.rel = null;
   subtitleState.ready = false;
@@ -4874,7 +5157,16 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   subtitleState.currentIndex = -1;
   subtitleState.ccKind = null;
   subtitleState.enabled = getSubtitleEnabled();
+  subtitleState.lang = getSubtitleLang();
+  subtitleState.sourceLang = null;
+  subtitleState.targetLang = null;
+  subtitleState.canTranslate = false;
+  subtitleState.libId = video.libId || null;
+  subtitleState.pos = null; // posição arrastável volta ao padrão a cada aula
+  subtitleState.percent = null;
   subtitleGenerateApi = null;
+  subtitleCheckApi = null;
+  subtitleLastLoadedLang = null;
   const overlayEl = document.getElementById("subtitle-overlay");
   if (overlayEl) overlayEl.hidden = true;
   syncSubtitleCcUi();
@@ -4893,6 +5185,20 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
     }
   };
   const rel = video.path;
+  // Idioma efetivo: a seleção cai para "original" quando o idioma escolhido é
+  // a própria língua-fonte, quando a tradução está desabilitada ou quando o
+  // idioma-alvo mudou (o backend também trata assim).
+  const effectiveLang = () =>
+    subtitleState.lang &&
+    subtitleState.targetLang &&
+    subtitleState.lang === subtitleState.targetLang &&
+    subtitleState.targetLang !== subtitleState.sourceLang
+      ? subtitleState.lang
+      : null;
+  const langQuery = () => {
+    const l = effectiveLang();
+    return l ? "&lang=" + encodeURIComponent(l) : "";
+  };
   // Ação do menu CC (Gerar/Regenerar): registrada para o delegation do player.
   // Força regeneração quando já existe ou falhou; re-sonda até ficar pronta.
   subtitleGenerateApi = () => {
@@ -4903,6 +5209,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
       "/api/subtitles/generate?path=" +
         encodeURIComponent(rel) +
         libQuery(video) +
+        langQuery() +
         "&priority=0" +
         force,
       { method: "POST" },
@@ -4930,18 +5237,37 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
 
   const check = async () => {
     try {
-      const res = await fetch("/api/subtitles/status?path=" + encodeURIComponent(rel) + libQuery(video));
+      const res = await fetch(
+        "/api/subtitles/status?path=" +
+          encodeURIComponent(rel) +
+          libQuery(video) +
+          langQuery(),
+      );
       if (!res.ok) throw new Error("http " + res.status);
       st = await res.json();
-      // Sem Whisper configurado ⇒ o controle CC não tem o que fazer (gerar
+      // Progresso real do job (whisper -pp) para o badge "Gerando legenda…".
+      subtitleState.percent = typeof st.percent === "number" ? st.percent : null;
+      // Língua-fonte real e possibilidade de tradução vêm da sondagem; o
+      // seletor de idioma do menu CC é montado a partir deles.
+      if (st.language) subtitleState.sourceLang = st.language;
+      subtitleState.targetLang =
+        st.translation && st.translation.enabled
+          ? st.translation.targetLanguage || null
+          : null;
+      subtitleState.canTranslate = !!st.canTranslate;
+      // Sem Whisper/LLM configurado ⇒ o controle CC não tem o que fazer (gerar
       // nem regenerar) e fica oculto — mesmo se sobrar uma legenda pronta de
       // geração anterior; sem o pipeline o menu só teria ações mortas.
-      const showCc = !!st.canGenerate;
+      const showCc = !!st.canGenerate || !!st.canTranslate;
       if (ccGroupEl) ccGroupEl.style.display = showCc ? "" : "none";
       if (moreCcGroupEl) moreCcGroupEl.style.display = showCc ? "" : "none";
     } catch {
       return; // API indisponível: silencioso — nunca bloqueia a reprodução.
     }
+    // Troca de idioma: recarrega o overlay mesmo com `overlayLoaded` ligado.
+    const effLang = effectiveLang();
+    if (overlayLoaded && effLang !== subtitleLastLoadedLang) overlayLoaded = false;
+    subtitleLastLoadedLang = effLang;
     // Sem legenda pronta → overlay oculto; se voltar a ficar pronta depois
     // (ex.: regeneração), refetch no próximo poll (overlayLoaded é resetado).
     if (!st.ready) {
@@ -4960,10 +5286,11 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
         return;
       }
       // Overlay custom no lugar do <track>: carrega o documento editável do
-      // backend (edited > processed > vtt; nunca raw) e liga à reprodução.
+      // backend (edited > processed > vtt > traduzido; nunca raw) e liga à
+      // reprodução.
       if (!overlayLoaded) {
         overlayLoaded = true;
-        loadSubtitleOverlay(videoEl, rel, video.libId).then((ok) => {
+        loadSubtitleOverlay(videoEl, rel, video.libId, effLang).then((ok) => {
           if (!ok) return;
           // timeupdate SÓ atualiza o texto do segmento ativo — sem re-render.
           videoEl.addEventListener("timeupdate", () =>
@@ -4984,6 +5311,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
     }
     const active = [
       "queued", "extracting", "transcribing", "processing", "correcting", "formatting",
+      "translating",
     ].includes(st.status);
     if (active) {
       stReady = false;
@@ -5005,6 +5333,50 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
       stReady = false;
       stFailed = true;
       setCc("failed");
+      stopPolling();
+      return;
+    }
+    // Tradução selecionada sem legenda original: encadeia a transcrição (P0)
+    // primeiro — quando a original estiver pronta, o próprio backend/frontend
+    // dispara a tradução. A seleção explícita gera sob demanda (independe do
+    // generateMode).
+    if (st.needTranscription) {
+      if (st.canGenerateSource) {
+        stReady = false;
+        stFailed = false;
+        setCc("generating");
+        fetch(
+          "/api/subtitles/generate?path=" + encodeURIComponent(rel) + libQuery(video),
+          { method: "POST" },
+        ).catch(() => {});
+        return; // continua a sondar
+      }
+      stReady = false;
+      stFailed = false;
+      setCc("unavailable");
+      stopPolling();
+      return;
+    }
+    if (effLang && st.canGenerate) {
+      stReady = false;
+      stFailed = false;
+      setCc("generating");
+      fetch(
+        "/api/subtitles/generate?path=" +
+          encodeURIComponent(rel) +
+          libQuery(video) +
+          langQuery() +
+          "&priority=0",
+        { method: "POST" },
+      ).catch(() => {});
+      return; // continua a sondar até a tradução ficar pronta
+    }
+    // Tradução selecionada mas sem LLM configurado: informa sem oferecer ação
+    // morta (o botão CC indica indisponível, sem job inútil na fila).
+    if (effLang && !st.canTranslate) {
+      stReady = false;
+      stFailed = false;
+      setCc("no-translate");
       stopPolling();
       return;
     }
@@ -5033,7 +5405,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   // duplicado; `skipIfReady` evita ruído "cache encontrado" na fila.
   const maybePregenNextLesson = () => {
     if (!st || st.pregenNextLesson !== true) return;
-    if (!st.ready && !["queued", "extracting", "transcribing", "processing", "correcting", "formatting"].includes(st.status)) return;
+    if (!st.ready && !["queued", "extracting", "transcribing", "processing", "correcting", "formatting", "translating"].includes(st.status)) return;
     const idx = state.flatVideos.indexOf(video);
     const next = idx >= 0 ? state.flatVideos[idx + 1] : null;
     if (!next) return;
@@ -5047,6 +5419,8 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
       { method: "POST" },
     ).catch(() => {});
   };
+
+  subtitleCheckApi = check;
 
   await check();
   if (!subtitlePollTimer) subtitlePollTimer = setInterval(check, 2500);
@@ -6131,7 +6505,7 @@ function renderTopic(app, topicPath, libId) {
   // "Continuar assistindo" e "Seu progresso" só enxergam cursos DENTRO deste
   // tópico — tópicos irmãos, cursos da Home e outras bibliotecas ficam de fora.
   const scopeCourses = collectCoursesInScope(node);
-  const scopeSummary = getLibraryProgressSummary(scopeCourses);
+  const scopeSummary = getLibraryProgressSummary(scopeCourses, progFor);
   const topContinue = buildContinueItems(scopeCourses, progFor);
   let html = `
     <div class="topic-view">
@@ -6219,7 +6593,7 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
   }
   state.currentVideoNode = video;
 
-  const stats = getNodeProgressStats(course);
+  const stats = getNodeProgressStats(course, progFor);
   const pct = stats.pct;
 
   // Modo de visualização persistido aplicado no render (troca de aula mantém

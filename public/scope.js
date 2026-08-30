@@ -97,6 +97,75 @@
     return items.slice(0, 8);
   }
 
+  // Tempo efetivamente estudado de uma aula a partir do registro de progresso.
+  // Aula CONCLUÍDA conta a duração inteira: registros concluídos podem ter
+  // `position` zerado (✓ manual no sidebar, dados legados) e, nesse caso, a
+  // posição subestima o tempo real de estudo. Aula em andamento conta a posição
+  // atual, limitada à duração (posição nunca supera a duração). `progressOf` é
+  // injetado (progFor no app; mapa fixo nos testes) para manter a função pura.
+  function watchedSecondsOf(p) {
+    const duration = Number(p.duration) || 0;
+    const position = Number(p.position) || 0;
+    if (p.completed) {
+      return duration > 0 ? duration : Math.max(0, position);
+    }
+    return duration > 0
+      ? Math.min(duration, Math.max(0, position))
+      : Math.max(0, position);
+  }
+
+  // Estatísticas de progresso de uma subárvore (curso, tópico, raiz): total/
+  // concluídas/em andamento, pct e o tempo estudado agregado (watchedSeconds).
+  // Alimenta o card de curso, a sidebar e o resumo "Seu progresso".
+  function getNodeProgressStats(node, progressOf) {
+    const videos = flattenVideos(node, []);
+    let done = 0;
+    let inProgress = 0;
+    let watchedSeconds = 0;
+
+    for (const video of videos) {
+      const p = progressOf(video);
+      if (!p) continue;
+      const played = watchedSecondsOf(p);
+      watchedSeconds += played;
+      if (p.completed) done += 1;
+      else if (played > 5) inProgress += 1;
+    }
+
+    const total = videos.length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    return { total, done, inProgress, watchedSeconds, pct };
+  }
+
+  // Resumo agregado de "Seu progresso" sobre um conjunto de cursos (escopo
+  // direto da Home, global, ou subárvore de um tópico).
+  function getLibraryProgressSummary(courses, progressOf) {
+    let totalLessons = 0;
+    let doneLessons = 0;
+    let inProgressLessons = 0;
+    let watchedSeconds = 0;
+    let startedCourses = 0;
+
+    for (const course of courses) {
+      const s = getNodeProgressStats(course, progressOf);
+      totalLessons += s.total;
+      doneLessons += s.done;
+      inProgressLessons += s.inProgress;
+      watchedSeconds += s.watchedSeconds;
+      if (s.done > 0 || s.inProgress > 0) startedCourses += 1;
+    }
+
+    const pct = totalLessons ? Math.round((doneLessons / totalLessons) * 100) : 0;
+    return {
+      totalLessons,
+      doneLessons,
+      inProgressLessons,
+      watchedSeconds,
+      startedCourses,
+      pct,
+    };
+  }
+
   return {
     isDescendantPath,
     isSidebarNavigableNode,
@@ -104,5 +173,7 @@
     collectCoursesInScope,
     collectDirectCourses,
     buildContinueItems,
+    getNodeProgressStats,
+    getLibraryProgressSummary,
   };
 });

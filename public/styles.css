@@ -1550,6 +1550,29 @@ body {
 .player-preparing[hidden] {
   display: none;
 }
+/* Badge não-bloqueante de geração de legenda: no topo-direito do player, não
+   cobre os controles nem o badge de transcoding (que é topo-centro) e não
+   impede navegação (pointer-events: none). */
+.player-substatus {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(2, 3, 4, 0.62);
+  border: 1px solid var(--border);
+  color: var(--text-mid);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.player-substatus[hidden] {
+  display: none;
+}
 /* BUG-006: aviso discreto de falha ao salvar progresso (não bloqueia o player;
    some sozinho quando o próximo save volta a funcionar). */
 .player-progress-warning {
@@ -1667,6 +1690,12 @@ body {
   gap: 2px;
   padding: 4px 6px;
 }
+/* Contêiner dos itens de idioma do menu CC (montado por syncSubtitleCcUi). */
+.pc-cc-langs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 .pc-menu-sep {
   height: 1px;
   padding: 0;
@@ -1760,6 +1789,7 @@ body {
 }
 .subtitle-overlay .subtitle-overlay-text {
   display: inline-block;
+  position: relative;
   max-width: 100%;
   /* margin-bottom é setado inline pelo JS (altura dos controles + margem).
      A transição suaviza a descida da legenda quando a barra some (pc-idle):
@@ -1768,6 +1798,41 @@ body {
   font-weight: var(--st-weight);
   line-height: var(--st-line-height);
   color: var(--st-text-color);
+  /* Arrastável (como o YouTube): só o texto é pegável (o overlay segue
+     pointer-events:none); touch-action none deixa o arraste no touch sem
+     rolar a página. */
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+.subtitle-overlay .subtitle-overlay-text.dragging {
+  cursor: grabbing;
+  transition: none;
+}
+.subtitle-overlay .subtitle-grip {
+  position: absolute;
+  top: -1.35em;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 1px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+}
+.subtitle-overlay .subtitle-overlay-text:hover .subtitle-grip,
+.subtitle-overlay .subtitle-overlay-text.dragging .subtitle-grip {
+  opacity: 1;
 }
 .subtitle-overlay .subtitle-overlay-inner {
   display: inline;
@@ -1871,6 +1936,24 @@ body {
 }
 .ssp-actions button:hover {
   color: var(--text, #e8eaed);
+}
+.ssp-row-pos button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: transparent;
+  color: var(--text-mid, #c6c9cf);
+  cursor: pointer;
+}
+.ssp-row-pos button:hover {
+  color: var(--text, #e8eaed);
+}
+.ssp-hint {
+  margin: 2px 0 4px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-dim, #9aa0a6);
 }
 
 /* ============ Controles customizados do player ============ */
