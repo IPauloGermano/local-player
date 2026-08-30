@@ -1034,11 +1034,11 @@ body {
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.35);
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.45);
   color: rgba(255, 255, 255, 0.9);
   font-size: 19px;
   line-height: 1;
@@ -1050,11 +1050,22 @@ body {
     transform 0.15s ease,
     background 0.15s ease,
     color 0.15s ease;
-  backdrop-filter: blur(3px);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 3;
+}
+.fav-btn::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
 }
 .fav-btn:hover {
-  transform: scale(1.12);
-  background: rgba(0, 0, 0, 0.55);
+  transform: scale(1.1);
+  background: rgba(0, 0, 0, 0.65);
+}
+.fav-btn:active {
+  transform: scale(0.92);
 }
 .fav-btn.on {
   color: #ffb703;
@@ -2698,7 +2709,12 @@ body {
   gap: 8px;
   flex-shrink: 0;
 }
-.nav-buttons button {
+.nav-buttons button,
+.btn-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text);
@@ -2706,13 +2722,36 @@ body {
   border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s ease;
 }
-.nav-buttons button:hover:not(:disabled) {
+.nav-buttons button:hover:not(:disabled),
+.btn-nav:hover:not(:disabled) {
   border-color: var(--accent);
 }
-.nav-buttons button:disabled {
+.nav-buttons button:disabled,
+.btn-nav:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+.btn-complete {
+  color: var(--text-dim);
+}
+.btn-complete .complete-icon {
+  font-size: 14px;
+  font-weight: 600;
+}
+.btn-complete.is-completed {
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.08);
+}
+.btn-complete.is-completed .complete-icon {
+  color: #10b981;
+}
+.btn-complete:hover:not(:disabled) {
+  border-color: #10b981;
+  color: #10b981;
 }
 
 /* Botão "☰ Aulas" (drawer mobile): visível apenas em ≤900px (media query
@@ -2789,20 +2828,50 @@ body {
   display: flex;
   flex-direction: column;
 }
+.sidebar-header,
 .sidebar-title,
 .sidebar-progress {
   flex-shrink: 0;
+}
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 6px;
+  padding: 2px 2px 2px 0;
 }
 .sidebar-title {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 6px 8px 8px;
+  padding: 6px 8px;
   font-weight: 700;
   font-size: 13.5px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 6px;
   color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-close-btn {
+  display: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.sidebar-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+.sidebar-close-btn:active {
+  transform: scale(0.95);
 }
 /* Nome do curso pode encolher e truncar sem empurrar o % */
 .sidebar-course-name {
@@ -3208,7 +3277,7 @@ body {
     top: 0;
     right: 0;
     bottom: 0;
-    width: min(340px, 86vw);
+    width: min(350px, 88vw);
     max-height: none;
     margin: 0;
     border-radius: 0;
@@ -3218,9 +3287,10 @@ body {
     visibility: hidden;
     transform: translateX(102%);
     transition: transform 0.25s ease, visibility 0.25s ease;
-    box-shadow: -16px 0 40px rgba(0, 0, 0, 0.4);
-    /* Respiro para home-indicator (iOS) no fim da árvore rolável. */
-    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    box-shadow: -16px 0 40px rgba(0, 0, 0, 0.5);
+    overscroll-behavior: contain;
+    /* Respiro para home-indicator (iOS) e gesture bar no fim da árvore rolável. */
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
   }
   .course-view.drawer-host:not(.drawer-open) .sidebar {
     visibility: hidden;
@@ -3234,16 +3304,25 @@ body {
     overflow-y: auto;
     overflow-x: hidden;
     flex: 1 1 auto;
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sidebar-close-btn {
+    display: inline-flex;
+    min-width: 40px;
+    min-height: 40px;
   }
   .course-view .sidebar-backdrop {
     display: block;
     position: fixed;
     inset: 0;
     z-index: 59;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.6);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.25s ease;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
   }
   .course-view.drawer-host.drawer-open .sidebar-backdrop {
     opacity: 1;
@@ -3256,7 +3335,7 @@ body {
     display: inline-flex;
   }
   .player-wrap {
-    min-height: 320px;
+    min-height: 240px;
   }
   .player-controls {
     justify-content: flex-start;
@@ -3266,12 +3345,13 @@ body {
   }
   .topbar {
     gap: 10px;
-    padding: 12px 14px;
+    padding: 10px 14px;
+    padding-top: max(10px, env(safe-area-inset-top));
     padding-left: max(14px, env(safe-area-inset-left));
     padding-right: max(14px, env(safe-area-inset-right));
   }
   /* Configurações: sidebar vira uma fileira compacta de pills com scroll
-     horizontal controlado (não uma barra gigante; rolagem só quando sobra). */
+     horizontal controlado com scroll-snap. */
   .settings-layout {
     flex-direction: column;
     gap: 12px;
@@ -3281,9 +3361,11 @@ body {
     max-width: 100%;
     flex-direction: row;
     overflow-x: auto;
-    padding-bottom: 4px;
+    padding-bottom: 6px;
     -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
     scrollbar-width: none;
+    gap: 6px;
   }
   .settings-nav::-webkit-scrollbar {
     display: none;
@@ -3291,17 +3373,25 @@ body {
   .settings-nav-item {
     white-space: nowrap;
     flex: none;
+    scroll-snap-align: start;
+    min-height: 42px;
+    padding: 10px 14px;
   }
 }
 
 /* Alvos de toque: apenas em aparelhos com pointer grosseiro (touch);
-   desktop com mouse permanece exatamente como está. 36px mantém o toque
+   desktop com mouse permanece exatamente como está. 42px mantém o toque
    confortável sem inflar a altura das linhas da árvore. */
 @media (pointer: coarse) {
   .tree-folder-head,
   .tree-lesson,
   .tree-file {
-    min-height: 36px;
+    min-height: 42px;
+  }
+  .tree-lesson .check {
+    width: 22px;
+    height: 22px;
+    font-size: 11px;
   }
   /* Alvos de toque confortáveis nos controles do player. */
   .pc-btn {
@@ -3309,115 +3399,120 @@ body {
     height: 44px;
   }
   .pc-center {
-    width: 58px;
-    height: 58px;
+    width: 60px;
+    height: 60px;
   }
-  /* Seek: área de toque maior sem mudar o visual (trilha continua fina). */
+  /* Seek: área de toque ampla sem mudar o visual (trilha continua fina). */
   .pc-progress {
-    height: 28px;
+    height: 36px;
   }
   .pc-seek {
-    height: 28px;
+    height: 36px;
   }
   /* Navegação de aula e materiais: área de toque sem mudar o visual. */
   .nav-buttons button,
+  .btn-nav,
   .lesson-sidebar-toggle {
-    min-height: 40px;
+    min-height: 44px;
     display: inline-flex;
     align-items: center;
   }
   .materials a {
-    min-height: 40px;
+    min-height: 44px;
     align-items: center;
   }
 }
 
-/* ---------- Mobile compacto e denso ----------
-   Princípio: mais conteúdo na tela sem perder legibilidade. Reduzimos
-   padding/alturas de cards, listas e controles — sem tocar nas proporções
-   do player (o vídeo mantém o 16/9 nativo, menos letterbox e rolagem). */
+/* ---------- Mobile compacto e fluido ----------
+   Princípio: mais conteúdo na tela sem perder legibilidade e conforto ao toque. */
 @media (max-width: 640px) {
   .app {
-    padding: 8px 8px 24px;
+    padding: 8px 10px max(24px, env(safe-area-inset-bottom));
   }
   .player-wrap {
-    /* 16/9 já define a altura; sem o mínimo de 360px o player assume a
-       proporção natural no celular (menos letterbox e rolagem). */
+    /* 16/9 já define a altura nativa */
     min-height: 0;
+    aspect-ratio: 16/9;
   }
 
-  /* Player: controles maiores e barra que reflui em duas linhas no mobile
-     (play + tempo em cima; volume/velocidade/fullscreen embaixo). */
+  /* Player: controles maiores e barra que reflui com elegância */
   .pc-btn {
     min-width: 44px;
     height: 44px;
-    font-size: 12px;
+    font-size: 13px;
   }
   .pc-center {
-    width: 56px;
-    height: 56px;
+    width: 58px;
+    height: 58px;
   }
   .pc-bottom {
-    padding: 10px 8px 6px;
+    padding: 8px 10px max(6px, env(safe-area-inset-bottom));
   }
   .pc-row {
     flex-wrap: wrap;
     row-gap: 6px;
   }
-  /* Segunda linha no mobile: secundários ocupam 100% da barra e se espalham —
-     play + tempo em cima, volume/velocidade/fullscreen/teatro/sumário abaixo.
-     flex-wrap evita overflow horizontal quando há muitos botões (telas <360px). */
   .pc-secondary {
     flex-basis: 100%;
     justify-content: space-between;
     flex-wrap: wrap;
   }
   .pc-time {
-    font-size: 12px;
-    margin-left: 4px;
+    font-size: 12.5px;
+    margin-left: 6px;
   }
-  /* Popovers centrados no mobile, acima da barra (caret some). */
+  /* Popovers centrados no mobile, acima da barra com safe area */
   .pc-pop {
     position: fixed;
     left: 50%;
     right: auto;
-    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
     transform: translateX(-50%);
-    width: min(280px, calc(100vw - 24px));
+    width: min(300px, calc(100vw - 24px));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   }
   .pc-vol-pop::after {
     display: none;
   }
   .topbar {
-    gap: 6px;
-    padding: 6px 8px;
-    padding-left: max(8px, env(safe-area-inset-left));
-    padding-right: max(8px, env(safe-area-inset-right));
+    gap: 8px;
+    padding: 8px 10px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
   }
   .topbar-brand-minimal {
-    width: 30px;
-    height: 30px;
+    width: 36px;
+    height: 36px;
   }
   .topbar-icon-btn {
-    width: 30px;
-    height: 30px;
+    width: 38px;
+    height: 38px;
   }
+  /* Input com 16px no mobile para eliminar auto-zoom indesejado no iOS Safari */
   .topbar-search input {
-    padding: 7px 10px;
-    font-size: 13px;
+    padding: 8px 14px;
+    font-size: 16px;
+    min-height: 38px;
   }
   .btn-ghost {
-    padding: 7px 10px;
-    font-size: 11px;
-    box-shadow: none;
+    padding: 8px 12px;
+    font-size: 12px;
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
   }
 
-  /* Home: seções com menos respiro vertical */
+  /* Home: seções com respiro equilibrado */
   .home-section {
-    margin-bottom: 18px;
+    margin-bottom: 20px;
   }
 
-  /* Configurações: cards e modal com respiro reduzido no celular */
+  /* Configurações: cards e modal no celular */
   .settings-header {
     margin-bottom: 16px;
   }
@@ -3425,141 +3520,153 @@ body {
     font-size: 20px;
   }
   .settings-section {
-    padding: 13px 14px;
-    margin-bottom: 12px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    border-radius: 14px;
   }
   .settings-row {
-    padding: 8px 6px;
+    padding: 10px 8px;
+    min-height: 44px;
   }
   .modal {
-    padding: 16px;
+    padding: 18px;
+    border-radius: 16px;
   }
   .modal-actions {
-    margin-top: 16px;
+    margin-top: 18px;
+    gap: 10px;
   }
   .section-title {
-    font-size: 17px;
-    margin-bottom: 8px;
+    font-size: 17.5px;
+    margin-bottom: 10px;
   }
   .section-title .count {
     font-size: 13px;
   }
   .section-head {
-    margin-bottom: 10px;
+    margin-bottom: 12px;
   }
   .section-heading {
-    font-size: 17px;
+    font-size: 17.5px;
   }
   .section-subtitle {
-    font-size: 12px;
+    font-size: 12.5px;
     margin-top: 2px;
   }
 
   /* Resultados de busca compactos */
   .search-results {
-    gap: 6px;
-    margin-bottom: 14px;
+    gap: 8px;
+    margin-bottom: 16px;
   }
   .search-result-item {
-    padding: 7px 10px;
-    gap: 2px;
-    border-radius: 10px;
+    padding: 10px 12px;
+    gap: 4px;
+    border-radius: 12px;
+    min-height: 44px;
   }
   .search-result-tag {
-    font-size: 10px;
-  }
-  .search-result-main {
-    font-size: 12.5px;
-  }
-  .search-result-sub {
-    font-size: 11px;
-  }
-
-  /* Grid de cursos: 2 colunas compactas para mostrar mais cursos por tela */
-  .course-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-    margin-bottom: 20px;
-  }
-  .course-card-thumb {
-    height: 62px;
-    font-size: 16px;
-  }
-  .course-card-body {
-    padding: 8px 10px 10px;
-    gap: 3px;
-  }
-  .course-card-title {
-    font-size: 12.5px;
-  }
-  .course-card-meta {
     font-size: 10.5px;
   }
-  /* Uma linha de meta por card: o tempo "assistidos" sai para não dobrar
-     a altura do card (o % e a barra já comunicam o progresso). */
+  .search-result-main {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .search-result-sub {
+    font-size: 11.5px;
+  }
+
+  /* Grid de cursos fluido: 2 colunas proporcionais com aspect-ratio 16/9 */
+  .course-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .course-card-thumb {
+    height: auto;
+    aspect-ratio: 16/9;
+    min-height: 72px;
+    font-size: 18px;
+  }
+  .course-card-body {
+    padding: 10px 12px 12px;
+    gap: 4px;
+  }
+  .course-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+  .course-card-meta {
+    font-size: 11px;
+  }
   .course-card-meta + .course-card-meta {
     display: none;
   }
   .course-card .progress-bar {
     height: 4px;
-    margin-top: 3px;
+    margin-top: 4px;
   }
   .fav-btn {
-    width: 26px;
-    height: 26px;
-    font-size: 15px;
-    top: 4px;
-    right: 4px;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    font-size: 17px;
+    top: 6px;
+    right: 6px;
   }
 
-  /* "Continuar assistindo": cards viram linhas compactas */
+  /* "Continuar assistindo": cards com boa área de toque */
   .continue-row {
     grid-template-columns: 1fr;
     gap: 8px;
   }
   .continue-card {
-    padding: 10px 12px;
-    gap: 6px;
-    border-radius: 12px;
+    padding: 12px 14px;
+    gap: 8px;
+    border-radius: 14px;
+    min-height: 52px;
   }
   .continue-card .lesson-name {
-    font-size: 13.5px;
+    font-size: 14px;
+    font-weight: 600;
     -webkit-line-clamp: 1;
   }
   .continue-card .course-name {
-    margin-top: 1px;
-    font-size: 11px;
+    margin-top: 2px;
+    font-size: 11.5px;
   }
   .continue-card-progress {
-    gap: 8px;
+    gap: 10px;
   }
   .continue-progress-bar {
-    height: 4px;
+    height: 5px;
   }
   .continue-pct {
     font-size: 12px;
-    min-width: 34px;
+    min-width: 36px;
   }
 
-  /* Progresso: resumo compacto e painel com as 3 estatísticas lado a lado
-     (em vez de empilhadas, o que dobraria a altura) */
+  /* Progresso: resumo compacto e painel com as estatísticas */
   .progress-summary-inner {
-    padding: 8px 10px;
-    gap: 8px;
+    padding: 10px 14px;
+    gap: 10px;
+    border-radius: 12px;
   }
   .progress-summary-pct {
-    font-size: 15px;
+    font-size: 16px;
   }
   .progress-summary-bar {
     flex-basis: 90px;
-    height: 4px;
+    height: 5px;
   }
   .progress-summary-meta {
     font-size: 12px;
   }
   .progress-panel {
-    padding: 14px 12px;
-    border-radius: 12px;
+    padding: 16px 14px;
+    border-radius: 14px;
   }
   .progress-panel-hero-value {
     font-size: 26px;
@@ -3597,83 +3704,81 @@ body {
     display: none;
   }
 
-  /* Página do curso: cabeçalho e controles compactos */
+  /* Página do curso: cabeçalho e controles */
   .back-link {
-    margin-bottom: 6px;
-    font-size: 12.5px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
   }
   .course-toolbar {
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     gap: 8px;
   }
   .course-toolbar-title {
-    font-size: 12.5px;
+    font-size: 13px;
+    font-weight: 600;
   }
   .course-toolbar-actions .secondary-btn {
-    padding: 6px 10px;
-    font-size: 11.5px;
+    padding: 8px 12px;
+    font-size: 12px;
+    min-height: 38px;
   }
   .lesson-header {
-    margin-top: 8px;
-    gap: 8px;
+    margin-top: 10px;
+    gap: 10px;
   }
   .lesson-header h2 {
-    font-size: 15px;
+    font-size: 15.5px;
     margin: 0 0 2px;
   }
   .lesson-header .breadcrumb {
-    font-size: 11px;
+    font-size: 11.5px;
   }
   .player-controls {
-    gap: 4px;
+    gap: 8px;
   }
   .nav-buttons {
-    gap: 6px;
+    gap: 8px;
   }
-  .nav-buttons button {
-    padding: 6px 10px;
-    font-size: 12px;
+  .nav-buttons button,
+  .btn-nav {
+    padding: 10px 12px;
+    font-size: 13px;
+    min-height: 44px;
   }
   .materials {
-    margin-top: 8px;
-    padding: 8px 10px;
-    border-radius: 12px;
+    margin-top: 10px;
+    padding: 12px 14px;
+    border-radius: 14px;
   }
   .materials h3 {
-    font-size: 12.5px;
-    margin-bottom: 6px;
+    font-size: 13px;
+    margin-bottom: 8px;
   }
   .materials a {
-    padding: 5px 0;
-    font-size: 12px;
+    padding: 8px 0;
+    font-size: 13px;
+    min-height: 40px;
   }
 
-  /* Sidebar / árvore: linhas densas, sem divisórias por item — a hierarquia
-     fica por tipografia, indentação e estados. A divisão entre módulos
-     permanece (mais compacta). */
+  /* Sidebar / árvore no drawer */
   .sidebar {
-    padding: 6px;
-    border-radius: 12px;
-    /* No celular a rolagem é da própria página: o sumário abre sem caixa
-       interna de scroll (retoma o fluxo natural). */
-    max-height: none;
-  }
-  #tree-slot {
-    overflow: visible;
-    flex: 0 0 auto;
-    padding: 0;
+    padding: 8px;
+    border-radius: 0;
   }
   .sidebar-title {
-    padding: 4px 6px 6px;
-    font-size: 13px;
+    padding: 6px 8px;
+    font-size: 13.5px;
     margin-bottom: 4px;
   }
   .sidebar-title .pct {
-    font-size: 14px;
+    font-size: 14.5px;
   }
   .sidebar-progress {
-    padding: 0 6px 6px;
-    margin-bottom: 4px;
+    padding: 0 8px 8px;
+    margin-bottom: 6px;
   }
   .sidebar-progress-bar {
     height: 5px;
@@ -3689,57 +3794,59 @@ body {
     margin-bottom: 0;
   }
   #tree-slot > .tree-folder + .tree-folder {
-    margin-top: 4px;
-    padding-top: 4px;
+    margin-top: 6px;
+    padding-top: 6px;
   }
   .tree-folder-head {
-    gap: 6px;
+    gap: 8px;
     border-radius: 8px;
   }
   .tree-folder-head[data-depth="1"] {
-    font-size: 13px;
-    padding: 8px;
+    font-size: 13.5px;
+    padding: 10px 8px;
   }
   .tree-folder-head[data-depth="2"] {
-    font-size: 12px;
-    padding: 7px 8px;
+    font-size: 12.5px;
+    padding: 9px 8px;
   }
   .tree-folder-head[data-depth="3"],
   .tree-folder-head[data-depth="4"] {
-    font-size: 11.5px;
-    padding: 6px 8px;
+    font-size: 12px;
+    padding: 8px;
   }
   .tree-folder-head .folder-progress {
-    font-size: 10.5px;
+    font-size: 11px;
   }
   .tree-folder-children {
-    padding-left: 8px;
+    padding-left: 10px;
   }
   .tree-folder-children .tree-folder-children {
-    padding-left: 6px;
+    padding-left: 8px;
   }
   .tree-folder-children .tree-folder-children .tree-folder-children {
-    padding-left: 5px;
+    padding-left: 6px;
   }
   .tree-lesson {
-    padding: 6px 8px;
-    gap: 6px;
-    font-size: 12px;
+    padding: 8px 10px;
+    gap: 8px;
+    font-size: 13px;
     border-radius: 8px;
+    min-height: 42px;
   }
   .tree-lesson .check {
-    width: 16px;
-    height: 16px;
-    font-size: 9px;
+    width: 22px;
+    height: 22px;
+    font-size: 11px;
     border-width: 1.5px;
+    flex-shrink: 0;
   }
   .tree-lesson .lesson-mini-progress {
-    width: 22px;
+    width: 24px;
   }
   .tree-file {
-    padding: 6px 8px;
-    gap: 6px;
-    font-size: 11.5px;
+    padding: 8px 10px;
+    gap: 8px;
+    font-size: 12.5px;
     border-radius: 8px;
   }
   /* Player no estreito: Velocidade e Legendas dobram para o menu ⋮
@@ -3774,34 +3881,36 @@ body {
   .lesson-header {
     flex-direction: column;
     align-items: stretch;
-    gap: 10px;
-    margin-top: 8px;
+    gap: 12px;
+    margin-top: 10px;
   }
   .lesson-title-row {
     width: 100%;
     flex: none;
     gap: 10px;
+    align-items: center;
   }
   .lesson-title-block {
     flex: 1;
     min-width: 0;
   }
   .lesson-title-block h2 {
-    font-size: 15px;
-    margin: 0 0 2px;
+    font-size: 15.5px;
+    margin: 0 0 3px;
+    line-height: 1.35;
   }
   .lesson-header .breadcrumb {
-    font-size: 11px;
+    font-size: 11.5px;
   }
-  /* "☰ Aulas": navegação do curso, sempre visível e com alvo de toque amplo
-     (não compete mais com os controles multimídia). */
+  /* "☰ Aulas": navegação do curso, sempre visível e com alvo de toque amplo */
   .lesson-sidebar-toggle {
     flex-shrink: 0;
     min-width: 44px;
     min-height: 44px;
     padding: 10px 14px;
     font-size: 13px;
-    align-self: flex-start;
+    align-self: center;
+    border-radius: 10px;
   }
   .player-controls {
     width: 100%;
@@ -3812,13 +3921,24 @@ body {
   .nav-buttons {
     flex: 1;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
   }
-  .nav-buttons button {
+  .nav-buttons button,
+  .btn-nav {
     flex: 1;
     min-height: 44px;
-    padding: 12px 8px;
+    padding: 11px 8px;
     font-size: 13px;
+    border-radius: 10px;
+  }
+  .btn-complete {
+    flex: 1.1;
+  }
+  #tutor-btn {
+    min-height: 44px;
+    padding: 11px 14px;
+    font-size: 13px;
+    border-radius: 10px;
   }
   /* "Aa Aparência" sai da toolbar → menu ⋮ > Aparência da legenda. */
   #subtitle-style-btn {
@@ -3829,35 +3949,24 @@ body {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
+    width: min(320px, calc(100vw - 32px));
   }
-  /* Volume: esconde o % no botão da barra (o popover continua mostrando os
-     valores exatos); o badge EXTRA permanece como indicador compacto. */
   .pc-vol-label {
     display: none;
   }
   .pc-vol-btn {
     padding: 0 10px;
   }
-  /* Controles numa única linha (▶ tempo 🔊 fullscreen ⋮) quando couber:
-     reduz a altura da barra (o seek + 1 linha ≈ 90px em vez de 2 linhas
-     ≈ 140px) e devolve área tocável ao vídeo — o centro do quadro volta a
-     ser o vídeo/play grande em vez de cair sobre o seek em telas mais altas.
-     Em 320px, se o tempo for longo, o flex-wrap reflui os secundários para a
-     segunda linha naturalmente (sem overflow). */
   .pc-secondary {
     flex-basis: auto;
     justify-content: flex-end;
   }
   .pc-bottom {
-    padding: 8px 8px 6px;
+    padding: 8px 10px max(6px, env(safe-area-inset-bottom));
   }
 }
 
-/* Celulares pequenos: toolbar do curso empilha (título em linha própria,
-   botões dividindo a linha). */
-/* Header em janelas estreitas (≤560px): a busca ganha uma linha inteira logo
-   abaixo do logo + botões. Nada de espremer a busca nem empurrar a página
-   para fora da viewport — transição progressiva antes do layout mobile. */
+/* Header em janelas estreitas (≤560px) */
 @media (max-width: 560px) {
   .topbar {
     flex-wrap: wrap;
@@ -3866,6 +3975,7 @@ body {
   .topbar-brand-minimal {
     order: 1;
   }
+  .topbar-rescan-btn,
   .btn-ghost {
     order: 2;
     margin-left: auto;
@@ -3878,23 +3988,40 @@ body {
     flex-basis: 100%;
     max-width: none;
   }
+  .topbar-search input {
+    font-size: 16px;
+    min-height: 40px;
+  }
 }
 
 @media (max-width: 480px) {
+  .topbar-rescan-btn .rescan-label {
+    display: none;
+  }
+  .topbar-rescan-btn {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    padding: 0;
+    font-size: 16px;
+  }
   .course-toolbar-title {
     width: 100%;
+    font-size: 13.5px;
   }
   .course-toolbar-actions .secondary-btn {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
+    min-height: 40px;
+    font-size: 12px;
   }
   .course-toolbar-actions {
     width: 100%;
+    gap: 6px;
   }
 
-  /* Player: mantém o volume extra legível mesmo bem estreito. */
   .pc-vol-label {
     font-size: 11.5px;
   }
@@ -3903,11 +4030,9 @@ body {
     padding: 1px 5px;
   }
   .pc-pop {
-    bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
-  /* Atalhos: mensagem de captura/erro quebra para baixo do chip (sem apertar
-     a linha). */
   .shortcut-value {
     flex-direction: column;
     align-items: flex-end;
@@ -3915,22 +4040,29 @@ body {
     max-width: 62%;
   }
 
-  /* Badge de transcoding: cabe em telas estreitas sem overflow. */
-  .player-preparing {
-    font-size: 11px;
-    padding: 5px 10px;
-    max-width: calc(100% - 24px);
-    white-space: normal;
-    text-align: center;
-  }
-
-  /* Aviso de progresso: mesmo tratamento do badge de transcoding. */
+  .player-preparing,
   .player-progress-warning {
-    font-size: 11px;
-    padding: 5px 10px;
+    font-size: 11.5px;
+    padding: 6px 12px;
     max-width: calc(100% - 24px);
     white-space: normal;
     text-align: center;
+    border-radius: 10px;
+  }
+}
+
+@media (max-width: 340px) {
+  .course-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .course-card-thumb {
+    min-height: 100px;
+  }
+  .nav-buttons button,
+  .btn-nav {
+    padding: 10px 4px;
+    font-size: 11.5px;
   }
 }
 
@@ -4408,17 +4540,38 @@ body {
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
-    margin: 0 -18px 14px;
-    padding: 0 18px 4px;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    margin: 0 -14px 14px;
+    padding: 0 14px 6px;
+    gap: 6px;
   }
   .ai-tabs::-webkit-scrollbar {
     display: none;
   }
   .ai-tab {
     flex: none;
+    scroll-snap-align: start;
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+  }
+  .ai-input,
+  .ai-select {
+    font-size: 16px;
+    min-height: 42px;
   }
   .ai-provider-head {
     flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .ai-actions {
+    flex-direction: column;
+  }
+  .ai-actions .ai-btn {
+    width: 100%;
+    min-height: 42px;
   }
 }
 
@@ -4852,6 +5005,10 @@ body {
   }
 }
 
+.tutor-drag-handle {
+  display: none;
+}
+
 /* Header */
 .tutor-header {
   padding: 16px 22px;
@@ -5171,6 +5328,33 @@ body {
   font-size: 15.5px !important;
 }
 
+.tutor-tool-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(121, 40, 202, 0.12);
+  border: 1px solid rgba(121, 40, 202, 0.25);
+  border-radius: 20px;
+  font-size: 14px;
+  color: #c084fc;
+  font-weight: 500;
+  margin: 4px 0;
+}
+
+.tutor-tool-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(192, 132, 252, 0.3);
+  border-top-color: #c084fc;
+  border-radius: 50%;
+  animation: tutor-tool-spin 0.8s linear infinite;
+}
+
+@keyframes tutor-tool-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Tipografia Markdown */
 .tutor-heading {
   color: #ffffff;
@@ -5299,6 +5483,8 @@ body {
 .tutor-table-wrap {
   margin: 16px 0;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: #0c1017;
@@ -5363,6 +5549,7 @@ body {
   background: #0b0e14;
   border: 1px solid rgba(255, 255, 255, 0.09);
   overflow: hidden;
+  max-width: 100%;
 }
 
 .tutor-code-header {
@@ -5406,6 +5593,8 @@ body {
   margin: 0;
   padding: 16px 18px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 14.8px;
   line-height: 1.68;
@@ -5531,18 +5720,29 @@ body {
 
 /* Responsividade Mobile (≤640px): Bottom Sheet */
 @media (max-width: 640px) {
+  .tutor-drag-handle {
+    display: block;
+    width: 38px;
+    height: 4.5px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.25);
+    margin: 8px auto 2px;
+    flex-shrink: 0;
+  }
+
   .tutor-drawer {
     top: auto;
     bottom: 0;
     left: 0;
     right: 0;
     width: 100%;
-    height: 88vh;
-    max-height: 88vh;
+    height: min(92dvh, 92vh);
+    max-height: min(92dvh, 92vh);
     border-radius: 20px 20px 0 0;
     border-left: none;
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
     animation: tutorSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.7);
   }
 
   .tutor-drawer[hidden] {
@@ -5560,10 +5760,103 @@ body {
 
   .tutor-header {
     border-radius: 20px 20px 0 0;
+    padding: 8px 14px 10px;
+    gap: 8px;
   }
 
   .tutor-btn .tutor-btn-label {
     display: none;
+  }
+
+  .tutor-tab-bar {
+    padding: 6px 12px;
+    gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .tutor-tab-btn {
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .tutor-messages {
+    padding: 14px 12px;
+    gap: 14px;
+  }
+
+  .tutor-msg-user .tutor-msg-bubble {
+    max-width: 90%;
+    font-size: 15px;
+    padding: 10px 14px;
+  }
+
+  .tutor-msg-assistant .tutor-msg-bubble {
+    font-size: 15.5px;
+  }
+
+  .tutor-input-container {
+    padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+  }
+
+  .tutor-input-wrap {
+    padding: 8px 10px 8px 14px;
+    border-radius: 16px;
+  }
+
+  .tutor-send-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+
+  .tutor-quiz-view {
+    padding: 16px 12px;
+    gap: 16px;
+  }
+
+  .tutor-quiz-question-box {
+    padding: 14px 16px;
+  }
+
+  .tutor-quiz-question-text {
+    font-size: 15.5px;
+  }
+
+  .tutor-quiz-opt-btn {
+    padding: 12px 14px;
+    font-size: 14px;
+    min-height: 48px;
+  }
+
+  .tutor-quiz-next-btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  .tutor-fc-view {
+    padding: 16px 12px;
+  }
+
+  .tutor-fc-card {
+    min-height: 180px;
+    padding: 18px 14px;
+  }
+
+  .tutor-fc-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .tutor-fc-btn {
+    flex: 1;
+    min-height: 46px;
+    font-size: 13.5px;
   }
 }
 

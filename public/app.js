@@ -4408,6 +4408,8 @@ function renderPlayerAndLesson() {
     (crumbPrefix
       ? `<span class="breadcrumb-prefix">${escapeHtml(crumbLead + crumbPrefix)}</span><span class="breadcrumb-sep"> / </span>`
       : ``) + `<span class="breadcrumb-leaf">${escapeHtml(crumbLeaf)}</span>`;
+  const p = progFor(video);
+  const isDone = !!(p && p.completed);
   header.innerHTML = `
     <div class="lesson-title-row">
       <div class="lesson-title-block">
@@ -4418,8 +4420,12 @@ function renderPlayerAndLesson() {
     </div>
     <div class="player-controls">
       <div class="nav-buttons">
-        <button id="prev-btn" ${prev ? "" : "disabled"}>‹ Anterior</button>
-        <button id="next-btn" ${next ? "" : "disabled"}>Próxima ›</button>
+        <button id="prev-btn" class="btn-nav" ${prev ? "" : "disabled"} title="Aula anterior">‹ Anterior</button>
+        <button id="toggle-lesson-complete-btn" class="btn-nav btn-complete ${isDone ? "is-completed" : ""}" type="button" aria-label="${isDone ? "Desmarcar aula como concluída" : "Marcar aula como concluída"}" title="${isDone ? "Desmarcar aula como concluída" : "Marcar aula como concluída"}">
+          <span class="complete-icon" aria-hidden="true">${isDone ? "✓" : "○"}</span>
+          <span class="complete-text">${isDone ? "Concluída" : "Concluir"}</span>
+        </button>
+        <button id="next-btn" class="btn-nav" ${next ? "" : "disabled"} title="Próxima aula">Próxima ›</button>
       </div>
       <button id="tutor-btn" class="secondary-btn tutor-btn" title="Tirar dúvidas com o Tutor IA">✨ Tutor IA</button>
       <button id="subtitle-style-btn" class="secondary-btn" title="Personalizar a aparência da legenda">Aa Aparência</button>
@@ -4488,6 +4494,9 @@ function renderPlayerAndLesson() {
   document
     .getElementById("prev-btn")
     ?.addEventListener("click", () => prev && navigateToLesson(prev.path));
+  document
+    .getElementById("toggle-lesson-complete-btn")
+    ?.addEventListener("click", () => toggleLessonCompleted(video.path));
   document
     .getElementById("next-btn")
     ?.addEventListener("click", () => next && navigateToLesson(next.path));
@@ -4801,6 +4810,7 @@ function wirePlayerUI(videoEl) {
       closePopovers();
     } else if (cc.dataset.cc === "off") {
       setSubtitleEnabled(false);
+      closePopovers();
     } else if (cc.dataset.cc === "lang-source") {
       setSubtitleLang(null);
       closePopovers();
@@ -4936,6 +4946,7 @@ function setSubtitleEnabled(v) {
   } catch {}
   applySubtitleVisibility();
   syncSubtitleCcUi();
+  if (v && typeof subtitleCheckApi === "function") subtitleCheckApi();
 }
 
 // Troca o idioma de exibição da legenda da aula atual (null = original, ou o
@@ -4947,7 +4958,7 @@ function setSubtitleLang(lang) {
   try {
     localStorage.setItem(SUBTITLES_LANG_KEY, subtitleState.lang || "original");
   } catch {}
-  if (lang) subtitleState.enabled = true; // escolher idioma implica ligar
+  setSubtitleEnabled(true);
   syncSubtitleCcUi();
   if (typeof subtitleCheckApi === "function") subtitleCheckApi();
   applySubtitleVisibility();
@@ -5041,8 +5052,12 @@ function syncSubtitleCcUi() {
     (subtitleState.sourceLang
       ? ` (${escapeHtml(subtitleLangName(subtitleState.sourceLang))})`
       : "");
+  const isSrcActive = enabled && activeLang === null;
+  const isTrActive = (t) => enabled && activeLang === t;
+  const isOffActive = !enabled;
+
   const langItems = [
-    `<button type="button" class="pc-menu-item${activeLang === null ? " is-active" : ""}" data-cc="lang-source" aria-pressed="${activeLang === null}">${escapeHtml(srcLabel)}</button>`,
+    `<button type="button" class="pc-menu-item${isSrcActive ? " is-active" : ""}" data-cc="lang-source" aria-pressed="${isSrcActive}">${escapeHtml(srcLabel)}</button>`,
   ];
   if (
     subtitleState.targetLang &&
@@ -5050,11 +5065,11 @@ function syncSubtitleCcUi() {
   ) {
     const t = subtitleState.targetLang;
     langItems.push(
-      `<button type="button" class="pc-menu-item${activeLang === t ? " is-active" : ""}" data-cc="lang-${escapeHtml(t)}" aria-pressed="${activeLang === t}">${escapeHtml(subtitleLangName(t))}</button>`,
+      `<button type="button" class="pc-menu-item${isTrActive(t) ? " is-active" : ""}" data-cc="lang-${escapeHtml(t)}" aria-pressed="${isTrActive(t)}">${escapeHtml(subtitleLangName(t))}</button>`,
     );
   }
   langItems.push(
-    `<button type="button" class="pc-menu-item${!enabled ? " is-active" : ""}" data-cc="off" aria-pressed="${!enabled}">Desativado</button>`,
+    `<button type="button" class="pc-menu-item${isOffActive ? " is-active" : ""}" data-cc="off" aria-pressed="${isOffActive}">Desativado</button>`,
   );
   const langsHtml = langItems.join("");
   ["pc-cc-langs", "pc-more-cc-langs"].forEach((id) => {
@@ -5413,6 +5428,7 @@ function initTutorDrawer(video) {
 
   slot.innerHTML = `
     <aside class="tutor-drawer" id="tutor-drawer" hidden aria-label="Tutor IA">
+      <div class="tutor-drag-handle" aria-hidden="true"></div>
       <div class="tutor-header">
         <div class="tutor-header-main">
           <div class="tutor-sparkle-badge" aria-hidden="true">
@@ -6454,6 +6470,15 @@ async function sendTutorMessage(video, text) {
           const parsed = JSON.parse(dataStr);
           if (parsed.error) {
             throw new Error(parsed.error);
+          }
+          if (parsed.status === "searching") {
+            if (currentBubble && !accumulatedText) {
+              currentBubble.innerHTML = `<div class="tutor-tool-status"><span class="tutor-tool-spinner"></span> Pesquisando na Web...</div>`;
+            }
+          } else if (parsed.status === "reading") {
+            if (currentBubble && !accumulatedText) {
+              currentBubble.innerHTML = `<div class="tutor-tool-status"><span class="tutor-tool-spinner"></span> Consultando fontes da Web...</div>`;
+            }
           }
           if (parsed.content) {
             accumulatedText += parsed.content;
@@ -8356,7 +8381,15 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
       </div>
       <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
       <div class="sidebar">
-        <div class="sidebar-title"><span class="sidebar-course-name">${escapeHtml(courseTitle(course))}</span> <span class="pct">${pct}%</span></div>
+        <div class="sidebar-header">
+          <div class="sidebar-title"><span class="sidebar-course-name">${escapeHtml(courseTitle(course))}</span> <span class="pct">${pct}%</span></div>
+          <button class="sidebar-close-btn" id="sidebar-close-btn" aria-label="Fechar lista de aulas" title="Fechar (Esc)" type="button">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
         <div class="sidebar-progress">
           <div class="progress-bar sidebar-progress-bar"><div class="progress-bar-fill" id="course-progress-fill" style="width:${pct}%"></div></div>
           <div class="sidebar-progress-meta">
@@ -8373,6 +8406,9 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
   document.getElementById("back-link").addEventListener("click", () => {
     location.hash = "/";
   });
+  document
+    .getElementById("sidebar-close-btn")
+    ?.addEventListener("click", () => closeMobileDrawer());
   document
     .getElementById("toggle-fav-course")
     ?.addEventListener("click", () => {
