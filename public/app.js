@@ -1874,9 +1874,6 @@ function bindAiTranscription(panel) {
   bindSwitch("ai-tr-pregen-first", "pregenFirstLesson", true);
   bindSwitch("ai-tr-pregen-next", "pregenNextLesson", true);
   bindSwitch("ai-tr-background", "background", false);
-  bindSwitch("ai-tr-pregen-first", "pregenFirstLesson");
-  bindSwitch("ai-tr-pregen-next", "pregenNextLesson");
-  bindSwitch("ai-tr-background", "background");
   const save = document.getElementById("ai-tr-save");
   if (save) {
     save.addEventListener("click", async () => {

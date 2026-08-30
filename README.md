@@ -2,16 +2,16 @@
 
 Player local/offline em Node.js + Express (backend único `server.js`, SPA em
 `public/` em JS puro, **sem build step**) para organizar e reproduzir mídia em
-disco — cursos, treinamentos, bibliotecas de vídeo. Lê tudo direto do
+disco — módulos, treinamentos, bibliotecas de vídeo. Lê tudo direto do
 armazenamento (HD, SSD, pendrive), sem upload para a internet.
 
 ## Funcionalidades
 
-- escaneia a biblioteca e monta a árvore de cursos/módulos/aulas;
+- escaneia a biblioteca e monta a árvore de módulos/aulas;
 - cards com capa automática (imagem da pasta ou gradiente com iniciais);
 - **tópicos hierárquicos**: pastas declaradas como tópicos (`*.topic` ou nome
   terminando em `(TP)`) viram navegação com breadcrumb (`Home › TI › Python`);
-- busca por tópico, curso, aula e material de apoio;
+- busca por tópico, módulo, aula e material de apoio;
 - player com **progresso persistente por aula** e retomada automática;
 - sidebar de módulos/aulas; arquivos de apoio ficam em "Materiais da aula";
 - atalhos de teclado configuráveis;
@@ -20,6 +20,9 @@ armazenamento (HD, SSD, pendrive), sem upload para a internet.
 - **bibliotecas externas** por path absoluto (Configurações → Bibliotecas);
 - **legendas automáticas por IA** (whisper.cpp local + correção LLM opcional) —
   recurso adicional, nunca bloqueia a reprodução;
+- **Tutor IA integrado**: tire dúvidas em tempo real via chat streaming (SSE),
+  com contexto automático da aula (transcrição e materiais de apoio, incluindo
+  leitura inteligente de PDFs);
 - layout responsivo (desktop, tablet, smartphone).
 
 ## Requisitos
@@ -38,8 +41,8 @@ derivada da localização do app, nunca hardcoded):
 
 ```text
 Minha Biblioteca/
-├── Curso A/
-├── Curso B/
+├── Módulo A/
+├── Módulo B/
 └── _LocalPlayer/          ← pasta do app (nome livre)
 ```
 
@@ -62,14 +65,16 @@ Todas opcionais:
 | `FFMPEG_BIN` / `FFPROBE_BIN` | `ffmpeg` / `ffprobe` no PATH | caminho dos binários (aceita espaços) |
 | `MAX_CONCURRENT_TRANSCODES` | `1` | conversões simultâneas |
 | `MAX_CONCURRENT_TRANSCRIPTIONS` | `1` | transcrições whisper simultâneas |
+| `MAX_CONCURRENT_AI_JOBS` | `1` | slots concorrência pesada (transcode + whisper) |
 | `BACKGROUND_SUBTITLE_GENERATION` | config da Central de IA | `true`/`1` liga geração P3 em background |
 | `WHISPER_BIN` / `WHISPER_MODEL_DIR` | `bin/` / `models/` | binário e modelos do whisper (ver docs/whisper.md) |
 | `LP_DATA_DIR` | `data/` | redireciona os dados de runtime (uso de testes) |
+| `LP_PROGRESS_FORENSIC` | (inativo) | `1` ativa logs/snapshots forenses de escrita de progresso |
 
 ## Uso rápido
 
-1. Abra a Home e escolha um curso (ou tópico).
-2. Na página do curso, navegue pela sidebar para escolher a aula.
+1. Abra a Home e escolha um módulo (ou tópico).
+2. Na página do módulo, navegue pela sidebar para escolher a aula.
 3. O progresso é salvo automaticamente e retomado ao voltar.
 4. Use **⟳ Atualizar** no topo quando mudar arquivos/pastas.
 5. Atalhos padrão: `Espaço` play/pause, `←`/`→` ±5s, `J`/`L` ±10s, `N`/`P`
@@ -81,7 +86,7 @@ Todas opcionais:
 Uma pasta é **tópico** somente quando marcada explicitamente: contém o arquivo
 vazio `.topic` **ou** o nome termina com `(TP)` (case-insensitive). Nenhuma
 heurística de conteúdo classifica pastas. O `(TP)` e a numeração inicial
-somem apenas do título exibido. Tudo o mais é curso/módulo normal.
+somem apenas do título exibido. Tudo o mais é módulo normal.
 
 ## Bibliotecas externas
 
@@ -124,7 +129,7 @@ nem nos logs.
 node --test test/progress.test.js test/topics.test.js test/libraries.test.js \
   test/scope.test.js test/sidebar.test.js test/sidebar-runtime-smoke.js \
   test/progress-invariance.test.js test/progress-persistence.test.js \
-  test/progress-forensic.test.js
+  test/progress-forensic.test.js test/translation.test.js test/tutor.test.js
 ```
 
 - Checklist de validação manual: `docs/VALIDACAO.md`.
