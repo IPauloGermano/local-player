@@ -170,7 +170,12 @@ test("runtime: sidebar só vídeos/módulos; materiais só em 'Materiais da aula
     const mod2Node = course.children.find((c) => c.type === "folder" && c.name === "Módulo 2");
     assert.strictEqual(mod2Node.children.some((c) => c.type === "file" && c.path.endsWith("Material.docx")), true);
   } finally {
-    proc.kill();
-    fs.rmSync(tmp, { recursive: true, force: true });
+    proc.kill("SIGTERM");
+    await new Promise((resolve) => {
+      if (proc.exitCode !== null) return resolve();
+      proc.once("close", resolve);
+      setTimeout(resolve, 1000);
+    });
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });

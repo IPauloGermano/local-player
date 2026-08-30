@@ -772,13 +772,48 @@ function stopCapture(preserveMsg) {
 // "Diagnóstico".
 
 const SETTINGS_CATS = [
-  { id: "geral", label: "Geral" },
-  { id: "reproducao", label: "Reprodução" },
-  { id: "atalhos", label: "Atalhos" },
-  { id: "ia", label: "Inteligência Artificial" },
-  { id: "dados", label: "Dados e armazenamento" },
-  { id: "bibliotecas", label: "Bibliotecas" },
-  { id: "diagnostico", label: "Diagnóstico" },
+  {
+    id: "geral",
+    label: "Geral",
+    group: "Preferências",
+    icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`,
+  },
+  {
+    id: "reproducao",
+    label: "Reprodução",
+    group: "Preferências",
+    icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>`,
+  },
+  {
+    id: "atalhos",
+    label: "Atalhos",
+    group: "Preferências",
+    icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><line x1="6" y1="8" x2="6.01" y2="8"></line><line x1="10" y1="8" x2="10.01" y2="8"></line><line x1="14" y1="8" x2="14.01" y2="8"></line><line x1="18" y1="8" x2="18.01" y2="8"></line><line x1="8" y1="12" x2="8.01" y2="12"></line><line x1="12" y1="12" x2="12.01" y2="12"></line><line x1="16" y1="12" x2="16.01" y2="12"></line><line x1="7" y1="16" x2="17" y2="16"></line></svg>`,
+  },
+  {
+    id: "ia",
+    label: "Inteligência Artificial",
+    group: "IA & Automação",
+    icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2z"></path></svg>`,
+  },
+  {
+    id: "dados",
+    label: "Armazenamento",
+    group: "Sistema & Dados",
+    icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>`,
+  },
+  {
+    id: "bibliotecas",
+    label: "Bibliotecas",
+    group: "Sistema & Dados",
+    icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`,
+  },
+  {
+    id: "diagnostico",
+    label: "Diagnóstico",
+    group: "Sistema & Dados",
+    icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>`,
+  },
 ];
 
 function settingsCatFromHash(raw) {
@@ -792,24 +827,43 @@ function settingsCurrentCat() {
 
 function renderSettings(app, rawCat) {
   const cat = settingsCatFromHash(rawCat || settingsCurrentCat());
-  // Se saímos do Diagnóstico, o polling de logs não deve continuar: cada
-  // renderização de Settings reinicia (ou encerra) o timer da categoria ativa.
   if (diagPollTimer) {
     clearInterval(diagPollTimer);
     diagPollTimer = null;
   }
+
+  // Agrupamento de categorias para a navegação SaaS
+  const groups = [
+    { name: "Preferências", cats: SETTINGS_CATS.filter((c) => c.group === "Preferências") },
+    { name: "IA & Automação", cats: SETTINGS_CATS.filter((c) => c.group === "IA & Automação") },
+    { name: "Sistema & Dados", cats: SETTINGS_CATS.filter((c) => c.group === "Sistema & Dados") },
+  ];
+
   app.innerHTML = `
-    <div class="back-link" id="settings-back">← Voltar aos cursos</div>
     <div class="settings-header">
-      <h1 class="settings-title">Configurações</h1>
-      <p class="settings-subtitle">Personalize o comportamento do seu Local Player.</p>
+      <div class="settings-header-main">
+        <h1 class="settings-title">
+          <span style="color: var(--accent); display: flex; align-items: center;">⚙</span>
+          Central de Configurações
+        </h1>
+        <p class="settings-subtitle">Gerencie preferências, inteligência artificial, bibliotecas de mídia e armazenamento do sistema.</p>
+      </div>
+      <button class="settings-back-btn" id="settings-back" type="button" aria-label="Voltar para a tela inicial">
+        ← Voltar ao Início
+      </button>
     </div>
     <div class="settings-layout">
       <nav class="settings-nav" aria-label="Categorias de configurações">
-        ${SETTINGS_CATS.map((c) => `
-          <a class="settings-nav-item ${c.id === cat ? "is-active" : ""}"
-             href="#/settings/${c.id}"
-             ${c.id === cat ? 'aria-current="page"' : ""}>${escapeHtml(c.label)}</a>`).join("")}
+        ${groups.map((g) => `
+          <div class="settings-nav-group-title">${escapeHtml(g.name)}</div>
+          ${g.cats.map((c) => `
+            <a class="settings-nav-item ${c.id === cat ? "is-active" : ""}"
+               href="#/settings/${c.id}"
+               ${c.id === cat ? 'aria-current="page"' : ""}>
+              <span class="settings-nav-icon">${c.icon}</span>
+              <span class="settings-nav-label">${escapeHtml(c.label)}</span>
+            </a>`).join("")}
+        `).join("")}
       </nav>
       <div class="settings-content">
         ${renderSettingsCategory(cat)}
@@ -821,9 +875,6 @@ function renderSettings(app, rawCat) {
   });
 
   bindSettingsCategory(cat, app);
-
-  // Categoria nova começa no topo (cada categoria é curta; evita abrir o
-  // conteúdo no meio da rolagem de outra categoria).
   window.scrollTo(0, 0);
 }
 
@@ -855,13 +906,22 @@ function bindSettingsCategory(cat, app) {
 function renderSettingsGeral() {
   const on = getSettings().closeOtherModules;
   return `
-    <section class="settings-section" aria-label="Aplicação">
-      <h2 class="settings-section-heading">Aplicação</h2>
-      <p class="settings-section-desc">Comportamento geral da interface.</p>
-      <div class="settings-row" id="close-modules-row">
+    <section class="settings-card" aria-label="Aplicação">
+      <div class="settings-card-head">
+        <div class="settings-card-head-main">
+          <div class="settings-card-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          </div>
+          <div>
+            <h2 class="settings-section-heading">Navegação e Interface</h2>
+            <p class="settings-section-desc">Personalize o comportamento geral de visualização e navegação na aplicação.</p>
+          </div>
+        </div>
+      </div>
+      <div class="settings-row" id="close-modules-row" style="cursor: pointer;">
         <div class="settings-row-text">
           <div class="settings-row-title">Fechar outros módulos ao abrir</div>
-          <div class="settings-row-desc">Quando ativado, abrir um módulo fecha automaticamente os outros módulos abertos.</div>
+          <div class="settings-row-desc">Quando ativado, expandir um módulo fecha automaticamente os demais módulos para manter a barra lateral compacta.</div>
         </div>
         <button class="switch ${on ? "on" : ""}" id="toggle-close-modules" type="button" role="switch" aria-checked="${on}" aria-label="Fechar outros módulos ao abrir">
           <span class="switch-track"></span>
@@ -890,13 +950,22 @@ function bindSettingsGeral(app) {
 // --- Categoria: Reprodução ---
 function renderSettingsReproducao() {
   return `
-    <section class="settings-section" aria-label="Reprodução">
-      <h2 class="settings-section-heading">Reprodução</h2>
-      <p class="settings-section-desc">Preferências de reprodução dos vídeos.</p>
+    <section class="settings-card" aria-label="Reprodução">
+      <div class="settings-card-head">
+        <div class="settings-card-head-main">
+          <div class="settings-card-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+          </div>
+          <div>
+            <h2 class="settings-section-heading">Preferências do Player</h2>
+            <p class="settings-section-desc">Defina as opções padrão para a reprodução de aulas em vídeo.</p>
+          </div>
+        </div>
+      </div>
       <div class="settings-row">
         <div class="settings-row-text">
-          <div class="settings-row-title">Velocidade padrão</div>
-          <div class="settings-row-desc">Velocidade usada ao abrir uma aula. Você ainda pode ajustar no player a qualquer momento.</div>
+          <div class="settings-row-title">Velocidade padrão de reprodução</div>
+          <div class="settings-row-desc">Taxa de reprodução inicial ao abrir qualquer aula. Pode ser reajustada no player a qualquer momento.</div>
         </div>
         <select class="settings-select" id="default-speed" aria-label="Velocidade padrão de reprodução">
           ${(() => {
@@ -922,9 +991,18 @@ function bindSettingsReproducao(app) {
 // --- Categoria: Atalhos ---
 function renderSettingsAtalhos() {
   return `
-    <section class="settings-section" aria-label="Atalhos de teclado">
-      <h2 class="settings-section-heading">Atalhos de teclado</h2>
-      <p class="settings-section-desc">Clique em um atalho e pressione a nova tecla.</p>
+    <section class="settings-card" aria-label="Atalhos de teclado">
+      <div class="settings-card-head">
+        <div class="settings-card-head-main">
+          <div class="settings-card-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><line x1="6" y1="8" x2="6.01" y2="8"></line><line x1="10" y1="8" x2="10.01" y2="8"></line><line x1="14" y1="8" x2="14.01" y2="8"></line><line x1="18" y1="8" x2="18.01" y2="8"></line><line x1="8" y1="12" x2="8.01" y2="12"></line><line x1="12" y1="12" x2="12.01" y2="12"></line><line x1="16" y1="12" x2="16.01" y2="12"></line><line x1="7" y1="16" x2="17" y2="16"></line></svg>
+          </div>
+          <div>
+            <h2 class="settings-section-heading">Atalhos de Teclado</h2>
+            <p class="settings-section-desc">Clique em qualquer ação abaixo e pressione uma nova tecla para remapear.</p>
+          </div>
+        </div>
+      </div>
       <div class="shortcut-list">
         ${SHORTCUT_ORDER.map((action) => {
           const key = getShortcuts()[action];
@@ -939,7 +1017,7 @@ function renderSettingsAtalhos() {
             </button>`;
         }).join("")}
       </div>
-      <div class="settings-actions">
+      <div class="settings-actions" style="margin-top: 16px;">
         <button class="btn btn--secondary" id="reset-shortcuts" type="button">Restaurar atalhos padrão</button>
       </div>
     </section>`;
@@ -971,26 +1049,52 @@ function bindSettingsAtalhos(app) {
 // --- Categoria: Dados e armazenamento ---
 function renderSettingsDados() {
   return `
-    <section class="settings-section" aria-label="Dados e armazenamento">
-      <h2 class="settings-section-heading">Dados e armazenamento</h2>
-      <p class="settings-section-desc">Uso de disco e local de processamento das legendas.</p>
+    <section class="settings-card" aria-label="Dados e armazenamento">
+      <div class="settings-card-head">
+        <div class="settings-card-head-main">
+          <div class="settings-card-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+          </div>
+          <div>
+            <h2 class="settings-section-heading">Uso de Armazenamento</h2>
+            <p class="settings-section-desc">Estatísticas de espaço em disco e diretório de processamento temporário.</p>
+          </div>
+        </div>
+      </div>
       <div class="storage-status" id="storage-status">
         <p class="ai-inline-msg">Carregando uso de armazenamento…</p>
       </div>
-      <div class="settings-row">
-        <div class="settings-row-text">
-          <div class="settings-row-title">Workspace de legendas</div>
-          <div class="settings-row-desc">Local onde o áudio e a transcrição são processados. Automático usa o diretório temporário do sistema; escolha uma pasta própria para controlar o espaço.</div>
+      <div class="settings-subsection">
+        <h3 class="settings-subsection-heading">Workspace de legendas</h3>
+        <p class="settings-row-desc" style="margin-bottom: 12px;">Local onde o áudio e a transcrição temporários são processados pelo Whisper.</p>
+        <div class="workspace-fields" id="workspace-fields">
+          <p class="ai-inline-msg">Carregando configuração do workspace…</p>
         </div>
       </div>
-      <div class="workspace-fields" id="workspace-fields">
-        <p class="ai-inline-msg">Carregando configuração do workspace…</p>
-      </div>
-      <div class="settings-actions">
+      <div class="settings-actions" style="margin-top: 16px;">
         <button class="btn btn--secondary" id="cleanup-workspace" type="button">Limpar workspace (arquivos temporários)</button>
         <button class="btn btn--secondary" id="clear-transcode-cache" type="button">Limpar cache de vídeos transcodificados</button>
       </div>
-      <div class="settings-actions">
+    </section>
+
+    <!-- Zona de Perigo -->
+    <section class="settings-card settings-danger-card" aria-label="Zona de Perigo">
+      <div class="settings-card-head">
+        <div class="settings-card-head-main">
+          <div class="settings-card-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          </div>
+          <div>
+            <h2 class="settings-section-heading" style="color: #fca5a5;">Zona Crítica</h2>
+            <p class="settings-section-desc">Ações destrutivas e irreversíveis sobre os registros salvos.</p>
+          </div>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-text">
+          <div class="settings-row-title">Limpar todo o progresso de estudo</div>
+          <div class="settings-row-desc">Apaga o histórico de aulas assistidas, timestamps e conclusões em todas as bibliotecas.</div>
+        </div>
         <button class="btn btn--danger" id="clear-all-progress" type="button">Limpar todo o progresso</button>
       </div>
     </section>`;
@@ -1072,15 +1176,24 @@ function renderSettingsBibliotecas() {
     })
     .join("");
   return `
-    <section class="settings-section" aria-label="Bibliotecas">
-      <h2 class="settings-section-heading">Bibliotecas</h2>
-      <p class="settings-section-desc">Gerencie pastas de conteúdo além da biblioteca padrão. Cada biblioteca tem seus próprios cursos, progresso, cache de transcoding e legendas.</p>
+    <section class="settings-card" aria-label="Bibliotecas">
+      <div class="settings-card-head">
+        <div class="settings-card-head-main">
+          <div class="settings-card-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          </div>
+          <div>
+            <h2 class="settings-section-heading">Bibliotecas de Mídia</h2>
+            <p class="settings-section-desc">Gerencie pastas de conteúdo além da biblioteca padrão. Cada biblioteca tem seus próprios cursos, progresso e caches isolados.</p>
+          </div>
+        </div>
+      </div>
       <div class="lib-list" id="lib-list">${rows}</div>
-      <div class="settings-actions">
+      <div class="settings-actions" style="margin-top: 14px;">
         <button type="button" class="btn btn--primary" id="lib-add">＋ Adicionar biblioteca</button>
       </div>
       <div id="lib-error" class="ai-inline-msg error" hidden></div>
-      <p class="ai-note">O caminho é informado manualmente (cole ou digite o caminho absoluto da pasta). Remover apenas desliga a biblioteca da configuração — nenhum arquivo é apagado e o progresso é preservado.</p>
+      <p class="ai-note" style="margin-top: 14px;">O caminho é informado manualmente (cole ou digite o caminho absoluto da pasta). Remover apenas desliga a biblioteca da configuração — nenhum arquivo é apagado e o histórico é preservado.</p>
     </section>`;
 }
 
@@ -1259,29 +1372,38 @@ function openLibraryDialog(app, { mode, libId, onSaved }) {
 // --- Categoria: Diagnóstico ---
 function renderSettingsDiagnostico() {
   return `
-    <section class="settings-section" aria-label="Diagnóstico">
-      <h2 class="settings-section-heading">Diagnóstico</h2>
-      <p class="settings-section-desc">Informações sobre a instalação e o processamento das legendas.</p>
+    <section class="settings-card" aria-label="Diagnóstico">
+      <div class="settings-card-head">
+        <div class="settings-card-head-main">
+          <div class="settings-card-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          </div>
+          <div>
+            <h2 class="settings-section-heading">Diagnóstico do Sistema</h2>
+            <p class="settings-section-desc">Status da instalação, ambiente do servidor e fila de processamento de IA em tempo real.</p>
+          </div>
+        </div>
+      </div>
       <div class="settings-row">
         <div class="settings-row-text">
-          <div class="settings-row-title">Biblioteca</div>
+          <div class="settings-row-title">Raiz da Biblioteca Principal</div>
           <div class="settings-row-desc" id="diag-root">…</div>
         </div>
       </div>
       <div class="settings-row">
         <div class="settings-row-text">
-          <div class="settings-row-title">Servidor</div>
+          <div class="settings-row-title">Instância do Servidor</div>
           <div class="settings-row-desc" id="diag-server">…</div>
         </div>
       </div>
       <div class="settings-subsection">
-        <h3 class="settings-subsection-heading">Legendas — status e fila</h3>
+        <h3 class="settings-subsection-heading">Legendas — Status e Fila</h3>
         <div class="log-summary" id="log-summary"><p class="ai-inline-msg">Carregando…</p></div>
         <div class="log-queue" id="log-queue"><p class="ai-inline-msg">Carregando…</p></div>
-        <div class="settings-actions">
-          <button class="btn btn--secondary" id="log-toggle" type="button" aria-expanded="false" aria-controls="log-panel">Ver logs</button>
+        <div class="settings-actions" style="margin-top: 12px;">
+          <button class="btn btn--secondary" id="log-toggle" type="button" aria-expanded="false" aria-controls="log-panel">Ver logs em tempo real</button>
         </div>
-        <div class="log-panel" id="log-panel" hidden>
+        <div class="log-panel" id="log-panel" hidden style="margin-top: 14px;">
           <div class="log-filters" id="log-filters">
             <button type="button" class="log-filter active" data-lvl="ALL">Todos</button>
             <button type="button" class="log-filter" data-lvl="INFO">Info</button>
@@ -1527,13 +1649,46 @@ async function initSettingsDiagnostics(app) {
 // chaves de API nunca chegam ao navegador (só hasApiKey).
 
 const AI_TABS = [
-  { id: "overview", label: "Visão geral" },
-  { id: "tutor", label: "Tutor IA" },
-  { id: "transcription", label: "Transcrição" },
-  { id: "correction", label: "Correção e formatação" },
-  { id: "providers", label: "Provedores LLM" },
-  { id: "models", label: "Modelos" },
-  { id: "advanced", label: "Avançado" },
+  {
+    id: "overview",
+    label: "Visão Geral",
+    icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>`,
+  },
+  {
+    id: "tutor",
+    label: "Tutor IA",
+    icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>`,
+  },
+  {
+    id: "skills",
+    label: "Skills",
+    icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`,
+  },
+  {
+    id: "transcription",
+    label: "Transcrição",
+    icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`,
+  },
+  {
+    id: "correction",
+    label: "Correção & Tradução",
+    icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`,
+  },
+  {
+    id: "providers",
+    label: "Provedores LLM",
+    icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>`,
+  },
+  {
+    id: "models",
+    label: "Modelos",
+    icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>`,
+  },
+  {
+    id: "advanced",
+    label: "Avançado",
+    icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`,
+  },
 ];
 
 let aiState = {
@@ -1556,13 +1711,27 @@ let subtitleGenerateEnabled = false;
 
 function renderAiSection() {
   return `
-    <section class="settings-section ai-section">
-      <h2 class="settings-section-heading">Inteligência Artificial</h2>
-      <p class="settings-section-desc">Configure a transcrição local (Whisper), o Tutor IA pedagógico e a correção opcional por LLM. Status, fila e logs ficam no Diagnóstico.</p>
+    <section class="settings-card ai-section">
+      <div class="settings-card-head">
+        <div class="settings-card-head-main">
+          <div class="settings-card-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2z"></path></svg>
+          </div>
+          <div>
+            <h2 class="settings-section-heading">Central de Inteligência Artificial</h2>
+            <p class="settings-section-desc">Gerencie transcrição local (Whisper), Tutor IA, skills de otimização e conexões com modelos locais ou em nuvem.</p>
+          </div>
+        </div>
+      </div>
       <div class="ai-tabs" role="tablist" aria-label="Inteligência Artificial">
         ${AI_TABS.map((t) => `
           <button type="button" class="ai-tab ${aiState.tab === t.id ? "active" : ""}"
-                  data-ai-tab="${t.id}" role="tab" aria-selected="${aiState.tab === t.id}">${escapeHtml(t.label)}</button>`).join("")}
+                  data-ai-tab="${t.id}" role="tab" aria-selected="${aiState.tab === t.id}">
+            <span style="display: flex; align-items: center; gap: 6px;">
+              ${t.icon || ""}
+              <span>${escapeHtml(t.label)}</span>
+            </span>
+          </button>`).join("")}
       </div>
       <div class="ai-panel" id="ai-panel"></div>
     </section>`;
@@ -1631,6 +1800,7 @@ function renderAiPanelInto(panel) {
 function renderAiPanel() {
   switch (aiState.tab) {
     case "tutor": return renderAiTutor();
+    case "skills": return renderAiSkills();
     case "transcription": return renderAiTranscription();
     case "correction": return renderAiCorrection();
     case "providers": return renderAiProviders();
@@ -1642,6 +1812,7 @@ function renderAiPanel() {
 function bindAiPanel(panel) {
   switch (aiState.tab) {
     case "tutor": return bindAiTutor(panel);
+    case "skills": return bindAiSkills(panel);
     case "transcription": return bindAiTranscription(panel);
     case "correction": return bindAiCorrection(panel);
     case "providers": return bindAiProviders(panel);
@@ -2073,6 +2244,14 @@ function renderAiTutor() {
     includeMaterials: true,
   };
   const providers = aiState.config.llm.providers || [];
+  const selProvider = providers.find((p) => p.id === tu.providerId) || providers[0] || null;
+  const isLocalProvider = selProvider && selProvider.baseUrl && (
+    selProvider.baseUrl.includes("127.0.0.1") ||
+    selProvider.baseUrl.includes("localhost") ||
+    selProvider.baseUrl.includes(":11434") ||
+    selProvider.baseUrl.includes(":1234") ||
+    selProvider.baseUrl.includes(":8080")
+  );
 
   const tuSwitch = (id, label, on, desc) => `
     <div class="ai-field ai-field-switch">
@@ -2093,10 +2272,16 @@ function renderAiTutor() {
         <option value="" ${!tu.providerId ? "selected" : ""}>Padrão (primeiro configurado)</option>
         ${providers.map((p) => `<option value="${p.id}" ${p.id === tu.providerId ? "selected" : ""}>${escapeHtml(p.name)}${p.defaultModel ? ` (${escapeHtml(p.defaultModel)})` : ""}</option>`).join("")}
       </select>
+      ${isLocalProvider ? `
+        <div style="margin-top: 8px; padding: 8px 12px; background: rgba(51, 201, 111, 0.08); border: 1px solid rgba(51, 201, 111, 0.25); border-radius: 8px; font-size: 12px; color: #86efac; display: flex; align-items: center; gap: 6px;">
+          <span>⚡</span>
+          <span><strong>Modelo Local ativo (${escapeHtml(selProvider.name)}):</strong> Processamento 100% offline, seguro e sem custos por token.</span>
+        </div>
+      ` : ""}
     </div>
     <div class="ai-field">
       <label class="ai-label" for="ai-tu-model">Modelo (opcional se definido no provedor)</label>
-      <input class="ai-input" id="ai-tu-model" type="text" value="${escapeHtml(tu.model || "")}" placeholder="ex.: gpt-4o-mini, deepseek-chat, claude-3-5-sonnet…">
+      <input class="ai-input" id="ai-tu-model" type="text" value="${escapeHtml(tu.model || "")}" placeholder="ex.: llama3.2, qwen2.5-coder, gpt-4o-mini…">
     </div>
     <div class="ai-field">
       <label class="ai-label" for="ai-tu-temp">Temperatura / Criatividade: <span id="ai-tu-temp-val">${Number(tu.temperature || 0.3).toFixed(1)}</span></label>
@@ -2105,14 +2290,14 @@ function renderAiTutor() {
     </div>
   ` : `
     <p class="ai-empty">Nenhum provedor de LLM configurado.</p>
-    <p class="ai-note">Para usar o Tutor IA, cadastre um provedor (OpenAI, OpenRouter, Groq, Ollama local, etc.) na aba <strong>Provedores LLM</strong>.</p>
+    <p class="ai-note">Para usar o Tutor IA, cadastre um provedor local (Ollama, LM Studio) ou em nuvem (OpenRouter, OpenAI) na aba <strong>Provedores LLM</strong>.</p>
     <div class="settings-actions">
       <button class="btn btn--secondary" id="ai-tu-goto-providers" type="button">Ir para Provedores LLM</button>
     </div>`;
 
   return `
     <h4 class="ai-block-title">Tutor IA Integrado ao Player</h4>
-    <p class="ai-note">Assistente virtual pedagógico contextualizado com a aula atual (transcrição, materiais e notas). Permite tirar dúvidas e aprofundar conceitos diretamente dentro do player.</p>
+    <p class="ai-note">Assistente pedagógico contextualizado com o conteúdo da aula atual (transcrição, materiais e notas). Permite tirar dúvidas e interagir diretamente dentro do player.</p>
     ${tuSwitch("ai-tu-enabled", "Ativar botão ✨ Tutor IA no player de aulas", tu.enabled !== false, "Quando ativado, o botão do Tutor IA fica acessível na barra de controle e nas opções da aula.")}
     <hr class="ai-sep">
     <h4 class="ai-block-title">Configurações do Modelo</h4>
@@ -2213,6 +2398,195 @@ function bindAiTutor(panel) {
   }
 }
 
+function renderAiSkills() {
+  const cfg = aiState.config;
+  const sk = cfg.skills = cfg.skills || {
+    caveman: { enabled: false, mode: "caveman", preserveCode: true, customInstructions: "", applyToTutor: true },
+    rtk: { enabled: false, stripBoilerplate: true, filterLogs: true, maxLinesPerSnippet: 60, applyToMaterials: true },
+    headroom: { enabled: false, compressCode: true, compressJson: true, alignCache: true, applyToContext: true },
+  };
+  const cv = sk.caveman || {};
+  const rtk = sk.rtk || {};
+  const hr = sk.headroom || {};
+
+  const skSwitch = (id, label, on, desc) => `
+    <div class="ai-field ai-field-switch">
+      <button class="switch ${on ? "on" : ""}" id="${id}" type="button" role="switch" aria-checked="${on}">
+        <span class="switch-track"></span>
+        <span class="switch-thumb"></span>
+      </button>
+      <div class="ai-switch-text">
+        <label class="ai-label" for="${id}">${label}</label>
+        ${desc ? `<p class="ai-field-desc">${desc}</p>` : ""}
+      </div>
+    </div>`;
+
+  return `
+    <h4 class="ai-block-title">Skills & Otimizadores de Contexto / Tokens</h4>
+    <p class="ai-note">Otimizações e extensões inspiradas nos projetos de código aberto <strong>Caveman</strong>, <strong>RTK</strong> e <strong>Headroom</strong> para reduzir custos de tokens, eliminar ruídos e maximizar a eficiência dos modelos de IA.</p>
+
+    <!-- Skill 1: Caveman -->
+    <div class="ai-field" style="margin-top: 16px;">
+      <h4 class="ai-block-title">
+        <span>🦴 Caveman</span>
+        <span class="ai-block-tag">Token Reducer</span>
+        <a href="https://github.com/juliusbrussee/caveman" target="_blank" rel="noopener noreferrer" class="ai-tr-summary-link" style="margin-left: auto; font-size: 11px;">GitHub ↗</a>
+      </h4>
+      <p class="ai-field-desc" style="margin-bottom: 8px;">Corta enrolações, preâmbulos e cortesias das respostas da IA para economizar até 60–75% de tokens, mantendo termos técnicos e códigos 100% exatos.</p>
+      ${skSwitch("ai-sk-cv-enabled", "Habilitar Skill Caveman", cv.enabled === true, "Aplica diretivas de resposta ultra-concisa nas interações com o Tutor IA.")}
+
+      <div class="ai-field" style="margin-top: 8px;">
+        <span class="ai-label">Modo de Concisão</span>
+        <div class="ai-radio-row">
+          <label class="ai-radio">
+            <input type="radio" name="ai-sk-cv-mode" value="caveman" ${cv.mode === "caveman" || !cv.mode ? "checked" : ""}>
+            <span>Caveman (Ultra-econômico)</span>
+          </label>
+          <label class="ai-radio">
+            <input type="radio" name="ai-sk-cv-mode" value="concise" ${cv.mode === "concise" ? "checked" : ""}>
+            <span>Conciso (Didático / Tópicos)</span>
+          </label>
+          <label class="ai-radio">
+            <input type="radio" name="ai-sk-cv-mode" value="custom" ${cv.mode === "custom" ? "checked" : ""}>
+            <span>Personalizado</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="ai-field" id="ai-sk-cv-custom-wrap" ${cv.mode === "custom" ? "" : "hidden"}>
+        <label class="ai-label" for="ai-sk-cv-custom-input">Instruções personalizadas de concisão</label>
+        <textarea class="ai-textarea" id="ai-sk-cv-custom-input" rows="2" placeholder="Ex: Responda em bullet points curtos, sem saudações...">${escapeHtml(cv.customInstructions || "")}</textarea>
+      </div>
+
+      ${skSwitch("ai-sk-cv-code", "Preservar códigos e comandos exatos", cv.preserveCode !== false, "Garante que exemplos de código, comandos e sintaxe não sofram cortes ou alterações.")}
+      ${skSwitch("ai-sk-cv-tutor", "Aplicar nas conversas do Tutor IA", cv.applyToTutor !== false, "Injeta automaticamente as regras de concisão no prompt de sistema do chat.")}
+    </div>
+
+    <hr class="ai-sep">
+
+    <!-- Skill 2: RTK -->
+    <div class="ai-field">
+      <h4 class="ai-block-title">
+        <span>⚡ RTK (Rust Token Killer)</span>
+        <span class="ai-block-tag">Noise Filter</span>
+        <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener noreferrer" class="ai-tr-summary-link" style="margin-left: auto; font-size: 11px;">GitHub ↗</a>
+      </h4>
+      <p class="ai-field-desc" style="margin-bottom: 8px;">Filtra ruídos de logs de terminal, divisores repetitivos e traces longos em materiais anexados às aulas, economizando 60–90% de contexto.</p>
+      ${skSwitch("ai-sk-rtk-enabled", "Habilitar Skill RTK", rtk.enabled === true, "Ativa a filtragem de ruídos em arquivos e materiais didáticos antes do envio ao LLM.")}
+      ${skSwitch("ai-sk-rtk-boilerplate", "Remover divisores e boilerplates repetitivos", rtk.stripBoilerplate !== false, "Elimina linhas consecutivas de separadores (====, ----, ####) e cabeçalhos redundantes.")}
+      ${skSwitch("ai-sk-rtk-logs", "Filtrar saídas de logs e stacktraces excessivos", rtk.filterLogs !== false, "Suprime sequências repetitivas de logs de download/build (npm, pip, etc.).")}
+
+      <div class="ai-field" style="margin-top: 6px;">
+        <label class="ai-label" for="ai-sk-rtk-maxlines">Limite máximo de linhas por trecho de material</label>
+        <input class="ai-input" id="ai-sk-rtk-maxlines" type="number" min="10" max="500" value="${rtk.maxLinesPerSnippet || 60}" style="max-width: 140px;">
+        <p class="ai-field-desc">Preserva o início e o fim do arquivo, resumindo trechos intermediários excessivamente longos.</p>
+      </div>
+      ${skSwitch("ai-sk-rtk-materials", "Aplicar aos materiais de apoio (.txt, .md, .log, códigos)", rtk.applyToMaterials !== false, "Processa arquivos de apoio anexados às aulas.")}
+    </div>
+
+    <hr class="ai-sep">
+
+    <!-- Skill 3: Headroom -->
+    <div class="ai-field">
+      <h4 class="ai-block-title">
+        <span>📦 Headroom</span>
+        <span class="ai-block-tag">Context & Cache Layer</span>
+        <a href="https://github.com/headroomlabs-ai/headroom" target="_blank" rel="noopener noreferrer" class="ai-tr-summary-link" style="margin-left: auto; font-size: 11px;">GitHub ↗</a>
+      </h4>
+      <p class="ai-field-desc" style="margin-bottom: 8px;">Camada de otimização de contexto especializada por tipo de conteúdo e alinhamento de prefixos para maximizar o cache de prompt dos provedores.</p>
+      ${skSwitch("ai-sk-hr-enabled", "Habilitar Skill Headroom", hr.enabled === true, "Ativa a compressão estruturada e o alinhamento de cache de contexto.")}
+      ${skSwitch("ai-sk-hr-code", "CodeCompressor: Comprimir espaçamento e quebras vazias em código", hr.compressCode !== false, "Remove quebras de linha supérfluas e espaços em branco preservando a sintaxe.")}
+      ${skSwitch("ai-sk-hr-json", "SmartCrusher: Minificar dados e arquivos JSON estruturados", hr.compressJson !== false, "Comprime JSONs de materiais e transcrições para formato compacto de baixo consumo de tokens.")}
+      ${skSwitch("ai-sk-hr-align", "Prompt Cache Alignment: Ordenação e prefixos determinísticos", hr.alignCache !== false, "Garante ordem estável de materiais e seções para maximizar cache hits (KV-cache) no provedor LLM.")}
+      ${skSwitch("ai-sk-hr-context", "Aplicar na montagem do contexto da aula", hr.applyToContext !== false, "Otimiza os blocos montados para o Tutor IA.")}
+    </div>
+
+    <div class="settings-actions" style="margin-top: 20px;">
+      <button class="btn btn--primary" id="ai-sk-save" type="button">Salvar Skills</button>
+    </div>
+    <p class="ai-inline-msg ok" id="ai-sk-msg" hidden></p>`;
+}
+
+function bindAiSkills(panel) {
+  const cfg = aiState.config;
+  const sk = cfg.skills = cfg.skills || {
+    caveman: { enabled: false, mode: "caveman", preserveCode: true, customInstructions: "", applyToTutor: true },
+    rtk: { enabled: false, stripBoilerplate: true, filterLogs: true, maxLinesPerSnippet: 60, applyToMaterials: true },
+    headroom: { enabled: false, compressCode: true, compressJson: true, alignCache: true, applyToContext: true },
+  };
+  const cv = sk.caveman = sk.caveman || {};
+  const rtk = sk.rtk = sk.rtk || {};
+  const hr = sk.headroom = sk.headroom || {};
+
+  const bindSwitch = (id, obj, key, defaultOn = false) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("click", () => {
+      const current = obj[key] !== undefined ? obj[key] : defaultOn;
+      obj[key] = !current;
+      el.classList.toggle("on", obj[key]);
+      el.setAttribute("aria-checked", String(obj[key]));
+    });
+  };
+
+  // Caveman switches & radios
+  bindSwitch("ai-sk-cv-enabled", cv, "enabled", false);
+  bindSwitch("ai-sk-cv-code", cv, "preserveCode", true);
+  bindSwitch("ai-sk-cv-tutor", cv, "applyToTutor", true);
+
+  const customWrap = document.getElementById("ai-sk-cv-custom-wrap");
+  document.querySelectorAll('input[name="ai-sk-cv-mode"]').forEach((r) => {
+    r.addEventListener("change", () => {
+      if (r.checked) {
+        cv.mode = r.value;
+        if (customWrap) customWrap.hidden = cv.mode !== "custom";
+      }
+    });
+  });
+
+  const customInput = document.getElementById("ai-sk-cv-custom-input");
+  if (customInput) {
+    customInput.addEventListener("input", () => {
+      cv.customInstructions = customInput.value;
+    });
+  }
+
+  // RTK switches & inputs
+  bindSwitch("ai-sk-rtk-enabled", rtk, "enabled", false);
+  bindSwitch("ai-sk-rtk-boilerplate", rtk, "stripBoilerplate", true);
+  bindSwitch("ai-sk-rtk-logs", rtk, "filterLogs", true);
+  bindSwitch("ai-sk-rtk-materials", rtk, "applyToMaterials", true);
+
+  const maxLinesInput = document.getElementById("ai-sk-rtk-maxlines");
+  if (maxLinesInput) {
+    maxLinesInput.addEventListener("input", () => {
+      rtk.maxLinesPerSnippet = Number(maxLinesInput.value) || 60;
+    });
+  }
+
+  // Headroom switches
+  bindSwitch("ai-sk-hr-enabled", hr, "enabled", false);
+  bindSwitch("ai-sk-hr-code", hr, "compressCode", true);
+  bindSwitch("ai-sk-hr-json", hr, "compressJson", true);
+  bindSwitch("ai-sk-hr-align", hr, "alignCache", true);
+  bindSwitch("ai-sk-hr-context", hr, "applyToContext", true);
+
+  // Save button
+  const saveBtn = document.getElementById("ai-sk-save");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", async () => {
+      try {
+        if (customInput) cv.customInstructions = customInput.value;
+        if (maxLinesInput) rtk.maxLinesPerSnippet = Number(maxLinesInput.value) || 60;
+        await saveAiPatch({ skills: sk });
+        aiMsg("ai-sk-msg", "ok", "Configurações de Skills e Otimizadores salvas com sucesso.");
+      } catch (err) {
+        aiMsg("ai-sk-msg", "error", err.message);
+      }
+    });
+  }
+}
+
 function aiGenId() { return "p_" + Math.random().toString(36).slice(2, 12); }
 
 async function aiTestProvider(payload, msgId) {
@@ -2237,27 +2611,42 @@ async function aiTestProvider(payload, msgId) {
 }
 
 const AI_PRESETS = [
-  { id: "omniroute", name: "OmniRoute", baseUrl: "" },
+  { id: "ollama", name: "Ollama (Local - http://127.0.0.1:11434/v1)", baseUrl: "http://127.0.0.1:11434/v1" },
+  { id: "lmstudio", name: "LM Studio (Local - http://127.0.0.1:1234/v1)", baseUrl: "http://127.0.0.1:1234/v1" },
+  { id: "llamacpp", name: "llama.cpp / vLLM (Local - http://127.0.0.1:8080/v1)", baseUrl: "http://127.0.0.1:8080/v1" },
   { id: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1" },
   { id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1" },
+  { id: "omniroute", name: "OmniRoute", baseUrl: "" },
   { id: "custom", name: "Personalizado / outro compatível", baseUrl: "" },
 ];
 
 function renderAiProviderCard(p) {
+  const isLocal = p.baseUrl && (
+    p.baseUrl.includes("127.0.0.1") ||
+    p.baseUrl.includes("localhost") ||
+    p.baseUrl.includes(":11434") ||
+    p.baseUrl.includes(":1234") ||
+    p.baseUrl.includes(":8080")
+  );
   return `
     <div class="ai-provider-card">
       <div class="ai-provider-head">
         <div>
-          <div class="ai-provider-name">${escapeHtml(p.name)}</div>
-          <div class="ai-provider-meta">OpenAI-compatible${p.baseUrl ? ` · ${escapeHtml(p.baseUrl)}` : ""}</div>
+          <div class="ai-provider-name" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span>${escapeHtml(p.name)}</span>
+            <span class="lib-badge ${isLocal ? "lib-badge-ok" : "lib-badge-warn"}" style="font-size: 10.5px; padding: 2px 7px;">
+              ${isLocal ? "⚡ Local (Offline)" : "🌐 Nuvem / API"}
+            </span>
+          </div>
+          <div class="ai-provider-meta">${p.baseUrl ? escapeHtml(p.baseUrl) : "URL não definida"}</div>
         </div>
-        <span class="ai-provider-key ${p.hasApiKey ? "has" : ""}">${p.hasApiKey ? "● chave salva" : "○ sem chave"}</span>
+        <span class="ai-provider-key ${p.hasApiKey ? "has" : ""}">${p.hasApiKey ? "● Chave de API salva" : (isLocal ? "○ Sem chave (Local)" : "○ Sem chave")}</span>
       </div>
       ${p.defaultModel ? `<div class="ai-provider-model">Modelo padrão: <code>${escapeHtml(p.defaultModel)}</code></div>` : ""}
       <div class="ai-provider-actions">
-        <button class="btn btn--secondary" id="ai-test-${p.id}" type="button">Testar conexão</button>
-        <button class="btn btn--secondary" id="ai-edit-${p.id}" type="button">Editar</button>
-        <button class="btn btn--danger" id="ai-remove-${p.id}" type="button">Remover</button>
+        <button class="btn btn--secondary btn--sm" id="ai-test-${p.id}" type="button">Testar conexão</button>
+        <button class="btn btn--secondary btn--sm" id="ai-edit-${p.id}" type="button">Editar</button>
+        <button class="btn btn--danger btn--sm" id="ai-remove-${p.id}" type="button">Remover</button>
       </div>
       <p class="ai-inline-msg ok" id="ai-test-msg-${p.id}" hidden></p>
     </div>`;
@@ -2268,10 +2657,10 @@ function renderAiProviderForm(editId) {
   const existing = editing ? aiLlmProvider(editId) : null;
   if (!aiState.form) {
     aiState.form = {
-      preset: existing ? (AI_PRESETS.find((x) => x.baseUrl === existing.baseUrl) ? AI_PRESETS.find((x) => x.baseUrl === existing.baseUrl).id : "custom") : "omniroute",
+      preset: existing ? (AI_PRESETS.find((x) => x.baseUrl === existing.baseUrl) ? AI_PRESETS.find((x) => x.baseUrl === existing.baseUrl).id : "custom") : "ollama",
       name: existing ? existing.name : "",
-      baseUrl: existing ? existing.baseUrl : "",
-      model: existing ? existing.defaultModel : "",
+      baseUrl: existing ? existing.baseUrl : "http://127.0.0.1:11434/v1",
+      model: existing ? existing.defaultModel : "llama3.2",
       apiKey: "",
       clearApiKey: false,
     };
@@ -2280,34 +2669,35 @@ function renderAiProviderForm(editId) {
   const hasKey = existing && existing.hasApiKey;
   return `
     <div class="ai-provider-form">
-      <h3 class="ai-form-title">${editing ? "Editar provedor" : "Novo provedor LLM"}</h3>
+      <h3 class="ai-form-title">${editing ? "Editar Provedor LLM" : "Novo Provedor LLM"}</h3>
       <div class="ai-field">
-        <label class="ai-label" for="ai-f-preset">Modelo pronto</label>
+        <label class="ai-label" for="ai-f-preset">Preset Rápido</label>
         <select class="ai-select" id="ai-f-preset">
           ${AI_PRESETS.map((x) => `<option value="${x.id}" ${x.id === f.preset ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("")}
         </select>
+        <p class="ai-field-desc">Selecione um preset para preenchimento automático de URLs de servidores locais ou serviços em nuvem.</p>
       </div>
       <div class="ai-field">
-        <label class="ai-label" for="ai-f-name">Nome</label>
-        <input class="ai-input" id="ai-f-name" type="text" value="${escapeHtml(f.name)}" placeholder="ex.: Meu gateway">
+        <label class="ai-label" for="ai-f-name">Nome de Identificação</label>
+        <input class="ai-input" id="ai-f-name" type="text" value="${escapeHtml(f.name)}" placeholder="ex.: Ollama Local, LM Studio, OpenRouter">
       </div>
       <div class="ai-field">
-        <label class="ai-label" for="ai-f-url">URL base</label>
-        <input class="ai-input" id="ai-f-url" type="text" value="${escapeHtml(f.baseUrl)}" placeholder="https://…/v1">
+        <label class="ai-label" for="ai-f-url">URL Base da API (Endpoint OpenAI-compatible)</label>
+        <input class="ai-input" id="ai-f-url" type="text" value="${escapeHtml(f.baseUrl)}" placeholder="http://127.0.0.1:11434/v1">
       </div>
       <div class="ai-field">
-        <label class="ai-label" for="ai-f-model">Modelo padrão</label>
-        <input class="ai-input" id="ai-f-model" type="text" value="${escapeHtml(f.model)}" placeholder="ex.: gpt-4o-mini">
+        <label class="ai-label" for="ai-f-model">Modelo Padrão</label>
+        <input class="ai-input" id="ai-f-model" type="text" value="${escapeHtml(f.model)}" placeholder="ex.: llama3.2, qwen2.5-coder, gpt-4o-mini">
       </div>
       <div class="ai-field">
-        <label class="ai-label" for="ai-f-key">Chave de API</label>
+        <label class="ai-label" for="ai-f-key">Chave de API (Opcional para provedores locais)</label>
         <div class="ai-pw-wrap">
-          <input class="ai-input" id="ai-f-key" type="password" value="${escapeHtml(f.apiKey)}" autocomplete="off" placeholder="${hasKey ? "•••••• (chave salva)" : "sk-…"}">
+          <input class="ai-input" id="ai-f-key" type="password" value="${escapeHtml(f.apiKey)}" autocomplete="off" placeholder="${hasKey ? "•••••• (chave salva)" : "Opcional se local (ex.: Ollama / LM Studio)"}">
           <button type="button" class="ai-eye" id="ai-f-eye" aria-label="Mostrar ou ocultar chave">👁</button>
         </div>
         ${hasKey ? `<label class="ai-label ai-label-small"><input type="checkbox" id="ai-f-clearkey"> Limpar chave salva</label><p class="ai-note">Deixe o campo vazio para manter a chave atual; marque a opção para removê-la.</p>` : ""}
       </div>
-      <div class="ai-provider-actions">
+      <div class="ai-provider-actions" style="margin-top: 14px;">
         <button class="btn btn--secondary" id="ai-f-test" type="button">Testar conexão</button>
         <button class="btn btn--primary" id="ai-f-save" type="button">Salvar provedor</button>
         <button class="btn btn--secondary" id="ai-f-cancel" type="button">Cancelar</button>
@@ -4972,8 +5362,11 @@ const tutorState = {
   loadingContext: false,
   streaming: false,
   currentVideo: null,
+  activeTab: "chat", // "chat" | "quiz" | "flashcards"
   historyByPath: new Map(), // videoPath -> [{ role, content, error?: boolean }]
   contextMetaByPath: new Map(), // videoPath -> contextMeta
+  quizByPath: new Map(), // videoPath -> { quiz, currentIndex, answers: Map, finished: bool, loading: bool, error: null }
+  flashcardsByPath: new Map(), // videoPath -> { flashcards, currentIndex, flipped: bool, mastery: Map, loading: bool, error: null }
   abortController: null,
 };
 
@@ -4982,6 +5375,34 @@ function getTutorHistory(videoPath) {
     tutorState.historyByPath.set(videoPath, []);
   }
   return tutorState.historyByPath.get(videoPath);
+}
+
+function getTutorQuizState(videoPath) {
+  if (!tutorState.quizByPath.has(videoPath)) {
+    tutorState.quizByPath.set(videoPath, {
+      quiz: null,
+      currentIndex: 0,
+      answers: new Map(),
+      finished: false,
+      loading: false,
+      error: null,
+    });
+  }
+  return tutorState.quizByPath.get(videoPath);
+}
+
+function getTutorFlashcardsState(videoPath) {
+  if (!tutorState.flashcardsByPath.has(videoPath)) {
+    tutorState.flashcardsByPath.set(videoPath, {
+      flashcards: null,
+      currentIndex: 0,
+      flipped: false,
+      mastery: new Map(),
+      loading: false,
+      error: null,
+    });
+  }
+  return tutorState.flashcardsByPath.get(videoPath);
 }
 
 function initTutorDrawer(video) {
@@ -5013,12 +5434,12 @@ function initTutorDrawer(video) {
           </div>
         </div>
         <div class="tutor-header-actions">
-          <button type="button" class="tutor-icon-btn" id="tutor-new-chat" title="Limpar e iniciar nova conversa" aria-label="Nova conversa">
+          <button type="button" class="tutor-icon-btn" id="tutor-new-chat" title="Limpar e reiniciar" aria-label="Limpar">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
               <path d="M3 3v5h5"/>
             </svg>
-            <span class="tutor-btn-label">Novo</span>
+            <span class="tutor-btn-label" id="tutor-reset-btn-label">Novo</span>
           </button>
           <button type="button" class="tutor-icon-btn tutor-close-btn" id="tutor-close" aria-label="Fechar Tutor IA" title="Fechar (Esc)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -5029,29 +5450,86 @@ function initTutorDrawer(video) {
         </div>
       </div>
 
-      <div class="tutor-messages" id="tutor-messages" role="log" aria-live="polite"></div>
+      <!-- Barra de Abas -->
+      <div class="tutor-tab-bar" role="tablist">
+        <button type="button" class="tutor-tab-btn ${tutorState.activeTab === 'chat' ? 'active' : ''}" data-tab="chat" role="tab" aria-selected="${tutorState.activeTab === 'chat'}">
+          <span>💬</span> <span>Chat</span>
+        </button>
+        <button type="button" class="tutor-tab-btn ${tutorState.activeTab === 'quiz' ? 'active' : ''}" data-tab="quiz" role="tab" aria-selected="${tutorState.activeTab === 'quiz'}">
+          <span>📝</span> <span>Quiz</span>
+        </button>
+        <button type="button" class="tutor-tab-btn ${tutorState.activeTab === 'flashcards' ? 'active' : ''}" data-tab="flashcards" role="tab" aria-selected="${tutorState.activeTab === 'flashcards'}">
+          <span>🗂️</span> <span>Flashcards</span>
+        </button>
+      </div>
 
-      <div class="tutor-input-container">
-        <div class="tutor-input-wrap">
-          <textarea class="tutor-textarea" id="tutor-input" rows="1" placeholder="Tire sua dúvida sobre esta aula…"></textarea>
-          <button type="button" class="tutor-send-btn" id="tutor-send-btn" title="Enviar pergunta" aria-label="Enviar pergunta">
-            <span id="tutor-send-icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13"></line>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-              </svg>
-            </span>
-          </button>
+      <!-- View: Chat -->
+      <div class="tutor-view-container" id="tutor-view-chat" ${tutorState.activeTab === 'chat' ? '' : 'hidden'}>
+        <div class="tutor-messages" id="tutor-messages" role="log" aria-live="polite"></div>
+        <div class="tutor-input-container">
+          <div class="tutor-input-wrap">
+            <textarea class="tutor-textarea" id="tutor-input" rows="1" placeholder="Tire sua dúvida sobre esta aula…"></textarea>
+            <button type="button" class="tutor-send-btn" id="tutor-send-btn" title="Enviar pergunta" aria-label="Enviar pergunta">
+              <span id="tutor-send-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </span>
+            </button>
+          </div>
+          <div class="tutor-input-footer">
+            <span>Shift + Enter para quebrar linha · Enter para enviar</span>
+          </div>
         </div>
-        <div class="tutor-input-footer">
-          <span>Shift + Enter para quebrar linha · Enter para enviar</span>
-        </div>
+      </div>
+
+      <!-- View: Quiz -->
+      <div class="tutor-view-container" id="tutor-view-quiz" ${tutorState.activeTab === 'quiz' ? '' : 'hidden'}>
+        <div class="tutor-quiz-view" id="tutor-quiz-container"></div>
+      </div>
+
+      <!-- View: Flashcards -->
+      <div class="tutor-view-container" id="tutor-view-flashcards" ${tutorState.activeTab === 'flashcards' ? '' : 'hidden'}>
+        <div class="tutor-fc-view" id="tutor-fc-container"></div>
       </div>
     </aside>`;
 
   wireTutorDrawerEvents(video);
   if (video) {
     updateTutorContextMeta(video);
+  }
+}
+
+function switchTutorTab(tabName, video) {
+  tutorState.activeTab = tabName;
+  const currentVid = video || tutorState.currentVideo;
+
+  document.querySelectorAll(".tutor-tab-btn").forEach((btn) => {
+    const isAct = btn.dataset.tab === tabName;
+    btn.classList.toggle("active", isAct);
+    btn.setAttribute("aria-selected", String(isAct));
+  });
+
+  const chatView = document.getElementById("tutor-view-chat");
+  const quizView = document.getElementById("tutor-view-quiz");
+  const fcView = document.getElementById("tutor-view-flashcards");
+
+  if (chatView) chatView.hidden = tabName !== "chat";
+  if (quizView) quizView.hidden = tabName !== "quiz";
+  if (fcView) fcView.hidden = tabName !== "flashcards";
+
+  const resetLabel = document.getElementById("tutor-reset-btn-label");
+  if (resetLabel) {
+    resetLabel.textContent = tabName === "chat" ? "Novo" : "Reiniciar";
+  }
+
+  if (tabName === "chat" && currentVid) {
+    renderTutorMessages(currentVid);
+  } else if (tabName === "quiz" && currentVid) {
+    renderTutorQuiz(currentVid);
+  } else if (tabName === "flashcards" && currentVid) {
+    renderTutorFlashcards(currentVid);
   }
 }
 
@@ -5067,12 +5545,24 @@ function wireTutorDrawerEvents(video) {
   if (closeBtn) closeBtn.addEventListener("click", () => closeTutorDrawer());
   if (backdrop) backdrop.addEventListener("click", () => closeTutorDrawer());
 
+  document.querySelectorAll(".tutor-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchTutorTab(btn.dataset.tab, tutorState.currentVideo || video);
+    });
+  });
+
   if (newChatBtn) {
     newChatBtn.addEventListener("click", () => {
-      if (tutorState.streaming) stopTutorStreaming();
-      if (tutorState.currentVideo) {
-        tutorState.historyByPath.set(tutorState.currentVideo.path, []);
-        renderTutorMessages(tutorState.currentVideo);
+      const vid = tutorState.currentVideo || video;
+      if (!vid) return;
+      if (tutorState.activeTab === "chat") {
+        if (tutorState.streaming) stopTutorStreaming();
+        tutorState.historyByPath.set(vid.path, []);
+        renderTutorMessages(vid);
+      } else if (tutorState.activeTab === "quiz") {
+        restartQuiz(vid);
+      } else if (tutorState.activeTab === "flashcards") {
+        restartFlashcards(vid);
       }
     });
   }
@@ -5080,7 +5570,7 @@ function wireTutorDrawerEvents(video) {
   if (input) {
     input.addEventListener("input", () => {
       input.style.height = "auto";
-      input.style.height = Math.min(160, Math.max(38, input.scrollHeight)) + "px";
+      input.style.height = Math.min(180, Math.max(38, input.scrollHeight)) + "px";
     });
 
     input.addEventListener("keydown", (e) => {
@@ -5221,12 +5711,12 @@ function openTutorDrawer(video) {
   document.body.classList.add("tutor-open");
   tutorState.open = true;
 
-  renderTutorMessages(video);
+  switchTutorTab(tutorState.activeTab || "chat", video);
   updateTutorContextMeta(video);
 
-  const input = document.getElementById("tutor-input");
-  if (input) {
-    setTimeout(() => input.focus(), 100);
+  if (tutorState.activeTab === "chat") {
+    const input = document.getElementById("tutor-input");
+    if (input) setTimeout(() => input.focus(), 100);
   }
 }
 
@@ -5252,6 +5742,558 @@ function toggleTutorDrawer(video) {
     openTutorDrawer(video);
   }
 }
+
+// --- Controlador de Quiz Interativo ----------------------------------------
+
+function renderTutorQuiz(video) {
+  const container = document.getElementById("tutor-quiz-container");
+  if (!container || !video) return;
+
+  const st = getTutorQuizState(video.path);
+
+  if (st.loading) {
+    container.innerHTML = `
+      <div class="tutor-quiz-hero">
+        <div class="tutor-quiz-hero-badge" style="animation: tutorBlink 1.2s infinite ease-in-out;">
+          <span>⏳</span>
+        </div>
+        <h4 class="tutor-quiz-hero-title">Gerando Quiz com IA...</h4>
+        <p class="tutor-quiz-hero-desc">Analisando o conteúdo, transcrição e conceitos da aula para elaborar as questões.</p>
+      </div>`;
+    return;
+  }
+
+  if (st.error) {
+    container.innerHTML = `
+      <div class="tutor-quiz-hero">
+        <div class="tutor-quiz-hero-badge" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #ef4444;">
+          <span>⚠️</span>
+        </div>
+        <h4 class="tutor-quiz-hero-title">Erro ao Gerar Quiz</h4>
+        <p class="tutor-quiz-hero-desc">${escapeHtml(st.error)}</p>
+        <button type="button" class="tutor-study-gen-btn" id="tutor-quiz-retry-btn">
+          <span>Tentar Novamente</span>
+        </button>
+      </div>`;
+    const retryBtn = document.getElementById("tutor-quiz-retry-btn");
+    if (retryBtn) retryBtn.addEventListener("click", () => generateTutorQuiz(video));
+    return;
+  }
+
+  if (!st.quiz || !st.quiz.questions || st.quiz.questions.length === 0) {
+    container.innerHTML = `
+      <div class="tutor-quiz-hero">
+        <div class="tutor-quiz-hero-badge">
+          <span>📝</span>
+        </div>
+        <h4 class="tutor-quiz-hero-title">Quiz de Fixação da Aula</h4>
+        <p class="tutor-quiz-hero-desc">Teste seus conhecimentos respondendo a questões de múltipla escolha geradas automaticamente a partir desta aula.</p>
+        <div class="tutor-study-config-row">
+          <label for="tutor-quiz-count">Quantidade de perguntas:</label>
+          <select id="tutor-quiz-count" class="tutor-study-select">
+            <option value="3">3 questões</option>
+            <option value="5" selected>5 questões</option>
+            <option value="10">10 questões</option>
+          </select>
+        </div>
+        <div>
+          <button type="button" class="tutor-study-gen-btn" id="tutor-quiz-start-btn">
+            <span>✨ Gerar Quiz da Aula</span>
+          </button>
+        </div>
+      </div>`;
+    const startBtn = document.getElementById("tutor-quiz-start-btn");
+    if (startBtn) {
+      startBtn.addEventListener("click", () => {
+        const countSel = document.getElementById("tutor-quiz-count");
+        const count = countSel ? Number(countSel.value) || 5 : 5;
+        generateTutorQuiz(video, count);
+      });
+    }
+    return;
+  }
+
+  // Quiz concluído (Tela de pontuação final)
+  if (st.finished) {
+    const total = st.quiz.questions.length;
+    let correctCount = 0;
+    st.quiz.questions.forEach((q) => {
+      if (st.answers.get(q.id) === q.correctIndex) correctCount++;
+    });
+    const pct = Math.round((correctCount / total) * 100);
+
+    let feedbackMsg = "Excelente desempenho! Você dominou o conteúdo desta aula com maestria.";
+    if (pct < 50) {
+      feedbackMsg = "Vale a pena rever os trechos da aula para reforçar os pontos onde você teve dúvidas.";
+    } else if (pct < 80) {
+      feedbackMsg = "Bom trabalho! Você compreendeu a maior parte dos conceitos da aula.";
+    }
+
+    container.innerHTML = `
+      <div class="tutor-quiz-summary">
+        <div class="tutor-quiz-score-circle" style="--pct: ${pct};">
+          <span class="tutor-quiz-score-num">${pct}%</span>
+        </div>
+        <h4 class="tutor-quiz-sum-title">${correctCount} de ${total} Acertos</h4>
+        <p class="tutor-quiz-sum-desc">${feedbackMsg}</p>
+        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+          <button type="button" class="tutor-icon-btn" id="tutor-quiz-redo-btn" style="padding: 10px 18px; font-size: 14.5px;">
+            <span>🔄 Refazer Quiz</span>
+          </button>
+          <button type="button" class="tutor-study-gen-btn" id="tutor-quiz-new-btn" style="padding: 10px 18px; font-size: 14.5px;">
+            <span>✨ Gerar Novas Questões</span>
+          </button>
+        </div>
+      </div>`;
+
+    const redoBtn = document.getElementById("tutor-quiz-redo-btn");
+    if (redoBtn) {
+      redoBtn.addEventListener("click", () => {
+        st.currentIndex = 0;
+        st.answers.clear();
+        st.finished = false;
+        renderTutorQuiz(video);
+      });
+    }
+
+    const newBtn = document.getElementById("tutor-quiz-new-btn");
+    if (newBtn) {
+      newBtn.addEventListener("click", () => {
+        generateTutorQuiz(video, st.quiz.questions.length);
+      });
+    }
+    return;
+  }
+
+  // Pergunta Ativa
+  const q = st.quiz.questions[st.currentIndex];
+  const total = st.quiz.questions.length;
+  const progressPct = Math.round(((st.currentIndex + 1) / total) * 100);
+  const selectedAnswer = st.answers.get(q.id);
+  const hasAnswered = selectedAnswer !== undefined;
+
+  const letters = ["A", "B", "C", "D"];
+
+  let optionsHtml = "";
+  q.options.forEach((opt, idx) => {
+    let optClass = "";
+    if (hasAnswered) {
+      if (idx === q.correctIndex) {
+        optClass = "correct";
+      } else if (idx === selectedAnswer) {
+        optClass = "incorrect";
+      }
+    }
+
+    optionsHtml += `
+      <button type="button" class="tutor-quiz-opt-btn ${optClass}" data-opt="${idx}" ${hasAnswered ? "disabled" : ""}>
+        <span class="tutor-quiz-opt-letter">${letters[idx] || (idx + 1)}</span>
+        <span class="tutor-quiz-opt-text">${escapeHtml(opt)}</span>
+      </button>`;
+  });
+
+  let explanationHtml = "";
+  if (hasAnswered) {
+    const isCorrect = selectedAnswer === q.correctIndex;
+    explanationHtml = `
+      <div class="tutor-quiz-explanation ${isCorrect ? 'is-correct' : 'is-incorrect'}">
+        <h5 class="tutor-quiz-exp-title">
+          <span>${isCorrect ? '✅ Resposta Correta!' : '❌ Resposta Incorreta'}</span>
+        </h5>
+        <p class="tutor-quiz-exp-text">${renderMarkdownToHtml(q.explanation)}</p>
+      </div>`;
+  }
+
+  const isLast = st.currentIndex === total - 1;
+
+  container.innerHTML = `
+    <div class="tutor-quiz-header">
+      <div class="tutor-quiz-progress-track">
+        <div class="tutor-quiz-progress-fill" style="width: ${progressPct}%;"></div>
+      </div>
+      <span class="tutor-quiz-counter">Questão ${st.currentIndex + 1} de ${total}</span>
+    </div>
+
+    <div class="tutor-quiz-question-box">
+      <p class="tutor-quiz-question-text">${escapeHtml(q.question)}</p>
+    </div>
+
+    <div class="tutor-quiz-options" id="tutor-quiz-options">
+      ${optionsHtml}
+    </div>
+
+    ${explanationHtml}
+
+    ${hasAnswered ? `
+      <div class="tutor-quiz-actions">
+        <button type="button" class="tutor-quiz-next-btn" id="tutor-quiz-next-btn">
+          <span>${isLast ? 'Ver Resultado' : 'Próxima Questão'}</span>
+          <span>→</span>
+        </button>
+      </div>
+    ` : ''}`;
+
+  // Liga clique nas alternativas
+  if (!hasAnswered) {
+    container.querySelectorAll(".tutor-quiz-opt-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const optIndex = parseInt(btn.dataset.opt, 10);
+        st.answers.set(q.id, optIndex);
+        renderTutorQuiz(video);
+      });
+    });
+  } else {
+    const nextBtn = document.getElementById("tutor-quiz-next-btn");
+    if (nextBtn) {
+      nextBtn.addEventListener("click", () => {
+        if (isLast) {
+          st.finished = true;
+        } else {
+          st.currentIndex++;
+        }
+        renderTutorQuiz(video);
+      });
+    }
+  }
+}
+
+async function generateTutorQuiz(video, count = 5) {
+  if (!video) return;
+  const st = getTutorQuizState(video.path);
+  st.loading = true;
+  st.error = null;
+  st.quiz = null;
+  st.currentIndex = 0;
+  st.answers.clear();
+  st.finished = false;
+  renderTutorQuiz(video);
+
+  try {
+    const res = await fetch("/api/study/quiz", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: video.path,
+        libraryId: video.libId || "",
+        count,
+      }),
+    });
+
+    if (!res.ok) {
+      let errMsg = `Erro HTTP ${res.status}`;
+      try {
+        const j = await res.json();
+        if (j.error) errMsg = j.error;
+      } catch {}
+      throw new Error(errMsg);
+    }
+
+    const data = await res.json();
+    if (!data.ok || !data.quiz) throw new Error(data.error || "Estrutura de quiz inválida.");
+
+    st.quiz = data.quiz;
+    st.currentIndex = 0;
+    st.answers.clear();
+    st.finished = false;
+  } catch (err) {
+    st.error = err.message || "Falha ao gerar o quiz.";
+  } finally {
+    st.loading = false;
+    renderTutorQuiz(video);
+  }
+}
+
+function restartQuiz(video) {
+  const st = getTutorQuizState(video.path);
+  st.quiz = null;
+  st.currentIndex = 0;
+  st.answers.clear();
+  st.finished = false;
+  st.error = null;
+  renderTutorQuiz(video);
+}
+
+// --- Controlador de Flashcards 3D ------------------------------------------
+
+function renderTutorFlashcards(video) {
+  const container = document.getElementById("tutor-fc-container");
+  if (!container || !video) return;
+
+  const st = getTutorFlashcardsState(video.path);
+
+  if (st.loading) {
+    container.innerHTML = `
+      <div class="tutor-quiz-hero">
+        <div class="tutor-quiz-hero-badge" style="animation: tutorBlink 1.2s infinite ease-in-out;">
+          <span>⏳</span>
+        </div>
+        <h4 class="tutor-quiz-hero-title">Gerando Flashcards com IA...</h4>
+        <p class="tutor-quiz-hero-desc">Extraindo termos-chave, conceitos e exemplos práticos da aula para memorização ativa.</p>
+      </div>`;
+    return;
+  }
+
+  if (st.error) {
+    container.innerHTML = `
+      <div class="tutor-quiz-hero">
+        <div class="tutor-quiz-hero-badge" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #ef4444;">
+          <span>⚠️</span>
+        </div>
+        <h4 class="tutor-quiz-hero-title">Erro ao Gerar Flashcards</h4>
+        <p class="tutor-quiz-hero-desc">${escapeHtml(st.error)}</p>
+        <button type="button" class="tutor-study-gen-btn" id="tutor-fc-retry-btn">
+          <span>Tentar Novamente</span>
+        </button>
+      </div>`;
+    const retryBtn = document.getElementById("tutor-fc-retry-btn");
+    if (retryBtn) retryBtn.addEventListener("click", () => generateTutorFlashcards(video));
+    return;
+  }
+
+  if (!st.flashcards || !st.flashcards.cards || st.flashcards.cards.length === 0) {
+    container.innerHTML = `
+      <div class="tutor-quiz-hero">
+        <div class="tutor-quiz-hero-badge">
+          <span>🗂️</span>
+        </div>
+        <h4 class="tutor-quiz-hero-title">Flashcards Interativos</h4>
+        <p class="tutor-quiz-hero-desc">Pratique memorização ativa com cartões 3D baseados nos conceitos e códigos essenciais desta aula.</p>
+        <div class="tutor-study-config-row">
+          <label for="tutor-fc-count">Quantidade de cartões:</label>
+          <select id="tutor-fc-count" class="tutor-study-select">
+            <option value="5">5 cartões</option>
+            <option value="8" selected>8 cartões</option>
+            <option value="12">12 cartões</option>
+          </select>
+        </div>
+        <div>
+          <button type="button" class="tutor-study-gen-btn" id="tutor-fc-start-btn">
+            <span>✨ Gerar Flashcards da Aula</span>
+          </button>
+        </div>
+      </div>`;
+    const startBtn = document.getElementById("tutor-fc-start-btn");
+    if (startBtn) {
+      startBtn.addEventListener("click", () => {
+        const countSel = document.getElementById("tutor-fc-count");
+        const count = countSel ? Number(countSel.value) || 8 : 8;
+        generateTutorFlashcards(video, count);
+      });
+    }
+    return;
+  }
+
+  const cards = st.flashcards.cards;
+  const total = cards.length;
+  const card = cards[st.currentIndex];
+
+  container.innerHTML = `
+    <div class="tutor-fc-stage">
+      <div class="tutor-fc-card ${st.flipped ? 'flipped' : ''}" id="tutor-fc-card-el" title="Clique ou pressione Espaço para virar">
+        <!-- Frente -->
+        <div class="tutor-fc-face tutor-fc-front">
+          <div class="tutor-fc-tag-row">
+            <span class="tutor-fc-tag">${escapeHtml(card.tag || 'Conceito')}</span>
+            <span class="tutor-fc-flip-hint">↺ Clique para virar</span>
+          </div>
+          <div class="tutor-fc-content">
+            ${escapeHtml(card.front)}
+          </div>
+          <div class="tutor-fc-hint-box" ${card.hint ? '' : 'hidden'}>
+            💡 <strong>Dica:</strong> ${escapeHtml(card.hint || '')}
+          </div>
+        </div>
+
+        <!-- Verso -->
+        <div class="tutor-fc-face tutor-fc-back">
+          <div class="tutor-fc-tag-row">
+            <span class="tutor-fc-tag">${escapeHtml(card.tag || 'Resposta')}</span>
+            <span class="tutor-fc-flip-hint">↺ Clique para virar</span>
+          </div>
+          <div class="tutor-fc-content">
+            ${renderMarkdownToHtml(card.back)}
+          </div>
+          <div style="font-size: 11.5px; color: var(--text-dim); text-align: right;">
+            Como foi sua recordação?
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Barra de Autoavaliação -->
+    <div class="tutor-fc-rating-bar">
+      <button type="button" class="tutor-fc-rate-btn tutor-fc-rate-hard" data-rate="hard" title="Não lembrei bem">
+        <span>🔴 Difícil</span>
+      </button>
+      <button type="button" class="tutor-fc-rate-btn tutor-fc-rate-med" data-rate="medium" title="Lembrei com esforço">
+        <span>🟡 Médio</span>
+      </button>
+      <button type="button" class="tutor-fc-rate-btn tutor-fc-rate-easy" data-rate="easy" title="Lembrei facilmente">
+        <span>🟢 Fácil</span>
+      </button>
+    </div>
+
+    <!-- Navegação -->
+    <div class="tutor-fc-nav">
+      <button type="button" class="tutor-fc-nav-btn" id="tutor-fc-prev" ${st.currentIndex === 0 ? 'disabled' : ''}>
+        <span>← Anterior</span>
+      </button>
+      <span class="tutor-fc-counter">${st.currentIndex + 1} / ${total}</span>
+      <button type="button" class="tutor-fc-nav-btn" id="tutor-fc-next" ${st.currentIndex === total - 1 ? 'disabled' : ''}>
+        <span>Próximo →</span>
+      </button>
+    </div>`;
+
+  // Flip ao clicar no cartão
+  const cardEl = document.getElementById("tutor-fc-card-el");
+  if (cardEl) {
+    cardEl.addEventListener("click", () => {
+      st.flipped = !st.flipped;
+      cardEl.classList.toggle("flipped", st.flipped);
+    });
+  }
+
+  // Navegação anterior/próximo
+  const prevBtn = document.getElementById("tutor-fc-prev");
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (st.currentIndex > 0) {
+        st.currentIndex--;
+        st.flipped = false;
+        renderTutorFlashcards(video);
+      }
+    });
+  }
+
+  const nextBtn = document.getElementById("tutor-fc-next");
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      if (st.currentIndex < total - 1) {
+        st.currentIndex++;
+        st.flipped = false;
+        renderTutorFlashcards(video);
+      }
+    });
+  }
+
+  // Autoavaliação e avanço
+  container.querySelectorAll(".tutor-fc-rate-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      st.mastery.set(card.id, btn.dataset.rate);
+      if (st.currentIndex < total - 1) {
+        st.currentIndex++;
+        st.flipped = false;
+        renderTutorFlashcards(video);
+      } else {
+        // Ao concluir o último cartão, mostra feedback sutil
+        btn.style.transform = "scale(1.08)";
+        setTimeout(() => {
+          st.currentIndex = 0;
+          st.flipped = false;
+          renderTutorFlashcards(video);
+        }, 500);
+      }
+    });
+  });
+}
+
+async function generateTutorFlashcards(video, count = 8) {
+  if (!video) return;
+  const st = getTutorFlashcardsState(video.path);
+  st.loading = true;
+  st.error = null;
+  st.flashcards = null;
+  st.currentIndex = 0;
+  st.flipped = false;
+  st.mastery.clear();
+  renderTutorFlashcards(video);
+
+  try {
+    const res = await fetch("/api/study/flashcards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: video.path,
+        libraryId: video.libId || "",
+        count,
+      }),
+    });
+
+    if (!res.ok) {
+      let errMsg = `Erro HTTP ${res.status}`;
+      try {
+        const j = await res.json();
+        if (j.error) errMsg = j.error;
+      } catch {}
+      throw new Error(errMsg);
+    }
+
+    const data = await res.json();
+    if (!data.ok || !data.flashcards) throw new Error(data.error || "Estrutura de flashcards inválida.");
+
+    st.flashcards = data.flashcards;
+    st.currentIndex = 0;
+    st.flipped = false;
+    st.mastery.clear();
+  } catch (err) {
+    st.error = err.message || "Falha ao gerar os flashcards.";
+  } finally {
+    st.loading = false;
+    renderTutorFlashcards(video);
+  }
+}
+
+function restartFlashcards(video) {
+  const st = getTutorFlashcardsState(video.path);
+  st.flashcards = null;
+  st.currentIndex = 0;
+  st.flipped = false;
+  st.mastery.clear();
+  st.error = null;
+  renderTutorFlashcards(video);
+}
+
+// Atalhos globais de teclado quando o Tutor IA está aberto
+document.addEventListener("keydown", (e) => {
+  if (!tutorState.open || !tutorState.currentVideo) return;
+  const activeEl = document.activeElement;
+  const isTyping = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA");
+
+  // Tecla Esc fecha o drawer (se não estiver com foco em elemento que consuma)
+  if (e.key === "Escape") {
+    closeTutorDrawer();
+    return;
+  }
+
+  if (isTyping) return;
+
+  // Atalhos no Flashcards
+  if (tutorState.activeTab === "flashcards") {
+    const st = getTutorFlashcardsState(tutorState.currentVideo.path);
+    if (!st.flashcards || !st.flashcards.cards || st.flashcards.cards.length === 0) return;
+
+    if (e.code === "Space") {
+      e.preventDefault();
+      st.flipped = !st.flipped;
+      const cardEl = document.getElementById("tutor-fc-card-el");
+      if (cardEl) cardEl.classList.toggle("flipped", st.flipped);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      if (st.currentIndex > 0) {
+        st.currentIndex--;
+        st.flipped = false;
+        renderTutorFlashcards(tutorState.currentVideo);
+      }
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      if (st.currentIndex < st.flashcards.cards.length - 1) {
+        st.currentIndex++;
+        st.flipped = false;
+        renderTutorFlashcards(tutorState.currentVideo);
+      }
+    }
+  }
+});
 
 function renderTutorMessages(video) {
   const container = document.getElementById("tutor-messages");

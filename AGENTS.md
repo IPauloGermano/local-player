@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Guia de trabalho para agentes/desenvolvedores. O código é a fonte de verdade.
 Referência técnica detalhada: `docs/DOCUMENTACAO.md`; legendas: `docs/SUBTITLES.md`;

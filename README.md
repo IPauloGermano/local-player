@@ -23,6 +23,9 @@ armazenamento (HD, SSD, pendrive), sem upload para a internet.
 - **Tutor IA integrado**: tire dúvidas em tempo real via chat streaming (SSE),
   com contexto automático da aula (transcrição e materiais de apoio, incluindo
   leitura inteligente de PDFs);
+- **Quizzes e Flashcards por IA**: geração automática de questões de múltipla
+  escolha e cartões de memorização 3D a partir do conteúdo da aula, com
+  avaliação interativa e pontuação na própria interface;
 - layout responsivo (desktop, tablet, smartphone).
 
 ## Requisitos
@@ -129,7 +132,8 @@ nem nos logs.
 node --test test/progress.test.js test/topics.test.js test/libraries.test.js \
   test/scope.test.js test/sidebar.test.js test/sidebar-runtime-smoke.js \
   test/progress-invariance.test.js test/progress-persistence.test.js \
-  test/progress-forensic.test.js test/translation.test.js test/tutor.test.js
+  test/progress-forensic.test.js test/translation.test.js test/tutor.test.js \
+  test/skills.test.js test/study.test.js
 ```
 
 - Checklist de validação manual: `docs/VALIDACAO.md`.
