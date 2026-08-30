@@ -1528,6 +1528,7 @@ async function initSettingsDiagnostics(app) {
 
 const AI_TABS = [
   { id: "overview", label: "Visão geral" },
+  { id: "tutor", label: "Tutor IA" },
   { id: "transcription", label: "Transcrição" },
   { id: "correction", label: "Correção e formatação" },
   { id: "providers", label: "Provedores LLM" },
@@ -1557,7 +1558,7 @@ function renderAiSection() {
   return `
     <section class="settings-section ai-section">
       <h2 class="settings-section-heading">Inteligência Artificial</h2>
-      <p class="settings-section-desc">Configure a transcrição local (Whisper) e a correção opcional por IA das suas legendas. Status, fila e logs ficam no Diagnóstico.</p>
+      <p class="settings-section-desc">Configure a transcrição local (Whisper), o Tutor IA pedagógico e a correção opcional por LLM. Status, fila e logs ficam no Diagnóstico.</p>
       <div class="ai-tabs" role="tablist" aria-label="Inteligência Artificial">
         ${AI_TABS.map((t) => `
           <button type="button" class="ai-tab ${aiState.tab === t.id ? "active" : ""}"
@@ -1629,6 +1630,7 @@ function renderAiPanelInto(panel) {
 
 function renderAiPanel() {
   switch (aiState.tab) {
+    case "tutor": return renderAiTutor();
     case "transcription": return renderAiTranscription();
     case "correction": return renderAiCorrection();
     case "providers": return renderAiProviders();
@@ -1639,6 +1641,7 @@ function renderAiPanel() {
 }
 function bindAiPanel(panel) {
   switch (aiState.tab) {
+    case "tutor": return bindAiTutor(panel);
     case "transcription": return bindAiTranscription(panel);
     case "correction": return bindAiCorrection(panel);
     case "providers": return bindAiProviders(panel);
@@ -2057,6 +2060,157 @@ function bindAiCorrection(panel) {
         aiMsg("ai-co-msg", "ok", "Configurações de correção salvas.");
       } catch (err) {
         aiMsg("ai-co-msg", "error", err.message);
+      }
+    });
+  }
+}
+
+function renderAiTutor() {
+  const tu = aiState.config.tutor || {
+    enabled: true,
+    providerId: "",
+    model: "",
+    temperature: 0.3,
+    systemPrompt: "",
+    includeTranscription: true,
+    includeMaterials: true,
+  };
+  const providers = aiState.config.llm.providers || [];
+
+  const tuSwitch = (id, label, on, desc) => `
+    <div class="ai-field ai-field-switch">
+      <button class="switch ${on ? "on" : ""}" id="${id}" type="button" role="switch" aria-checked="${on}">
+        <span class="switch-track"></span>
+        <span class="switch-thumb"></span>
+      </button>
+      <div class="ai-switch-text">
+        <label class="ai-label" for="${id}">${label}</label>
+        ${desc ? `<p class="ai-field-desc">${desc}</p>` : ""}
+      </div>
+    </div>`;
+
+  const llmBlock = providers.length ? `
+    <div class="ai-field">
+      <label class="ai-label" for="ai-tu-provider">Provedor LLM para o Tutor</label>
+      <select class="ai-select" id="ai-tu-provider">
+        <option value="" ${!tu.providerId ? "selected" : ""}>Padrão (primeiro configurado)</option>
+        ${providers.map((p) => `<option value="${p.id}" ${p.id === tu.providerId ? "selected" : ""}>${escapeHtml(p.name)}${p.defaultModel ? ` (${escapeHtml(p.defaultModel)})` : ""}</option>`).join("")}
+      </select>
+    </div>
+    <div class="ai-field">
+      <label class="ai-label" for="ai-tu-model">Modelo (opcional se definido no provedor)</label>
+      <input class="ai-input" id="ai-tu-model" type="text" value="${escapeHtml(tu.model || "")}" placeholder="ex.: gpt-4o-mini, deepseek-chat, claude-3-5-sonnet…">
+    </div>
+    <div class="ai-field">
+      <label class="ai-label" for="ai-tu-temp">Temperatura / Criatividade: <span id="ai-tu-temp-val">${Number(tu.temperature || 0.3).toFixed(1)}</span></label>
+      <input class="ai-range" id="ai-tu-temp" type="range" min="0" max="1" step="0.1" value="${tu.temperature !== undefined ? tu.temperature : 0.3}">
+      <p class="ai-field-desc">Valores menores (ex.: 0.2 - 0.4) geram respostas mais didáticas, precisas e fiéis ao conteúdo da aula.</p>
+    </div>
+  ` : `
+    <p class="ai-empty">Nenhum provedor de LLM configurado.</p>
+    <p class="ai-note">Para usar o Tutor IA, cadastre um provedor (OpenAI, OpenRouter, Groq, Ollama local, etc.) na aba <strong>Provedores LLM</strong>.</p>
+    <div class="settings-actions">
+      <button class="btn btn--secondary" id="ai-tu-goto-providers" type="button">Ir para Provedores LLM</button>
+    </div>`;
+
+  return `
+    <h4 class="ai-block-title">Tutor IA Integrado ao Player</h4>
+    <p class="ai-note">Assistente virtual pedagógico contextualizado com a aula atual (transcrição, materiais e notas). Permite tirar dúvidas e aprofundar conceitos diretamente dentro do player.</p>
+    ${tuSwitch("ai-tu-enabled", "Ativar botão ✨ Tutor IA no player de aulas", tu.enabled !== false, "Quando ativado, o botão do Tutor IA fica acessível na barra de controle e nas opções da aula.")}
+    <hr class="ai-sep">
+    <h4 class="ai-block-title">Configurações do Modelo</h4>
+    ${llmBlock}
+    <hr class="ai-sep">
+    <h4 class="ai-block-title">Contexto Automático da Aula</h4>
+    ${tuSwitch("ai-tu-inc-trans", "Incluir transcrição completa da aula no contexto", tu.includeTranscription !== false, "Envia as falas transcritas pelo Whisper como fonte primária para as respostas.")}
+    ${tuSwitch("ai-tu-inc-mat", "Incluir documentos e materiais de apoio no contexto", tu.includeMaterials !== false, "Lê e inclui resumos de arquivos de texto (.txt, .md, códigos) e documentos PDF associados à aula.")}
+    <hr class="ai-sep">
+    <h4 class="ai-block-title">Prompt do Sistema (Opcional)</h4>
+    <div class="ai-field">
+      <label class="ai-label" for="ai-tu-prompt">Instruções personalizadas para o Tutor</label>
+      <textarea class="ai-textarea" id="ai-tu-prompt" rows="4" placeholder="Deixe em branco para usar as diretrizes pedagógicas padrão com proteção anti-injeção.">${escapeHtml(tu.systemPrompt || "")}</textarea>
+    </div>
+    <div class="settings-actions">
+      <button class="btn btn--primary" id="ai-tu-save" type="button">Salvar</button>
+      <button class="btn btn--secondary" id="ai-tu-reset-prompt" type="button">Restaurar prompt padrão</button>
+    </div>
+    <p class="ai-inline-msg ok" id="ai-tu-msg" hidden></p>`;
+}
+
+function bindAiTutor(panel) {
+  const cfg = aiState.config;
+  const tu = cfg.tutor = cfg.tutor || {
+    enabled: true,
+    providerId: "",
+    model: "",
+    temperature: 0.3,
+    systemPrompt: "",
+    includeTranscription: true,
+    includeMaterials: true,
+  };
+
+  const gotoBtn = document.getElementById("ai-tu-goto-providers");
+  if (gotoBtn) gotoBtn.addEventListener("click", () => aiGoToTab("providers"));
+
+  const swEnabled = document.getElementById("ai-tu-enabled");
+  if (swEnabled) {
+    swEnabled.addEventListener("click", () => {
+      tu.enabled = !tu.enabled;
+      swEnabled.classList.toggle("on", tu.enabled);
+      swEnabled.setAttribute("aria-checked", String(tu.enabled));
+    });
+  }
+
+  const swTrans = document.getElementById("ai-tu-inc-trans");
+  if (swTrans) {
+    swTrans.addEventListener("click", () => {
+      tu.includeTranscription = !tu.includeTranscription;
+      swTrans.classList.toggle("on", tu.includeTranscription);
+      swTrans.setAttribute("aria-checked", String(tu.includeTranscription));
+    });
+  }
+
+  const swMat = document.getElementById("ai-tu-inc-mat");
+  if (swMat) {
+    swMat.addEventListener("click", () => {
+      tu.includeMaterials = !tu.includeMaterials;
+      swMat.classList.toggle("on", tu.includeMaterials);
+      swMat.setAttribute("aria-checked", String(tu.includeMaterials));
+    });
+  }
+
+  const tempInput = document.getElementById("ai-tu-temp");
+  const tempVal = document.getElementById("ai-tu-temp-val");
+  if (tempInput && tempVal) {
+    tempInput.addEventListener("input", () => {
+      tu.temperature = Number(tempInput.value) || 0.3;
+      tempVal.textContent = tu.temperature.toFixed(1);
+    });
+  }
+
+  const resetPromptBtn = document.getElementById("ai-tu-reset-prompt");
+  const promptInput = document.getElementById("ai-tu-prompt");
+  if (resetPromptBtn && promptInput) {
+    resetPromptBtn.addEventListener("click", () => {
+      promptInput.value = "";
+      tu.systemPrompt = "";
+    });
+  }
+
+  const saveBtn = document.getElementById("ai-tu-save");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", async () => {
+      const provSel = document.getElementById("ai-tu-provider");
+      if (provSel) tu.providerId = provSel.value;
+      const modelIn = document.getElementById("ai-tu-model");
+      if (modelIn) tu.model = modelIn.value.trim();
+      if (promptInput) tu.systemPrompt = promptInput.value;
+
+      try {
+        await saveAiPatch({ tutor: tu });
+        aiMsg("ai-tu-msg", "ok", "Configurações do Tutor IA salvas com sucesso.");
+      } catch (err) {
+        aiMsg("ai-tu-msg", "error", err.message);
       }
     });
   }
@@ -3825,6 +3979,7 @@ function renderPlayerAndLesson() {
             <div class="pc-group pc-group-more">
               <button class="pc-btn pc-more-btn" id="pc-more-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Mais opções" title="Mais opções">${ICON_MORE}</button>
               <div class="pc-pop pc-more-menu" id="pc-more-menu" hidden>
+                <button type="button" class="pc-menu-item" data-more="tutor">✨ Tutor IA</button>
                 <button type="button" class="pc-menu-item" data-more="theater">Modo teatro</button>
                 <button type="button" class="pc-menu-item" data-more="summary">Resumo da aula</button>
                 <button type="button" class="pc-menu-item pc-more-narrow" data-more="subtitle-style">Aparência da legenda</button>
@@ -3879,6 +4034,7 @@ function renderPlayerAndLesson() {
         <button id="prev-btn" ${prev ? "" : "disabled"}>‹ Anterior</button>
         <button id="next-btn" ${next ? "" : "disabled"}>Próxima ›</button>
       </div>
+      <button id="tutor-btn" class="secondary-btn tutor-btn" title="Tirar dúvidas com o Tutor IA">✨ Tutor IA</button>
       <button id="subtitle-style-btn" class="secondary-btn" title="Personalizar a aparência da legenda">Aa Aparência</button>
     </div>
     <div class="subtitle-style-panel" id="subtitle-style-panel" hidden>
@@ -3948,6 +4104,9 @@ function renderPlayerAndLesson() {
   document
     .getElementById("next-btn")
     ?.addEventListener("click", () => next && navigateToLesson(next.path));
+  document
+    .getElementById("tutor-btn")
+    ?.addEventListener("click", () => toggleTutorDrawer(video));
 
   // Drawer mobile: abre/fecha pelo botão "☰ Aulas" e fecha ao tocar o backdrop.
   document
@@ -3963,6 +4122,12 @@ function renderPlayerAndLesson() {
     setupVideoTracking(video);
     applyVolumePrefs(videoEl);
     wirePlayerUI(videoEl);
+    // Sincroniza o Tutor IA com a nova aula ativa caso esteja aberto
+    if (tutorState.open) {
+      tutorState.currentVideo = video;
+      updateTutorContextMeta(video, true);
+      renderTutorMessages(video);
+    }
     // Legendas por IA: NUNCA bloqueia a reprodução. O vídeo toca primeiro;
     // o badge de status é discreto (sem modal). No modo editor, o overlay de
     // preview é de responsabilidade do editor (overlayOwnedByEditor) — o
@@ -4234,7 +4399,8 @@ function wirePlayerUI(videoEl) {
     const more = e.target.closest("[data-more]");
     if (more) {
       e.stopPropagation();
-      if (more.dataset.more === "theater") toggleTheaterMode();
+      if (more.dataset.more === "tutor") toggleTutorDrawer(state.currentVideoNode);
+      else if (more.dataset.more === "theater") toggleTheaterMode();
       else if (more.dataset.more === "summary") toggleSummaryPanel();
       else if (more.dataset.more === "subtitle-style") toggleSubtitleStylePanel();
       closePopovers();
@@ -4793,6 +4959,522 @@ function subtitleMinFontPx() {
 // Quadro REAL do vídeo dentro do player-wrap: object-fit: contain letterboxa o
 // vídeo dentro do elemento <video> (que ocupa 100% do wrap). O quadro renderado
 // é o retângulo centralizado por contain — é a ele que a legenda deve se ancorar.
+// ---------------------------------------------------------------------------
+// Tutor IA Integrado ao Player (chat contextualizado, streaming SSE, markdown)
+// ---------------------------------------------------------------------------
+
+function renderMarkdownToHtml(markdown) {
+  if (typeof LocalPlayerScope !== "undefined" && typeof LocalPlayerScope.renderMarkdownToHtml === "function") {
+    return LocalPlayerScope.renderMarkdownToHtml(markdown);
+  }
+  return escapeHtml(markdown || "");
+}
+
+const tutorState = {
+  open: false,
+  loadingContext: false,
+  streaming: false,
+  currentVideo: null,
+  historyByPath: new Map(), // videoPath -> [{ role, content, error?: boolean }]
+  contextMetaByPath: new Map(), // videoPath -> contextMeta
+  abortController: null,
+};
+
+function getTutorHistory(videoPath) {
+  if (!tutorState.historyByPath.has(videoPath)) {
+    tutorState.historyByPath.set(videoPath, []);
+  }
+  return tutorState.historyByPath.get(videoPath);
+}
+
+function initTutorDrawer(video) {
+  const slot = document.getElementById("tutor-drawer-slot");
+  if (!slot) return;
+
+  const currentLessonTitle = video ? escapeHtml(lessonTitle(video)) : "Aula atual";
+
+  slot.innerHTML = `
+    <aside class="tutor-drawer" id="tutor-drawer" hidden aria-label="Tutor IA">
+      <div class="tutor-header">
+        <div class="tutor-header-main">
+          <div class="tutor-sparkle-badge" aria-hidden="true">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2z"/>
+            </svg>
+          </div>
+          <div class="tutor-header-meta">
+            <div class="tutor-header-title-row">
+              <span class="tutor-title-main">Tutor IA</span>
+              <span class="tutor-status-badge" id="tutor-context-chip" title="Contexto da aula">
+                <span class="tutor-context-dot"></span>
+                <span class="tutor-context-label" id="tutor-context-label">Contexto</span>
+              </span>
+            </div>
+            <div class="tutor-lesson-badge" id="tutor-lesson-badge" title="${currentLessonTitle}">
+              ${currentLessonTitle}
+            </div>
+          </div>
+        </div>
+        <div class="tutor-header-actions">
+          <button type="button" class="tutor-icon-btn" id="tutor-new-chat" title="Limpar e iniciar nova conversa" aria-label="Nova conversa">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+              <path d="M3 3v5h5"/>
+            </svg>
+            <span class="tutor-btn-label">Novo</span>
+          </button>
+          <button type="button" class="tutor-icon-btn tutor-close-btn" id="tutor-close" aria-label="Fechar Tutor IA" title="Fechar (Esc)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="tutor-messages" id="tutor-messages" role="log" aria-live="polite"></div>
+
+      <div class="tutor-input-container">
+        <div class="tutor-input-wrap">
+          <textarea class="tutor-textarea" id="tutor-input" rows="1" placeholder="Tire sua dúvida sobre esta aula…"></textarea>
+          <button type="button" class="tutor-send-btn" id="tutor-send-btn" title="Enviar pergunta" aria-label="Enviar pergunta">
+            <span id="tutor-send-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </span>
+          </button>
+        </div>
+        <div class="tutor-input-footer">
+          <span>Shift + Enter para quebrar linha · Enter para enviar</span>
+        </div>
+      </div>
+    </aside>`;
+
+  wireTutorDrawerEvents(video);
+  if (video) {
+    updateTutorContextMeta(video);
+  }
+}
+
+function wireTutorDrawerEvents(video) {
+  const drawer = document.getElementById("tutor-drawer");
+  const closeBtn = document.getElementById("tutor-close");
+  const backdrop = document.getElementById("tutor-backdrop");
+  const newChatBtn = document.getElementById("tutor-new-chat");
+  const sendBtn = document.getElementById("tutor-send-btn");
+  const input = document.getElementById("tutor-input");
+  const messagesEl = document.getElementById("tutor-messages");
+
+  if (closeBtn) closeBtn.addEventListener("click", () => closeTutorDrawer());
+  if (backdrop) backdrop.addEventListener("click", () => closeTutorDrawer());
+
+  if (newChatBtn) {
+    newChatBtn.addEventListener("click", () => {
+      if (tutorState.streaming) stopTutorStreaming();
+      if (tutorState.currentVideo) {
+        tutorState.historyByPath.set(tutorState.currentVideo.path, []);
+        renderTutorMessages(tutorState.currentVideo);
+      }
+    });
+  }
+
+  if (input) {
+    input.addEventListener("input", () => {
+      input.style.height = "auto";
+      input.style.height = Math.min(160, Math.max(38, input.scrollHeight)) + "px";
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        triggerTutorSend(tutorState.currentVideo || video);
+      }
+    });
+  }
+
+  if (sendBtn) {
+    sendBtn.addEventListener("click", () => {
+      if (tutorState.streaming) {
+        stopTutorStreaming();
+      } else {
+        triggerTutorSend(tutorState.currentVideo || video);
+      }
+    });
+  }
+
+  if (messagesEl) {
+    messagesEl.addEventListener("click", (e) => {
+      // Botão de copiar código
+      const copyBtn = e.target.closest(".tutor-code-copy-btn");
+      if (copyBtn) {
+        const card = copyBtn.closest(".tutor-code-card");
+        const code = card?.querySelector("code")?.textContent || "";
+        if (code) {
+          navigator.clipboard.writeText(code).then(() => {
+            const textSpan = copyBtn.querySelector(".tutor-copy-text");
+            if (textSpan) textSpan.textContent = "Copiado!";
+            copyBtn.classList.add("copied");
+            setTimeout(() => {
+              if (textSpan) textSpan.textContent = "Copiar";
+              copyBtn.classList.remove("copied");
+            }, 2000);
+          });
+        }
+        return;
+      }
+
+      // Pílula de sugestão rápida
+      const pill = e.target.closest(".tutor-suggestion-pill");
+      if (pill && pill.dataset.prompt) {
+        sendTutorMessage(tutorState.currentVideo || video, pill.dataset.prompt);
+        return;
+      }
+
+      // Timestamp interativo
+      const timeBtn = e.target.closest(".tutor-timestamp-btn");
+      if (timeBtn && timeBtn.dataset.time) {
+        const seconds = parseFloat(timeBtn.dataset.time);
+        const videoEl = document.getElementById("video-el");
+        if (videoEl && !isNaN(seconds)) {
+          videoEl.currentTime = seconds;
+          videoEl.play().catch(() => {});
+
+          timeBtn.classList.add("clicked");
+          setTimeout(() => timeBtn.classList.remove("clicked"), 800);
+
+          // Fecha o chat automaticamente para dar foco total ao vídeo
+          closeTutorDrawer();
+        }
+        return;
+      }
+    });
+  }
+}
+
+async function updateTutorContextMeta(video, forceRefresh = false) {
+  if (!video) return;
+  const chip = document.getElementById("tutor-context-chip");
+  const label = document.getElementById("tutor-context-label");
+  const badge = document.getElementById("tutor-lesson-badge");
+  if (badge) badge.textContent = lessonTitle(video);
+
+  if (!forceRefresh && tutorState.contextMetaByPath.has(video.path)) {
+    const cached = tutorState.contextMetaByPath.get(video.path);
+    if (cached && cached.hasTranscription) {
+      applyTutorContextMetaUI(cached);
+      return;
+    }
+  }
+
+  try {
+    const url = `/api/tutor/context?path=${encodeURIComponent(video.path)}&libraryId=${encodeURIComponent(video.libId || "")}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Context fetch failed");
+    const data = await res.json();
+    tutorState.contextMetaByPath.set(video.path, data);
+    applyTutorContextMetaUI(data);
+  } catch (err) {
+    if (label) label.textContent = "Contexto ativo";
+  }
+}
+
+function applyTutorContextMetaUI(data) {
+  const chip = document.getElementById("tutor-context-chip");
+  const label = document.getElementById("tutor-context-label");
+  if (!chip || !label || !data) return;
+
+  const parts = [];
+  if (data.hasTranscription) {
+    parts.push("Transcrição");
+  } else {
+    parts.push("Sem transcrição");
+  }
+  if (data.materialsCount > 0) {
+    parts.push(`${data.materialsCount} ${data.materialsCount === 1 ? "mat." : "mats."}`);
+  }
+  label.textContent = parts.join(" · ");
+  chip.classList.toggle("has-transcription", !!data.hasTranscription);
+
+  const tooltip = data.hasTranscription
+    ? `Contexto ativo: Transcrição e ${data.materialsCount} materiais indexados.`
+    : `Contexto parcial: Transcrição não encontrada. O tutor usará o título e materiais da aula.`;
+  chip.setAttribute("title", tooltip);
+}
+
+function openTutorDrawer(video) {
+  tutorState.currentVideo = video;
+  let drawer = document.getElementById("tutor-drawer");
+  if (!drawer) {
+    initTutorDrawer(video);
+    drawer = document.getElementById("tutor-drawer");
+  } else {
+    wireTutorDrawerEvents(video);
+  }
+  const bd = document.getElementById("tutor-backdrop");
+  if (drawer) {
+    drawer.hidden = false;
+    drawer.removeAttribute("hidden");
+  }
+  if (bd) {
+    bd.hidden = false;
+    bd.removeAttribute("hidden");
+  }
+  document.body.classList.add("tutor-open");
+  tutorState.open = true;
+
+  renderTutorMessages(video);
+  updateTutorContextMeta(video);
+
+  const input = document.getElementById("tutor-input");
+  if (input) {
+    setTimeout(() => input.focus(), 100);
+  }
+}
+
+function closeTutorDrawer() {
+  const drawer = document.getElementById("tutor-drawer");
+  const backdrop = document.getElementById("tutor-backdrop");
+  if (drawer) {
+    drawer.hidden = true;
+    drawer.setAttribute("hidden", "");
+  }
+  if (backdrop) {
+    backdrop.hidden = true;
+    backdrop.setAttribute("hidden", "");
+  }
+  document.body.classList.remove("tutor-open");
+  tutorState.open = false;
+}
+
+function toggleTutorDrawer(video) {
+  if (tutorState.open) {
+    closeTutorDrawer();
+  } else {
+    openTutorDrawer(video);
+  }
+}
+
+function renderTutorMessages(video) {
+  const container = document.getElementById("tutor-messages");
+  if (!container || !video) return;
+
+  const history = getTutorHistory(video.path);
+  if (!history || history.length === 0) {
+    container.innerHTML = `
+      <div class="tutor-empty-state">
+        <div class="tutor-empty-badge">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+            <path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/>
+          </svg>
+        </div>
+        <h4 class="tutor-empty-title">Como posso ajudar seus estudos?</h4>
+        <p class="tutor-empty-desc">Estou pronto para tirar dúvidas, resumir conteúdos, explicar conceitos difíceis ou analisar comandos desta aula.</p>
+        <div class="tutor-suggestions">
+          <button type="button" class="tutor-suggestion-pill" data-prompt="Faça um resumo estruturado dos pontos principais desta aula.">
+            <span class="tutor-sug-icon">💡</span>
+            <div class="tutor-sug-text">
+              <span class="tutor-sug-title">Resumo dos pontos principais</span>
+              <span class="tutor-sug-sub">Visão geral dos tópicos abordados</span>
+            </div>
+          </button>
+          <button type="button" class="tutor-suggestion-pill" data-prompt="Explique o conceito principal ensinado nesta aula com exemplos práticos.">
+            <span class="tutor-sug-icon">🔍</span>
+            <div class="tutor-sug-text">
+              <span class="tutor-sug-title">Explicar conceito principal</span>
+              <span class="tutor-sug-sub">Explicação didática com exemplos práticos</span>
+            </div>
+          </button>
+          <button type="button" class="tutor-suggestion-pill" data-prompt="Quais são os passos práticos ou códigos ensinados nesta aula?">
+            <span class="tutor-sug-icon">💻</span>
+            <div class="tutor-sug-text">
+              <span class="tutor-sug-title">Passo a passo ou códigos</span>
+              <span class="tutor-sug-sub">Implementação técnica e comandos</span>
+            </div>
+          </button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  let html = "";
+  for (const msg of history) {
+    if (msg.role === "user") {
+      html += `
+        <div class="tutor-msg tutor-msg-user">
+          <div class="tutor-msg-bubble">${escapeHtml(msg.content)}</div>
+        </div>`;
+    } else {
+      const formatted = renderMarkdownToHtml(msg.content);
+      html += `
+        <div class="tutor-msg tutor-msg-assistant">
+          <div class="tutor-avatar" aria-hidden="true">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2z"/>
+            </svg>
+          </div>
+          <div class="tutor-msg-bubble ${msg.error ? "tutor-msg-error" : ""}">
+            ${formatted}
+          </div>
+        </div>`;
+    }
+  }
+
+  container.innerHTML = html;
+  container.scrollTop = container.scrollHeight;
+}
+
+function triggerTutorSend(video) {
+  const input = document.getElementById("tutor-input");
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  input.style.height = "auto";
+  sendTutorMessage(video, text);
+}
+
+async function sendTutorMessage(video, text) {
+  if (!video || !text || tutorState.streaming) return;
+
+  const history = getTutorHistory(video.path);
+  history.push({ role: "user", content: text });
+
+  const assistantMsg = { role: "assistant", content: "" };
+  history.push(assistantMsg);
+
+  renderTutorMessages(video);
+
+  const container = document.getElementById("tutor-messages");
+  const sendBtn = document.getElementById("tutor-send-btn");
+  const sendIcon = document.getElementById("tutor-send-icon");
+  if (sendBtn && sendIcon) {
+    sendBtn.classList.add("streaming");
+    sendIcon.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+        <rect x="4" y="4" width="16" height="16" rx="2"/>
+      </svg>`;
+    sendBtn.title = "Interromper resposta";
+  }
+
+  tutorState.streaming = true;
+  tutorState.abortController = new AbortController();
+
+  const assistantBubbles = container.querySelectorAll(".tutor-msg-assistant .tutor-msg-bubble");
+  const currentBubble = assistantBubbles[assistantBubbles.length - 1];
+  if (currentBubble) {
+    currentBubble.innerHTML = `<span class="tutor-typing-dots"><span></span><span></span><span></span></span>`;
+  }
+
+  try {
+    const payload = {
+      path: video.path,
+      libraryId: video.libId || "",
+      messages: history.slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
+      stream: true,
+    };
+
+    const res = await fetch("/api/tutor/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: tutorState.abortController.signal,
+    });
+
+    if (!res.ok) {
+      let errDetail = `Erro HTTP ${res.status}`;
+      try {
+        const j = await res.json();
+        if (j.error) errDetail = j.error;
+      } catch {}
+      throw new Error(errDetail);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedText = "";
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(":") || !trimmed.startsWith("data:")) continue;
+        const dataStr = trimmed.slice(5).trim();
+        if (dataStr === "[DONE]") break;
+
+        try {
+          const parsed = JSON.parse(dataStr);
+          if (parsed.error) {
+            throw new Error(parsed.error);
+          }
+          if (parsed.content) {
+            accumulatedText += parsed.content;
+            assistantMsg.content = accumulatedText;
+            if (currentBubble) {
+              const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 140;
+              currentBubble.innerHTML = renderMarkdownToHtml(accumulatedText) + '<span class="tutor-cursor"></span>';
+              if (isNearBottom) {
+                container.scrollTop = container.scrollHeight;
+              }
+            }
+          }
+        } catch (jsonErr) {
+          if (jsonErr.message && !jsonErr.message.includes("JSON")) {
+            throw jsonErr;
+          }
+        }
+      }
+    }
+
+    if (currentBubble) {
+      currentBubble.innerHTML = renderMarkdownToHtml(accumulatedText);
+    }
+  } catch (err) {
+    if (err.name === "AbortError") {
+      if (!assistantMsg.content) {
+        assistantMsg.content = "*(Resposta interrompida)*";
+      }
+    } else {
+      assistantMsg.content = `⚠️ **Não foi possível obter a resposta:** ${escapeHtml(err.message || "Erro de conexão")}`;
+      assistantMsg.error = true;
+    }
+    if (currentBubble) {
+      currentBubble.innerHTML = renderMarkdownToHtml(assistantMsg.content);
+      if (assistantMsg.error) currentBubble.classList.add("tutor-msg-error");
+    }
+  } finally {
+    tutorState.streaming = false;
+    tutorState.abortController = null;
+    if (sendBtn && sendIcon) {
+      sendBtn.classList.remove("streaming");
+      sendIcon.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>`;
+      sendBtn.title = "Enviar pergunta";
+    }
+    const input = document.getElementById("tutor-input");
+    if (input) input.focus();
+  }
+}
+
+function stopTutorStreaming() {
+  if (tutorState.abortController) {
+    tutorState.abortController.abort();
+    tutorState.streaming = false;
+  }
+}
+
 function computeSubtitleGeometry(videoEl, wrap) {
   const wrapRect = wrap.getBoundingClientRect();
   const box = videoEl.getBoundingClientRect();
@@ -6293,14 +6975,23 @@ function registerShortcuts() {
     // teclado: Esc fecha).
     if (document.querySelector(".modal-overlay")) return;
 
-    // Esc fecha os popovers do player (volume/velocidade) e o drawer mobile
+    // Esc fecha os popovers do player (volume/velocidade), o drawer do tutor e o drawer mobile
     // antes de qualquer outra ação global.
     if (event.key === "Escape") {
+      if (tutorState && tutorState.open) {
+        closeTutorDrawer();
+        event.preventDefault();
+        return;
+      }
       if (closePlayerPopovers() || closeMobileDrawer()) {
         event.preventDefault();
         return;
       }
     }
+
+    // Enquanto o Tutor IA estiver aberto, suspende TODOS os atalhos globais do player
+    // para não interferir na experiência de uso e navegação do chat.
+    if (tutorState && tutorState.open) return;
 
     // Atalhos são teclas únicas: eventos com Ctrl/Alt/Cmd não disparam
     // (preserva os atalhos do navegador, ex.: Ctrl+N/P/H). Shift é aceito —
@@ -6636,7 +7327,9 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
         </div>
         <div id="tree-slot"></div>
       </div>
-    </div>`;
+    </div>
+    <div id="tutor-drawer-slot"></div>
+    <div class="tutor-backdrop" id="tutor-backdrop" hidden></div>`;
 
   document.getElementById("back-link").addEventListener("click", () => {
     location.hash = "/";
