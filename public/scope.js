@@ -245,9 +245,9 @@
 
     out = out.replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>");
     out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    out = out.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+    out = out.replace(/(?<=^|[\s(])__([^_]+)__(?=[\s).,:;!?]|$)/g, "<strong>$1</strong>");
     out = out.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
-    out = out.replace(/_([^_\n]+)_/g, "<em>$1</em>");
+    out = out.replace(/(?<=^|[\s(])_([^_]+)_(?=[\s).,:;!?]|$)/g, "<em>$1</em>");
     out = out.replace(/~~([^~]+)~~/g, "<del>$1</del>");
     return out;
   }
@@ -311,12 +311,33 @@
     // 1. Isola blocos de código cercados (```) para preservar seu conteúdo cru
     const codeBlocks = [];
     let processed = markdown.replace(/```([a-zA-Z0-9_\-\.\+]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-      const placeholder = `\x00CODEBLOCK_${codeBlocks.length}\x00`;
+      const placeholder = `\x00LPCODEBLOCK${codeBlocks.length}END\x00`;
       codeBlocks.push({ lang: (lang || "").trim() || "código", code: code.replace(/\n$/, "") });
       return placeholder;
     });
 
-    // 2. Escapa HTML de todo o texto restante para prevenir XSS
+    // 1b. Isola fórmulas matemáticas LaTeX em bloco ($$...$$) e inline ($...$)
+    const mathItems = [];
+    processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => {
+      const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
+      mathItems.push({ block: true, content: math.trim() });
+      return placeholder;
+    });
+    processed = processed.replace(/(?<!\\)\$([^\$\n]+)\$/g, (_, math) => {
+      const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
+      mathItems.push({ block: false, content: math.trim() });
+      return placeholder;
+    });
+
+    // 2. Isola código inline (`...`)
+    const inlineCodes = [];
+    processed = processed.replace(/`([^`\n]+)`/g, (_, code) => {
+      const placeholder = `\x00LPINLINECODE${inlineCodes.length}END\x00`;
+      inlineCodes.push(code);
+      return placeholder;
+    });
+
+    // 3. Escapa HTML de todo o texto restante para prevenir XSS
     processed = String(processed)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
@@ -324,149 +345,222 @@
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
 
-    // 3. Detecta e extrai tabelas em Markdown antes de processar links/inline
+    // 4. Detecta e extrai tabelas em Markdown antes de processar links/inline
     const tables = [];
-    const lines = processed.split("\n");
-    const processedLines = [];
+    const rawLines = processed.split("\n");
+    const preTableLines = [];
     let inTable = false;
     let currentTableLines = [];
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const isPipeLine = line.trim().includes("|");
-
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i];
+      const isPipe = line.trim().includes("|");
       if (!inTable) {
-        if (isPipeLine && i + 1 < lines.length && /^\|?(\s*:?-{3,}:?\s*\|?)+\s*$/.test(lines[i + 1].trim())) {
+        if (isPipe && i + 1 < rawLines.length && /^\|?(\s*:?-{3,}:?\s*\|?)+\s*$/.test(rawLines[i + 1].trim())) {
           inTable = true;
           currentTableLines = [line];
         } else {
-          processedLines.push(line);
+          preTableLines.push(line);
         }
       } else {
-        if (isPipeLine) {
+        if (isPipe) {
           currentTableLines.push(line);
         } else {
           const tableHtml = parseMarkdownTable(currentTableLines);
           if (tableHtml) {
-            const placeholder = `\x00TABLE_${tables.length}\x00`;
+            const placeholder = `\x00LPTABLE${tables.length}END\x00`;
             tables.push(tableHtml);
-            processedLines.push(placeholder);
+            preTableLines.push(placeholder);
           } else {
-            processedLines.push(...currentTableLines);
+            preTableLines.push(...currentTableLines);
           }
           inTable = false;
           currentTableLines = [];
-          processedLines.push(line);
+          preTableLines.push(line);
         }
       }
     }
     if (inTable && currentTableLines.length >= 2) {
       const tableHtml = parseMarkdownTable(currentTableLines);
       if (tableHtml) {
-        const placeholder = `\x00TABLE_${tables.length}\x00`;
+        const placeholder = `\x00LPTABLE${tables.length}END\x00`;
         tables.push(tableHtml);
-        processedLines.push(placeholder);
+        preTableLines.push(placeholder);
       } else {
-        processedLines.push(...currentTableLines);
+        preTableLines.push(...currentTableLines);
       }
     }
 
-    processed = processedLines.join("\n");
+    // 5. Lexer e Parser de blocos estruturados
+    const blocks = [];
+    let currentPara = [];
+    let currentList = null; // { type: 'ul' | 'ol', items: [] }
+    let currentQuote = [];
 
-    // 4. Código inline (protege contra formatação interna)
-    const inlineCodes = [];
-    processed = processed.replace(/`([^`\n]+)`/g, (_, code) => {
-      const placeholder = `\x00INLINECODE_${inlineCodes.length}\x00`;
-      inlineCodes.push(code);
-      return placeholder;
-    });
+    function flushPara() {
+      if (currentPara.length) {
+        const text = currentPara.map(renderInlineMarkdown).join("<br>");
+        blocks.push(`<p class="tutor-p">${text}</p>`);
+        currentPara = [];
+      }
+    }
 
-    // 5. Links Markdown [texto](url)
-    processed = processed.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, url) => {
-      const safe = sanitizeLinkUrl(url);
-      if (!safe) return label;
-      return `<a class="tutor-link" href="${safe}" target="_blank" rel="noopener noreferrer">${label}</a>`;
-    });
+    function flushList() {
+      if (currentList && currentList.items.length) {
+        const tag = currentList.type === "ul" ? "ul" : "ol";
+        const cls = currentList.type === "ul" ? "tutor-list" : "tutor-num-list";
+        const itemCls = currentList.type === "ul" ? "tutor-list-item" : "tutor-num-item";
+        const itemsHtml = currentList.items
+          .map((it) => `<li class="${itemCls}${it.nested ? " tutor-list-nested" : ""}">${renderInlineMarkdown(it.text)}</li>`)
+          .join("");
+        blocks.push(`<${tag} class="${cls}">${itemsHtml}</${tag}>`);
+        currentList = null;
+      }
+    }
 
-    // 5b. Autolinks para URLs http/https soltas
-    processed = processed.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, prefix, url) => {
-      const safe = sanitizeLinkUrl(url);
-      if (!safe) return prefix + url;
-      return `${prefix}<a class="tutor-link" href="${safe}" target="_blank" rel="noopener noreferrer">${url}</a>`;
-    });
+    function flushQuote() {
+      if (currentQuote.length) {
+        const text = currentQuote.map(renderInlineMarkdown).join("<br>");
+        blocks.push(`<blockquote class="tutor-quote">${text}</blockquote>`);
+        currentQuote = [];
+      }
+    }
 
-    // 5c. Timestamps interativos (ex: 02:15, 1:23:45)
-    processed = processed.replace(/(?<![a-zA-Z0-9\/=>:])\b((?:[0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2})\b/g, (match) => {
-      const secs = parseTimestampToSeconds(match);
-      return `<button type="button" class="tutor-timestamp-btn" data-time="${secs}" title="Ir para este tempo">${match}</button>`;
-    });
+    for (const line of preTableLines) {
+      const trimmed = line.trim();
 
-    // 6. Cabeçalhos
-    processed = processed.replace(/^#### (.*?)$/gm, '<h6 class="tutor-heading tutor-h6">$1</h6>');
-    processed = processed.replace(/^### (.*?)$/gm, '<h5 class="tutor-heading tutor-h5">$1</h5>');
-    processed = processed.replace(/^## (.*?)$/gm, '<h4 class="tutor-heading tutor-h4">$1</h4>');
-    processed = processed.replace(/^# (.*?)$/gm, '<h3 class="tutor-heading tutor-h3">$1</h3>');
+      // Linha vazia: encerra blocos abertos
+      if (!trimmed) {
+        flushPara();
+        flushList();
+        flushQuote();
+        continue;
+      }
 
-    // 7. Negrito, Itálico e Riscado
-    processed = processed.replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>");
-    processed = processed.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    processed = processed.replace(/__([^_]+)__/g, "<strong>$1</strong>");
-    processed = processed.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
-    processed = processed.replace(/_([^_\n]+)_/g, "<em>$1</em>");
-    processed = processed.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+      // Placeholders isolados (blocos de código, tabelas, matemática)
+      if (/^\x00LP(CODEBLOCK|TABLE|MATH)\d+END\x00$/.test(trimmed)) {
+        flushPara();
+        flushList();
+        flushQuote();
+        blocks.push(trimmed);
+        continue;
+      }
 
-    // 8. Linhas horizontais / Divisores
-    processed = processed.replace(/^(?:---|\*\*\*|___)\s*$/gm, '<hr class="tutor-hr">');
+      // Linhas horizontais (---, ***, ___)
+      if (/^(?:---|___|\*\*\*)\s*$/.test(trimmed)) {
+        flushPara();
+        flushList();
+        flushQuote();
+        blocks.push('<hr class="tutor-hr">');
+        continue;
+      }
 
-    // 9. Citações / Blockquotes (trata escape HTML de > como &gt;)
-    processed = processed.replace(/^(?:>|&gt;)\s*(.*?)$/gm, '<blockquote class="tutor-quote">$1</blockquote>');
+      // Cabeçalhos (# ... ####)
+      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+      if (headingMatch) {
+        flushPara();
+        flushList();
+        flushQuote();
+        const level = headingMatch[1].length;
+        const hTag = level === 1 ? "h3" : level === 2 ? "h4" : level === 3 ? "h5" : "h6";
+        const hClass = `tutor-heading tutor-${hTag}`;
+        blocks.push(`<${hTag} class="${hClass}">${renderInlineMarkdown(headingMatch[2])}</${hTag}>`);
+        continue;
+      }
 
-    // 10. Listas não-ordenadas (* ou -) com suporte a aninhamento
-    processed = processed.replace(/^(?:\s{2,}|\t+)[\*\-]\s+(.*?)$/gm, '<li class="tutor-list-item tutor-list-nested">$1</li>');
-    processed = processed.replace(/^[\*\-]\s+(.*?)$/gm, '<li class="tutor-list-item">$1</li>');
-    processed = processed.replace(/((?:<li class="tutor-list-item(?: tutor-list-nested)?">.*?<\/li>\n?)+)/g, '<ul class="tutor-list">$1</ul>');
+      // Citações / Blockquotes (> texto ou &gt; texto)
+      const quoteMatch = line.match(/^(?:>|&gt;)\s*(.*)$/);
+      if (quoteMatch) {
+        flushPara();
+        flushList();
+        currentQuote.push(quoteMatch[1]);
+        continue;
+      } else if (currentQuote.length) {
+        flushQuote();
+      }
 
-    // 11. Listas numeradas (1. item) com suporte a aninhamento
-    processed = processed.replace(/^(?:\s{2,}|\t+)\d+\.\s+(.*?)$/gm, '<li class="tutor-num-item tutor-list-nested">$1</li>');
-    processed = processed.replace(/^\d+\.\s+(.*?)$/gm, '<li class="tutor-num-item">$1</li>');
-    processed = processed.replace(/((?:<li class="tutor-num-item(?: tutor-list-nested)?">.*?<\/li>\n?)+)/g, '<ol class="tutor-num-list">$1</ol>');
+      // Listas não-ordenadas (* item, - item, + item)
+      const ulMatch = line.match(/^(\s*)(?:[\*\-]|\+)\s+(.+)$/);
+      if (ulMatch) {
+        flushPara();
+        if (currentList && currentList.type !== "ul") flushList();
+        if (!currentList) currentList = { type: "ul", items: [] };
+        const indent = ulMatch[1].length;
+        currentList.items.push({ text: ulMatch[2], nested: indent >= 2 });
+        continue;
+      }
 
-    // 12. Parágrafos e quebras de linha
-    const chunks = processed.split(/\n{2,}/);
-    processed = chunks
-      .map((chunk) => {
-        const trimmed = chunk.trim();
-        if (!trimmed) return "";
-        if (
-          trimmed.startsWith("<h3") ||
-          trimmed.startsWith("<h4") ||
-          trimmed.startsWith("<h5") ||
-          trimmed.startsWith("<h6") ||
-          trimmed.startsWith("<ul") ||
-          trimmed.startsWith("<ol") ||
-          trimmed.startsWith("<hr") ||
-          trimmed.startsWith("<blockquote") ||
-          trimmed.startsWith("\x00CODEBLOCK_") ||
-          trimmed.startsWith("\x00TABLE_")
-        ) {
-          return trimmed;
-        }
-        return `<p class="tutor-p">${trimmed.replace(/\n/g, "<br>")}</p>`;
-      })
-      .join("\n");
+      // Listas numeradas (1. item, 2) item)
+      const olMatch = line.match(/^(\s*)\d+[\.\)]\s+(.+)$/);
+      if (olMatch) {
+        flushPara();
+        if (currentList && currentList.type !== "ol") flushList();
+        if (!currentList) currentList = { type: "ol", items: [] };
+        const indent = olMatch[1].length;
+        currentList.items.push({ text: olMatch[2], nested: indent >= 2 });
+        continue;
+      }
 
-    // 13. Restaura código inline
-    processed = processed.replace(/\x00INLINECODE_(\d+)\x00/g, (_, idx) => {
-      return `<code class="tutor-inline-code">${inlineCodes[Number(idx)] || ""}</code>`;
-    });
+      // Se encontrou texto regular e havia uma lista aberta, fecha a lista
+      flushList();
 
-    // 14. Restaura tabelas
-    processed = processed.replace(/\x00TABLE_(\d+)\x00/g, (_, idx) => {
+      // Texto de parágrafo regular
+      currentPara.push(trimmed);
+    }
+
+    flushPara();
+    flushList();
+    flushQuote();
+
+    let processedBlocks = blocks.join("\n");
+
+    // 6. Restaura tabelas primeiro (assim células com código inline/matemática também são restauradas)
+    processedBlocks = processedBlocks.replace(/\x00LPTABLE(\d+)END\x00/g, (_, idx) => {
       return tables[Number(idx)] || "";
     });
 
-    // 15. Restaura blocos de código com botão de cópia rápida
-    processed = processed.replace(/\x00CODEBLOCK_(\d+)\x00/g, (_, idx) => {
+    // 7. Restaura código inline
+    processedBlocks = processedBlocks.replace(/\x00LPINLINECODE(\d+)END\x00/g, (_, idx) => {
+      const code = inlineCodes[Number(idx)] || "";
+      const escaped = code
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return `<code class="tutor-inline-code">${escaped}</code>`;
+    });
+
+    // 8. Restaura fórmulas matemáticas (inline e bloco)
+    processedBlocks = processedBlocks.replace(/\x00LPMATH(\d+)END\x00/g, (_, idx) => {
+      const item = mathItems[Number(idx)];
+      if (!item) return "";
+      let math = item.content
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      math = math
+        .replace(/\\rightarrow/g, "→")
+        .replace(/\\leftarrow/g, "←")
+        .replace(/\\Rightarrow/g, "⇒")
+        .replace(/\\Leftarrow/g, "⇐")
+        .replace(/\\leftrightarrow/g, "↔")
+        .replace(/\\le\b|\\leq\b/g, "≤")
+        .replace(/\\ge\b|\\geq\b/g, "≥")
+        .replace(/\\ne\b|\\neq\b/g, "≠")
+        .replace(/\\approx\b/g, "≈")
+        .replace(/\\times\b/g, "×")
+        .replace(/\\div\b/g, "÷")
+        .replace(/\\pm\b/g, "±")
+        .replace(/\\in\b/g, "∈")
+        .replace(/\\infty\b/g, "∞");
+
+      if (item.block) {
+        return `<div class="tutor-math-block"><code class="tutor-math">${math}</code></div>`;
+      }
+      return `<code class="tutor-math tutor-math-inline">${math}</code>`;
+    });
+
+    // 9. Restaura blocos de código com botão de cópia rápida
+    processedBlocks = processedBlocks.replace(/\x00LPCODEBLOCK(\d+)END\x00/g, (_, idx) => {
       const item = codeBlocks[Number(idx)];
       if (!item) return "";
       const cleanLang = item.lang
@@ -492,7 +586,7 @@
         </div>`;
     });
 
-    return processed;
+    return processedBlocks;
   }
 
   return {

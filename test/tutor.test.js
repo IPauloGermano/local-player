@@ -137,6 +137,29 @@ const app = express();
   assert.ok(html.includes('const express = require(&quot;express&quot;);'));
 });
 
+test("Tutor IA: múltiplos códigos inline consecutivos e fórmulas LaTeX não corrompem placeholders (INLINECODE bug)", () => {
+  const md = "Seja `a`, `b`, `c`, `d`, `e` $\\rightarrow$ `f` com `g` e `h`.";
+  const html = renderMarkdownToHtml(md);
+
+  // Não deve vazar fragmentos de placeholders como INLINECODE ou NLINECODE
+  assert.ok(!html.includes("INLINECODE"), `Placeholder não restaurado vazou no HTML: ${html}`);
+  assert.ok(!html.includes("NLINECODE"), `Placeholder corrompido vazou no HTML: ${html}`);
+  assert.ok(!html.includes("LPINLINECODE"), `Token interno vazou no HTML: ${html}`);
+
+  // Deve conter todos os códigos inline restaurados
+  assert.ok(html.includes('<code class="tutor-inline-code">a</code>'));
+  assert.ok(html.includes('<code class="tutor-inline-code">b</code>'));
+  assert.ok(html.includes('<code class="tutor-inline-code">c</code>'));
+  assert.ok(html.includes('<code class="tutor-inline-code">d</code>'));
+  assert.ok(html.includes('<code class="tutor-inline-code">e</code>'));
+  assert.ok(html.includes('<code class="tutor-inline-code">f</code>'));
+  assert.ok(html.includes('<code class="tutor-inline-code">g</code>'));
+  assert.ok(html.includes('<code class="tutor-inline-code">h</code>'));
+
+  // Deve converter símbolo de seta LaTeX
+  assert.ok(html.includes("→"));
+});
+
 test("Whisper: cálculo dinâmico de threads ideais (getOptimalTranscriptionThreads)", () => {
   assert.strictEqual(getOptimalTranscriptionThreads(4), 4);
   assert.strictEqual(getOptimalTranscriptionThreads(12), 12);
