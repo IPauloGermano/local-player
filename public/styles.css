@@ -16,12 +16,12 @@
   --danger-dark: #e04747;
   --radius: 16px;
   --radius-sm: 12px;
-  /* Larguras fluidas: acompanham a largura real da janela (não a do monitor).
+  /* Larguras fluidas ampliadas: acompanham a largura real da janela.
      --sidebar-w encolhe em janelas reduzidas para o player manter espaço. */
-  --sidebar-w: clamp(260px, 24vw, 340px);
-  --app-pad-x: clamp(8px, 2.5vw, 22px);
-  --app-pad-y: clamp(10px, 2vw, 20px);
-  --gap-col: clamp(10px, 1.6vw, 14px);
+  --sidebar-w: clamp(300px, 25vw, 390px);
+  --app-pad-x: clamp(12px, 3vw, 28px);
+  --app-pad-y: clamp(14px, 2.2vw, 26px);
+  --gap-col: clamp(14px, 1.8vw, 22px);
   --shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
 }
 
@@ -68,10 +68,9 @@ body {
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: clamp(6px, 1.3vw, 14px);
-  padding: clamp(6px, 1.3vw, 14px) var(--app-pad-x);
-  /* Safe-areas (notch/barra inferior) — env() é 0 no desktop, então o
-     visual atual não muda; só celulares com notch ganham respiro. */
+  gap: clamp(8px, 1.5vw, 16px);
+  padding: clamp(8px, 1.4vw, 16px) var(--app-pad-x);
+  /* Safe-areas (notch/barra inferior) — env() é 0 no desktop. */
   padding-left: max(var(--app-pad-x), env(safe-area-inset-left));
   padding-right: max(var(--app-pad-x), env(safe-area-inset-right));
   background: rgba(10, 12, 18, 0.88);
@@ -83,16 +82,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 0;
   cursor: pointer;
   appearance: none;
-  /* É um link real (href): sem sublinhado/cor de link; o navegador permite
-     arrastá-lo para a barra de abas para abrir a Home em uma nova aba. */
   text-decoration: none;
   color: inherit;
   white-space: nowrap;
@@ -113,8 +110,8 @@ body {
 }
 
 .logo-mark {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), #ffd5b7);
   box-shadow: 0 0 14px rgba(255, 138, 61, 0.45);
@@ -122,22 +119,19 @@ body {
 
 .topbar-search {
   flex: 1;
-  /* Sem min-width:0 o input não encolhe abaixo do min-content do
-     placeholder e o topbar sticky estoura horizontalmente em telas
-     estreitas (flex item tem min-width:auto por padrão). */
   min-width: 0;
-  max-width: 520px;
+  max-width: 660px;
 }
 
 .topbar-search input {
   width: 100%;
-  padding: 10px 16px;
+  padding: 11px 18px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.03);
   color: var(--text);
   outline: none;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .topbar-search input:focus {
@@ -149,10 +143,10 @@ body {
   background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: white;
-  padding: 9px 13px;
+  padding: 10px 16px;
   border-radius: 999px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   transition:
     transform 0.15s ease,
@@ -164,15 +158,14 @@ body {
   box-shadow: 0 10px 22px rgba(255, 138, 61, 0.24);
 }
 
-/* Botão de engrenagem da topbar (Configurações): quadrado neutro, na mesma
-   proporção do .topbar-brand-minimal, mas discreto até o hover. */
+/* Botão de engrenagem da topbar (Configurações) */
 .topbar-icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-mid);
@@ -194,7 +187,7 @@ body {
 
 .app {
   padding: var(--app-pad-y) var(--app-pad-x) 40px;
-  max-width: 1480px;
+  max-width: 1760px;
   margin: 0 auto;
 }
 
@@ -992,9 +985,9 @@ body {
 
 .course-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: clamp(14px, 1.8vw, 20px);
-  margin-bottom: 40px;
+  grid-template-columns: repeat(auto-fill, minmax(275px, 1fr));
+  gap: clamp(16px, 2vw, 24px);
+  margin-bottom: 44px;
 }
 
 .course-card {
@@ -1013,8 +1006,7 @@ body {
   position: relative;
 }
 
-/* O card é um <a href> real (navegação nativa). Mantém o mesmo layout do
-   card: ocupa toda a altura e preserva a coluna flex da thumb/body. */
+/* O card é um <a href> real (navegação nativa). */
 .course-card-link {
   display: flex;
   flex-direction: column;
@@ -1023,8 +1015,6 @@ body {
   color: inherit;
   text-decoration: none;
 }
-/* Foco visível por teclado. Outline interno (offset negativo) porque o
-   .course-card tem overflow:hidden e cortaria um outline externo. */
 .course-card-link:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -1032,15 +1022,15 @@ body {
 
 .fav-btn {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 36px;
-  height: 36px;
+  top: 10px;
+  right: 10px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.35);
   background: rgba(0, 0, 0, 0.45);
   color: rgba(255, 255, 255, 0.9);
-  font-size: 19px;
+  font-size: 22px;
   line-height: 1;
   cursor: pointer;
   display: flex;
@@ -1075,21 +1065,21 @@ body {
 .course-toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 .course-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: rgba(255, 138, 61, 0.48);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
 }
 
 .course-card-thumb {
-  height: 130px;
+  height: 165px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 34px;
+  font-size: 40px;
   font-weight: 800;
   color: rgba(255, 255, 255, 0.85);
   text-transform: uppercase;
@@ -1110,51 +1100,49 @@ body {
 }
 
 .course-card-body {
-  padding: 14px 16px 16px;
+  padding: 18px 20px 20px;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .course-card-title {
   font-weight: 600;
-  font-size: 14.5px;
-  line-height: 1.3;
+  font-size: 16.5px;
+  line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 .course-card-meta {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--text-dim);
 }
-/* Tag discreta de card de tópico: distingue do card de curso sem virar
-   um elemento novo — reusa o grid/card existentes. */
 .topic-card-tag {
   align-self: flex-start;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-dim);
   background: var(--border);
   border-radius: 999px;
-  padding: 2px 8px;
+  padding: 3px 10px;
 }
 
 /* ---------- Visão de tópico (navegação hierárquica) ---------- */
 .topic-view {
-  padding-top: 8px;
+  padding-top: 10px;
 }
 .topic-breadcrumb {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 4px;
-  font-size: 13px;
+  gap: 6px;
+  font-size: 14.5px;
   color: var(--text-dim);
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 .breadcrumb-link {
   color: var(--accent);
@@ -1164,18 +1152,16 @@ body {
   text-decoration: underline;
 }
 .topic-title {
-  font-size: 24px;
-  margin: 0 0 22px;
+  font-size: 28px;
+  margin: 0 0 24px;
   overflow-wrap: break-word;
 }
 .topic-view .course-grid {
   margin-bottom: 0;
 }
-/* Lista defensiva (vídeo/material direto dentro de um tópico — não deve
-   ocorrer, mas sem card quebrado se acontecer). */
 .topic-loose {
-  margin: 0 0 24px;
-  padding-left: 20px;
+  margin: 0 0 28px;
+  padding-left: 24px;
   line-height: 1.9;
 }
 .topic-loose a {
@@ -1187,8 +1173,8 @@ body {
 }
 
 .progress-bar {
-  height: 6px;
-  border-radius: 4px;
+  height: 7px;
+  border-radius: 5px;
   background: var(--border);
   overflow: hidden;
   margin-top: auto;
@@ -1196,29 +1182,29 @@ body {
 .progress-bar-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--accent-dark), var(--accent));
-  border-radius: 4px;
+  border-radius: 5px;
 }
 
 /* ---------- Seções da Home: Continuar assistindo / Seu progresso ---------- */
 .home-section {
-  margin-bottom: clamp(24px, 5vw, 44px);
+  margin-bottom: clamp(28px, 5.5vw, 52px);
 }
 .section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
+  gap: 18px;
+  margin-bottom: 20px;
 }
 .section-heading {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 700;
   margin: 0;
   letter-spacing: -0.01em;
 }
 .section-subtitle {
   margin: 4px 0 0;
-  font-size: 13.5px;
+  font-size: 15px;
   font-weight: 400;
   color: var(--text-dim);
 }
@@ -1228,10 +1214,10 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: 11px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-dim);
@@ -1259,17 +1245,17 @@ body {
 
 .continue-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: clamp(12px, 1.8vw, 18px);
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: clamp(16px, 2vw, 24px);
 }
 .continue-card {
   background: linear-gradient(180deg, var(--bg-card), var(--bg-card-2));
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px 20px 18px;
+  padding: 24px 24px 22px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   color: inherit;
   text-decoration: none;
   cursor: pointer;
@@ -1293,7 +1279,7 @@ body {
 }
 .continue-card .lesson-name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 17.5px;
   line-height: 1.35;
   color: var(--text);
   display: -webkit-box;
@@ -1302,8 +1288,8 @@ body {
   overflow: hidden;
 }
 .continue-card .course-name {
-  margin-top: 5px;
-  font-size: 12.5px;
+  margin-top: 6px;
+  font-size: 14px;
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -1312,22 +1298,22 @@ body {
 .continue-card-progress {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   margin-top: auto;
 }
 .continue-progress-bar {
   flex: 1;
-  height: 8px;
+  height: 10px;
 }
 .continue-progress-bar .progress-bar-fill {
   animation: fill-bar 1s cubic-bezier(0.22, 0.8, 0.3, 1) both;
 }
 .continue-pct {
-  font-size: 13px;
+  font-size: 14.5px;
   font-weight: 700;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
-  min-width: 40px;
+  min-width: 46px;
   text-align: right;
 }
 
@@ -1343,9 +1329,6 @@ body {
   }
 }
 
-/* Resumo compacto (uma linha): visível apenas no modo compacto.
-   Altura animada via max-height (transições de grid-template-rows com
-   unidades fr ficam presas no Chrome — bug conhecido de interpolação). */
 .progress-summary {
   overflow: hidden;
   max-height: 0;
@@ -1355,7 +1338,7 @@ body {
     opacity 0.22s ease;
 }
 .progress-section[data-progress-mode="compact"] .progress-summary {
-  max-height: 80px;
+  max-height: 90px;
   opacity: 1;
 }
 .progress-summary-inner {
@@ -1363,22 +1346,22 @@ body {
   overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   flex-wrap: wrap;
-  padding: 14px 18px;
+  padding: 16px 22px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--bg-card), var(--bg-card-2));
 }
 .progress-summary-pct {
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
 .progress-summary-bar {
-  flex: 0 1 130px;
-  height: 5px;
+  flex: 0 1 160px;
+  height: 6px;
   border-radius: 4px;
   background: var(--border);
   overflow: hidden;
@@ -1392,14 +1375,13 @@ body {
 .progress-summary-meta {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: 14.5px;
   color: var(--text-dim);
 }
 
-/* Painel expandido: recolhe via max-height (mesmo motivo acima) */
 .progress-panel-wrap {
   overflow: hidden;
-  max-height: 700px;
+  max-height: 800px;
   opacity: 1;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
   transition:
@@ -1414,29 +1396,29 @@ body {
   background: linear-gradient(180deg, var(--bg-card), var(--bg-card-2));
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 26px 28px;
+  padding: 32px 36px;
 }
 .progress-panel-hero {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: 14px;
 }
 .progress-panel-hero-value {
-  font-size: 38px;
-  font-weight: 700;
+  font-size: 46px;
+  font-weight: 800;
   line-height: 1;
   letter-spacing: -0.02em;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 .progress-panel-hero-label {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 400;
   color: var(--text-dim);
 }
 .progress-panel-bar {
-  margin-top: 18px;
-  height: 8px;
+  margin-top: 22px;
+  height: 10px;
   border-radius: 6px;
   background: var(--border);
   overflow: hidden;
@@ -1451,15 +1433,15 @@ body {
 .progress-panel-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  margin-top: 24px;
+  margin-top: 28px;
   border-top: 1px solid var(--border);
-  padding-top: 24px;
+  padding-top: 28px;
 }
 .progress-stat {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 0 22px;
+  gap: 6px;
+  padding: 0 26px;
   border-left: 1px solid var(--border);
 }
 .progress-stat:first-child {
@@ -1467,28 +1449,28 @@ body {
   border-left: none;
 }
 .progress-stat-value {
-  font-size: 30px;
+  font-size: 36px;
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 .progress-stat-label {
-  font-size: 13.5px;
+  font-size: 15px;
   font-weight: 400;
   color: var(--text-dim);
 }
 .progress-stat-sub {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-dim);
   opacity: 0.75;
 }
 
 .search-results {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 14px;
+  margin-bottom: 28px;
 }
 
 .search-result-item {
@@ -1498,11 +1480,11 @@ body {
   color: var(--text);
   font: inherit;
   text-decoration: none;
-  border-radius: 12px;
-  padding: 11px 12px;
+  border-radius: 14px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   cursor: pointer;
   transition:
     border-color 0.15s ease,
@@ -1519,17 +1501,17 @@ body {
 }
 
 .search-result-tag {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--accent);
   font-weight: 700;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.4px;
   text-transform: uppercase;
 }
 
 .search-result-main {
-  font-size: 13.5px;
+  font-size: 15.5px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1537,9 +1519,9 @@ body {
 }
 
 .search-result-sub {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--text-dim);
-  line-height: 1.25;
+  line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1578,11 +1560,11 @@ body {
 .back-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--text-dim);
   cursor: pointer;
-  font-size: 13px;
-  margin-bottom: 16px;
+  font-size: 14.5px;
+  margin-bottom: 20px;
   user-select: none;
 }
 .back-link:hover {
@@ -1597,12 +1579,9 @@ body {
   position: relative;
   width: 100%;
   aspect-ratio: 16/9;
-  /* Limite vertical fluido: em janelas baixas o player cede a altura (o vídeo
-     faz letterbox dentro do wrap). svh = altura "estável" (small viewport):
-     não reage ao colapso/expansão da barra de URL durante o scroll (dvh
-     causava resize no landscape/wide); vh fica como fallback. */
-  max-height: min(72vh, 780px);
-  max-height: min(72svh, 780px);
+  /* Limite vertical fluido expandido: destaca o player como elemento dominante. */
+  max-height: min(84vh, 940px);
+  max-height: min(84svh, 940px);
   min-height: 0;
   background: linear-gradient(180deg, #020304, #0e1015);
   border-radius: calc(var(--radius) + 4px);
@@ -2178,8 +2157,8 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 68px;
-  height: 68px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.22);
   background: rgba(8, 11, 18, 0.62);
@@ -2220,10 +2199,9 @@ body {
   bottom: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 16px 14px 10px;
-  /* Gradiente com ponto médio: legibilidade sobre vídeos claros/escuros sem
-     virar uma faixa preta sólida e pesada. */
+  gap: 4px;
+  padding: 18px 18px 12px;
+  /* Gradiente com ponto médio: legibilidade sobre vídeos claros/escuros. */
   background: linear-gradient(
     180deg,
     rgba(2, 3, 4, 0) 0%,
@@ -2234,7 +2212,7 @@ body {
 
 .pc-progress {
   position: relative;
-  height: 20px;
+  height: 22px;
   display: flex;
   align-items: center;
 }
@@ -2245,7 +2223,7 @@ body {
   left: 0;
   right: 0;
   top: 50%;
-  height: 4px;
+  height: 5px;
   transform: translateY(-50%);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
@@ -2255,7 +2233,7 @@ body {
   position: absolute;
   left: 0;
   top: 50%;
-  height: 4px;
+  height: 5px;
   transform: translateY(-50%);
   border-radius: 999px;
   pointer-events: none;
@@ -2276,7 +2254,7 @@ body {
   position: relative;
   z-index: 1;
   width: 100%;
-  height: 20px;
+  height: 22px;
   margin: 0;
   background: transparent;
   cursor: pointer;
@@ -2293,7 +2271,7 @@ body {
   outline-offset: 2px;
 }
 .pc-seek::-webkit-slider-runnable-track {
-  height: 4px;
+  height: 5px;
   border-radius: 999px;
   background: transparent;
 }
@@ -2301,9 +2279,9 @@ body {
   -webkit-appearance: none;
   appearance: none;
   box-sizing: content-box;
-  width: 14px;
-  height: 14px;
-  margin-top: -7px;
+  width: 15px;
+  height: 15px;
+  margin-top: -7.5px;
   border-radius: 50%;
   background: var(--accent);
   border: 2px solid #fff;
@@ -2311,73 +2289,63 @@ body {
   transition: width 0.15s ease, height 0.15s ease, margin-top 0.15s ease;
 }
 .pc-seek::-moz-range-track {
-  height: 4px;
+  height: 5px;
   border-radius: 999px;
   background: transparent;
 }
 .pc-seek::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
   background: var(--accent);
   border: 2px solid #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
   transition: width 0.15s ease, height 0.15s ease;
 }
-/* Desktop com mouse: a barra engrossa levemente e o handle cresce ao
-   passar o mouse. Os .pc-bar vêm depois do input no DOM; `~` alcança os
-   dois (a camada do input está acima, então o hover é confiável). */
 @media (hover: hover) and (pointer: fine) {
   .pc-seek:hover ~ .pc-bar {
-    height: 6px;
+    height: 7px;
   }
   .pc-seek:hover::-webkit-slider-thumb {
-    width: 18px;
-    height: 18px;
-    margin-top: -9px;
+    width: 19px;
+    height: 19px;
+    margin-top: -9.5px;
   }
   .pc-seek:hover::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
+    width: 19px;
+    height: 19px;
   }
 }
 
 .pc-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  /* Rede de segurança fluida: em janelas médias (ex.: player ~580px com o
-     sumário aberto no teatro) a linha quebra para a segunda linha quando não
-     cabe, em vez de estourar. Sem efeito quando tudo cabe numa linha. */
+  gap: 8px;
   flex-wrap: wrap;
-  row-gap: 6px;
+  row-gap: 8px;
 }
-/* Controles secundários (volume, velocidade, fullscreen): empurrados para a
-   direita pelo .pc-spacer no desktop; no mobile formam a segunda linha. */
 .pc-secondary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .pc-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-width: 40px;
-  height: 38px;
-  padding: 0 10px;
+  gap: 7px;
+  min-width: 42px;
+  height: 40px;
+  padding: 0 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
-  /* Chip translúcido: garante legibilidade sobre vídeo claro/escuro sem
-     poluir a cena. */
   background: rgba(10, 14, 22, 0.5);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   color: #f4f7fb;
-  font-size: 12.5px;
+  font-size: 13.5px;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease,
-    color 0.15s ease, transform 0.1s ease;
+    color 0.15s ease, transform 0.10s ease;
 }
 .pc-btn svg {
   display: block;
@@ -2399,18 +2367,13 @@ body {
   opacity: 0.45;
   cursor: default;
 }
-/* O atributo hidden precisa vencer o display: inline-flex do .pc-btn (ex.:
-   botão do sumário, que só existe no modo teatro). */
 .pc-btn[hidden] {
   display: none;
 }
-/* Estado ativo dos botões de modo (teatro) e sumário: accent indica que o
-   recurso está ligado (aria-pressed = true). */
 .pc-btn[aria-pressed="true"] {
   color: var(--accent);
   border-color: var(--accent);
 }
-/* Controle principal (play/pause): identidade accent sem inflar. */
 .pc-play {
   background: rgba(255, 138, 61, 0.18);
   border-color: rgba(255, 138, 61, 0.42);
@@ -2430,13 +2393,13 @@ body {
 }
 
 .pc-time {
-  font-size: 12.5px;
+  font-size: 13.5px;
   font-weight: 500;
   color: #e6ecf5;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
-  margin-left: 6px;
-  margin-right: 4px;
+  margin-left: 8px;
+  margin-right: 6px;
   white-space: nowrap;
   pointer-events: none;
 }
@@ -2628,39 +2591,33 @@ body {
 /* ============ fim controles customizados ============ */
 
 .lesson-header {
-  /* Ancora o painel de aparência da legenda (absolute) ao cabeçalho da aula,
-     em vez de deixá-lo posicionar contra a viewport (o que somava o offset do
-     player-wrap à matemática de top/left e gerava overflow horizontal). */
   position: relative;
-  margin-top: 14px;
+  margin-top: 16px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
 }
 .course-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .course-toolbar-title {
-  font-size: 14px;
+  font-size: 15.5px;
   font-weight: 700;
   color: var(--text-dim);
-  /* Títulos longos de curso quebram em vez de estourar a toolbar. */
   overflow-wrap: break-word;
 }
-/* Bloco do título + botão "☰ Aulas": o bloco encolhe (min-width:0) para o
-   breadcrumb truncar em vez de empurrar a navegação para fora da viewport. */
 .lesson-header .lesson-title-row {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  flex: 1 1 220px;
+  gap: 14px;
+  flex: 1 1 240px;
   min-width: 0;
 }
 .lesson-header .lesson-title-block {
@@ -2668,18 +2625,17 @@ body {
   min-width: 0;
 }
 .lesson-header h2 {
-  font-size: 19px;
-  margin: 0 0 6px;
+  font-size: 25px;
+  font-weight: 800;
+  line-height: 1.3;
+  margin: 0 0 8px;
   overflow-wrap: break-word;
 }
-/* Breadcrumb de uma linha: o prefixo (curso/módulos) trunca com "…" quando
-   falta espaço, e o último segmento (pasta da aula) fica sempre visível. O
-   caminho completo está no title (hover). */
 .lesson-header .breadcrumb {
   display: flex;
   align-items: baseline;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: 14.5px;
   color: var(--text-dim);
 }
 .lesson-header .breadcrumb-prefix {
@@ -2697,16 +2653,14 @@ body {
 .player-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
   justify-content: flex-end;
-  /* Os botões Anterior/Próxima não são esmagados pelo título da aula; se
-     faltar espaço, o título encolhe/trunca e os botões quebram de linha. */
   flex-shrink: 0;
 }
 .nav-buttons {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
 }
 .nav-buttons button,
@@ -2714,15 +2668,15 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 8px 14px;
-  border-radius: 8px;
+  padding: 10px 16px;
+  border-radius: 9px;
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
   transition: all 0.15s ease;
 }
 .nav-buttons button:hover:not(:disabled),
@@ -2738,7 +2692,7 @@ body {
   color: var(--text-dim);
 }
 .btn-complete .complete-icon {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
 }
 .btn-complete.is-completed {
@@ -2754,42 +2708,36 @@ body {
   color: #10b981;
 }
 
-/* Botão "☰ Aulas" (drawer mobile): visível apenas em ≤900px (media query
-   correspondente re-exibe o botão). No desktop o sumário usa o item ⋮. */
 .lesson-sidebar-toggle {
   display: none;
 }
-/* Backdrop do drawer: fora do media query é descartado (nunca vira terceiro
-   item do grid no desktop). O comportamento de overlay vem da media query. */
 .sidebar-backdrop {
   display: none;
 }
 
 .materials {
-  margin-top: 14px;
+  margin-top: 18px;
   background: linear-gradient(180deg, var(--bg-card), var(--bg-card-2));
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 18px 22px;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
 }
 .materials h3 {
-  margin: 0 0 10px;
-  font-size: 14px;
+  margin: 0 0 12px;
+  font-size: 16px;
   color: var(--text-dim);
-  font-weight: 600;
+  font-weight: 700;
 }
 .materials a {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 0;
+  gap: 10px;
+  padding: 9px 0;
   color: var(--text);
   text-decoration: none;
-  font-size: 13.5px;
+  font-size: 15px;
   border-bottom: 1px solid var(--border);
-  /* Nomes de arquivo longos quebram em vez de estourar a largura da coluna
-     em janelas reduzidas. */
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -2810,9 +2758,7 @@ body {
   );
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius);
-  padding: 8px;
-  /* Altura limitada à área realmente visível (dvh), com o excedente rolado
-     dentro da árvore — o sumário nunca empurra a página para sempre. */
+  padding: 10px;
   max-height: calc(100vh - 90px);
   max-height: calc(100dvh - 90px);
   overflow: hidden;
@@ -2824,7 +2770,6 @@ body {
   backdrop-filter: blur(10px);
   z-index: 1;
   margin-top: 0;
-  /* Coluna: cabeçalho do curso fixo + árvore rolável no espaço restante */
   display: flex;
   flex-direction: column;
 }
@@ -2837,18 +2782,18 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 6px;
-  padding: 2px 2px 2px 0;
+  margin-bottom: 8px;
+  padding: 4px 4px 4px 0;
 }
 .sidebar-title {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 10px;
+  padding: 8px 10px;
   font-weight: 700;
-  font-size: 13.5px;
+  font-size: 15px;
   color: var(--text);
   flex: 1;
   min-width: 0;
@@ -2859,7 +2804,7 @@ body {
   border: 1px solid transparent;
   color: var(--text-dim);
   border-radius: var(--radius-sm);
-  padding: 6px;
+  padding: 8px;
   cursor: pointer;
   align-items: center;
   justify-content: center;
@@ -2873,7 +2818,6 @@ body {
 .sidebar-close-btn:active {
   transform: scale(0.95);
 }
-/* Nome do curso pode encolher e truncar sem empurrar o % */
 .sidebar-course-name {
   flex: 1;
   min-width: 0;
@@ -2883,40 +2827,38 @@ body {
 }
 .sidebar-title .pct {
   color: var(--accent);
-  font-size: 15px;
+  font-size: 16.5px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
 .sidebar-progress {
-  padding: 0 8px 8px;
+  padding: 0 10px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .sidebar-progress-bar {
   margin-top: 0;
-  height: 5px;
+  height: 6px;
 }
 
 .sidebar-progress-meta {
-  margin-top: 4px;
+  margin-top: 6px;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 2px;
-  font-size: 11px;
+  gap: 3px;
+  font-size: 12.5px;
   color: var(--text-dim);
 }
 
-/* A árvore é a parte rolável da sidebar (desktop): o cabeçalho continua
-   visível enquanto o usuário navega por centenas de aulas. */
 #tree-slot {
   min-height: 0;
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 2px 2px 6px;
+  padding: 4px 4px 8px;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
@@ -2932,25 +2874,24 @@ body {
 }
 
 .tree-folder {
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 
-/* Separação entre módulos: uma divisão sutil no topo, sem borda em cada item */
 #tree-slot > .tree-folder + .tree-folder {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
 }
 
 .tree-folder-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 11px;
-  border-radius: 8px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
   border: 1px solid transparent;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14.5px;
   color: var(--text-dim);
 }
 .tree-folder-head:hover {
@@ -2961,7 +2902,7 @@ body {
 .tree-folder-head .chev {
   transition: transform 0.15s ease;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 12px;
   flex-shrink: 0;
 }
 .tree-folder-head.open .chev {
@@ -2969,81 +2910,76 @@ body {
 }
 .tree-folder-head .folder-progress {
   margin-left: auto;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
-/* Módulo (1º nível): maior destaque, contador claro */
 .tree-folder-head[data-depth="1"] {
-  font-size: 13.5px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text);
-  padding: 10px 11px;
+  padding: 11px 13px;
 }
 .tree-folder-head[data-depth="1"] .chev {
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: 13px;
 }
 .tree-folder-head[data-depth="1"] .folder-progress {
   color: var(--text);
   font-weight: 700;
-  font-size: 11px;
+  font-size: 12px;
 }
 
-/* Submódulo (2º nível): peso intermediário, subordinado ao módulo */
 .tree-folder-head[data-depth="2"] {
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-mid);
-  padding: 8px 10px;
+  padding: 9px 12px;
 }
 .tree-folder-head[data-depth="2"] .folder-progress {
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 500;
   color: var(--text-dim);
 }
 
-/* Níveis profundos (3+): variante plana e discreta (a indentação estabiliza) */
 .tree-folder-head[data-depth="3"],
 .tree-folder-head[data-depth="4"] {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-dim);
-  padding: 7px 10px;
+  padding: 8px 11px;
 }
 .tree-folder-head[data-depth="3"] .folder-progress,
 .tree-folder-head[data-depth="4"] .folder-progress {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-dim);
 }
 
-/* Indentação com teto: cada nível contribui um pouco menos de espaço */
 .tree-folder-children {
-  padding-left: 12px;
+  padding-left: 14px;
   display: none;
 }
 .tree-folder-children.open {
   display: block;
 }
 .tree-folder-children .tree-folder-children {
-  padding-left: 10px;
+  padding-left: 12px;
 }
 .tree-folder-children .tree-folder-children .tree-folder-children {
-  padding-left: 8px;
+  padding-left: 10px;
 }
 
-/* Aula: discreta e legível, com estados claros */
 .tree-lesson {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border-radius: 8px;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 9px;
   border: 1px solid transparent;
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 400;
   color: var(--text-dim);
   position: relative;
@@ -3053,8 +2989,6 @@ body {
   color: var(--text);
 }
 
-/* Aula atual: destaque elegante (fundo suave + barra lateral accent), sem
-   borda em volta; a barra em ::before não desloca o layout ao trocar de aula. */
 .tree-lesson.active {
   background: linear-gradient(
     90deg,
@@ -3069,20 +3003,20 @@ body {
   left: 0;
   top: 6px;
   bottom: 6px;
-  width: 3px;
+  width: 4px;
   border-radius: 3px;
   background: var(--accent);
 }
 .tree-lesson .check {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
   border-radius: 50%;
   border: 1.5px solid rgba(154, 168, 191, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   padding: 0;
   background: transparent;
@@ -3121,8 +3055,8 @@ body {
   transition: transform 0.6s ease;
 }
 .tree-lesson .lesson-mini-progress {
-  width: 26px;
-  height: 3px;
+  width: 28px;
+  height: 4px;
   background: var(--border);
   border-radius: 2px;
   overflow: hidden;
@@ -3134,10 +3068,8 @@ body {
   background: var(--accent);
 }
 
-/* Contador secundário da aula (n/total): sempre visível; não desaparece com
-   título longo porque .lesson-title encolhe (flex:1 + min-width:0). */
 .tree-lesson .lesson-counter {
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
