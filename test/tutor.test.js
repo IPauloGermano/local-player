@@ -36,6 +36,7 @@ const {
   buildTutorSystemPrompt,
   subtitleCacheName,
   getOptimalTranscriptionThreads,
+  scanLibrary,
 } = require("../server");
 
 const {
@@ -508,6 +509,46 @@ test("Tutor IA: extração de materiais de apoio (texto, markdown, pdf, office e
     // Arquivo não existente trata erro com segurança
     const nonExistent = await extractTextFromMaterial(path.join(tmpDir, "ghost.txt"), ".txt");
     assert.strictEqual(nonExistent, null);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Tutor IA: fluxo completo PDF -> extração -> contexto -> prompt com código específico MODAL-7391 e detecção de PDF escaneado", async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-tutor-pdf-flow-"));
+  try {
+    const courseDir = path.join(tmpDir, "Curso_Modais");
+    await fs.mkdir(courseDir, { recursive: true });
+
+    const videoFile = path.join(courseDir, "Aula_01.mp4");
+    await fs.writeFile(videoFile, Buffer.alloc(100));
+
+    // PDF com texto contendo código específico MODAL-7391
+    const pdfTextFile = path.join(courseDir, "conteudo_adicional.pdf");
+    const pdfTextBuf = Buffer.from("%PDF-1.4\n1 0 obj\n<< /Length 50 >>\nstream\nBT (Codigo de referencia: MODAL-7391) Tj ET\nendstream\nendobj\n%%EOF");
+    await fs.writeFile(pdfTextFile, pdfTextBuf);
+
+    // PDF escaneado (sem texto legível)
+    const pdfScannedFile = path.join(courseDir, "escanear.pdf");
+    const pdfScannedBuf = Buffer.from("%PDF-1.4\n1 0 obj\n<< /Type /Page >>\nendobj\n2 0 obj\n<< /Type /Page >>\nendobj\n%%EOF");
+    await fs.writeFile(pdfScannedFile, pdfScannedBuf);
+
+    const lib = { id: "test-lib", name: "TestLib", path: tmpDir, enabled: true };
+    const scanned = await scanLibrary(lib);
+    const tree = scanned.tree || scanned;
+    const rel = "Curso_Modais/Aula_01.mp4";
+    const videoNode = findNodeByPath(tree, rel);
+    const courseNode = findNodeByPath(tree, "Curso_Modais");
+
+    const cfg = defaultAiConfig();
+    const ctx = await buildLessonTutorContext(lib, rel, videoNode, courseNode, cfg, true, "Qual é o código de referência mencionado no PDF?");
+
+    assert.strictEqual(ctx.materialsCount, 2);
+    assert.ok(ctx.contextText.includes("MODAL-7391"), "O contexto deve conter o código de referência MODAL-7391 extraído do PDF");
+    assert.ok(ctx.contextText.includes("Documento PDF escaneado (sem camada de texto legível, requer OCR)"), "O PDF sem texto deve ser rotulado como escaneado");
+
+    const prompt = buildTutorSystemPrompt(ctx.contextText, cfg.tutor.systemPrompt, cfg.skills);
+    assert.ok(prompt.includes("MODAL-7391"), "O prompt final enviado ao LLM deve conter o código MODAL-7391");
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }

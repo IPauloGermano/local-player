@@ -110,6 +110,8 @@ function resolveToolBin(exeName, envPath) {
 }
 const FFMPEG_BIN = resolveToolBin("ffmpeg", FFMPEG_BIN_ENV);
 const FFPROBE_BIN = resolveToolBin("ffprobe", FFPROBE_BIN_ENV);
+const PDFTOTEXT_BIN_ENV = process.env.PDFTOTEXT_BIN || "";
+const PDFTOTEXT_BIN = resolveToolBin("pdftotext", PDFTOTEXT_BIN_ENV);
 // Espera máxima por um seek que ainda não foi transcodificado.
 const TRANSCODE_SEEK_WAIT_MS = 60000;
 // Tempo máximo que o shutdown aguarda a fila de progresso drenar antes de
@@ -1424,6 +1426,65 @@ function detectTool(bin) {
 async function ensureTools() {
   if (ffmpegAvailable === null) ffmpegAvailable = await detectTool(FFMPEG_BIN);
   if (ffprobeAvailable === null) ffprobeAvailable = await detectTool(FFPROBE_BIN);
+}
+
+let pdftotextAvailable = null;
+
+function detectPdfToText() {
+  if (pdftotextAvailable !== null) return Promise.resolve(pdftotextAvailable);
+  return new Promise((resolve) => {
+    const child = spawn(PDFTOTEXT_BIN, ["-v"], { stdio: "ignore" });
+    child.on("error", () => {
+      pdftotextAvailable = false;
+      resolve(false);
+    });
+    child.on("close", (code) => {
+      pdftotextAvailable = code === 0;
+      resolve(pdftotextAvailable);
+    });
+  });
+}
+
+async function extractPdfTextWithBinary(absPath) {
+  const hasTool = await detectPdfToText();
+  if (!hasTool) return null;
+  try {
+    const { stdout } = await execFileAsync(PDFTOTEXT_BIN, [absPath, "-"]);
+    if (stdout) {
+      const clean = stdout.replace(/\x0c/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+      if (clean.length >= 10) return clean;
+    }
+  } catch (err) {
+    // pdftotext falhou ou não-zero exit
+  }
+  return null;
+}
+
+function inspectPdfBuffer(buf) {
+  if (!buf || !Buffer.isBuffer(buf) || buf.length < 8) {
+    return { isValid: false, pages: 0 };
+  }
+  const latinStr = buf.toString("latin1");
+  if (!latinStr.includes("%PDF-")) {
+    return { isValid: false, pages: 0 };
+  }
+  const pageMatches = latinStr.match(/\/Type\s*\/Page\b/g) || [];
+  return { isValid: true, pages: pageMatches.length };
+}
+
+function cleanExtractedPdfText(text) {
+  if (!text) return "";
+  const lines = text.split("\n");
+  const cleanedLines = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const alphaCount = (trimmed.match(/[a-zA-Z0-9\u00C0-\u024F]/g) || []).length;
+    if (alphaCount === 0 && trimmed.length < 20) continue;
+    if (alphaCount / trimmed.length < 0.2 && trimmed.length > 5) continue;
+    cleanedLines.push(trimmed);
+  }
+  return cleanedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 // Nome de cache determinístico e seguro a partir da identidade da biblioteca +
@@ -6171,12 +6232,27 @@ async function extractTextFromMaterial(absPath, ext, cfg = null, query = "") {
       if (st.size > 50 * 1024 * 1024) {
         return `[Documento PDF: ${baseName} (${Math.round(st.size / 1024)} KB) - arquivo muito grande para leitura completa]`;
       }
-      const buf = await fs.readFile(absPath);
-      const pdfText = extractTextFromPdfBuffer(buf);
-      if (pdfText && pdfText.length >= 10) {
-        extractedText = pdfText;
-      } else {
-        return `[Documento PDF: ${baseName} (${Math.round(st.size / 1024)} KB)]`;
+      extractedText = await extractPdfTextWithBinary(absPath);
+      if (!extractedText || extractedText.length < 10) {
+        const buf = await fs.readFile(absPath).catch(() => null);
+        if (buf) {
+          const rawJsText = extractTextFromPdfBuffer(buf);
+          const cleanedJsText = cleanExtractedPdfText(rawJsText);
+          if (cleanedJsText && cleanedJsText.length >= 10) {
+            extractedText = cleanedJsText;
+          }
+        }
+      }
+
+      if (!extractedText || extractedText.length < 10) {
+        const buf = await fs.readFile(absPath).catch(() => null);
+        const info = inspectPdfBuffer(buf);
+        if (info.isValid) {
+          const pageLabel = info.pages > 0 ? `, ${info.pages} página${info.pages > 1 ? "s" : ""}` : "";
+          return `[Documento PDF escaneado (sem camada de texto legível, requer OCR): ${baseName} (${Math.round(st.size / 1024)} KB${pageLabel})]`;
+        } else {
+          return `[Documento PDF inválido ou inacessível: ${baseName}]`;
+        }
       }
     } else if (ext === ".docx") {
       if (st.size > 50 * 1024 * 1024) {
@@ -6482,7 +6558,7 @@ async function buildLessonTutorContext(lib, videoRel, videoNode, courseNode, cfg
     }
   }
 
-  const scannedLib = treeCaches.get(lib.id) || null;
+  const scannedLib = treeCaches.get(lib.id) || (await scanLibrary(lib).catch(() => null));
   const tree = (scannedLib && scannedLib.tree) ? scannedLib.tree : scannedLib;
   const relParts = videoRel.split("/");
   const courseTitle = courseNode ? (courseNode.title || courseNode.name) : relParts[0];
@@ -8998,6 +9074,9 @@ if (require.main === module) {
     maskAiConfig,
     applyLlmTranslationGuardrail,
     extractTextFromPdfBuffer,
+    extractPdfTextWithBinary,
+    inspectPdfBuffer,
+    cleanExtractedPdfText,
     extractTextFromDocxBuffer,
     extractTextFromPptxBuffer,
     extractTextFromOdtBuffer,
