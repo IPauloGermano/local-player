@@ -3485,6 +3485,25 @@ function renderFolderChildren(folderNode, depth = 1) {
   return html;
 }
 
+function updateLessonCompleteButton(videoNode) {
+  const btn = document.getElementById("toggle-lesson-complete-btn");
+  if (!btn) return;
+  const targetVideo = videoNode || state.currentVideoNode;
+  if (!targetVideo) return;
+  const p = progFor(targetVideo);
+  const isDone = !!(p && p.completed);
+  btn.classList.toggle("is-completed", isDone);
+  const label = isDone
+    ? "Desmarcar aula como concluída"
+    : "Marcar aula como concluída";
+  btn.setAttribute("aria-label", label);
+  btn.setAttribute("title", label);
+  const icon = btn.querySelector(".complete-icon");
+  if (icon) icon.textContent = isDone ? "✓" : "○";
+  const text = btn.querySelector(".complete-text");
+  if (text) text.textContent = isDone ? "Concluída" : "Concluir";
+}
+
 function toggleLessonCompleted(lessonPath, event) {
   if (event) event.stopPropagation();
   const lesson = state.flatVideos.find((v) => v.path === lessonPath);
@@ -3527,7 +3546,7 @@ function toggleLessonCompleted(lessonPath, event) {
   updateProgressUI();
   renderTree(state.currentCourseNode, false);
   if (state.currentVideoNode && state.currentVideoNode.path === lessonPath) {
-    renderPlayerAndLesson();
+    updateLessonCompleteButton(state.currentVideoNode);
   }
 }
 
@@ -3674,6 +3693,7 @@ function updateProgressUI() {
   const progressWatch = document.getElementById("course-progress-watch");
   if (progressWatch)
     progressWatch.textContent = `${formatDuration(stats.watchedSeconds)} assistidos`;
+  updateLessonCompleteButton();
 }
 
 // Player ativo (para o `beforeunload` único registrar a posição atual).

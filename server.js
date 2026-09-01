@@ -844,35 +844,70 @@ async function readJsonFile(file) {
   }
 }
 
-// Lê o progresso com recuperação automática. O bug crítico anterior: um
-// arquivo corrompido (desligamento brusco, pendrive desmontado no meio de
-// uma escrita) era interpretado como progresso vazio, e a próxima escrita
-// "desmarcava" todas as aulas. Agora o arquivo danificado é preservado e o
-// estado é restaurado do backup.
-async function readProgress() {
-  const main = await readJsonFile(PROGRESS_FILE);
-  if (main.ok) return main.parsed;
+// Helpers de caminho de progresso dentro de cada biblioteca.
+// O progresso é salvo em `<lib.path>/.courseplayer/progress.json` para que viaje
+// com a própria biblioteca (HD/SSD/pendrive/backup), tornando os dados portáteis.
+function libraryProgressDir(lib) {
+  if (!lib || typeof lib.path !== "string" || !lib.path) return null;
+  if (process.env.LP_DATA_DIR && (lib.isDefault || lib.path === ROOT)) {
+    return DATA_DIR;
+  }
+  return path.join(lib.path, ".courseplayer");
+}
+
+function libraryProgressFile(lib) {
+  if (!lib || typeof lib.path !== "string" || !lib.path) return null;
+  if (process.env.LP_DATA_DIR && (lib.isDefault || lib.path === ROOT)) {
+    return PROGRESS_FILE;
+  }
+  const dir = libraryProgressDir(lib);
+  return dir ? path.join(dir, "progress.json") : null;
+}
+
+function libraryProgressBackupFile(lib) {
+  if (!lib || typeof lib.path !== "string" || !lib.path) return null;
+  if (process.env.LP_DATA_DIR && (lib.isDefault || lib.path === ROOT)) {
+    return PROGRESS_BACKUP_FILE;
+  }
+  const dir = libraryProgressDir(lib);
+  return dir ? path.join(dir, "progress.json.bak") : null;
+}
+
+function libraryProgressBackup2File(lib) {
+  if (!lib || typeof lib.path !== "string" || !lib.path) return null;
+  if (process.env.LP_DATA_DIR && (lib.isDefault || lib.path === ROOT)) {
+    return PROGRESS_BACKUP2_FILE;
+  }
+  const dir = libraryProgressDir(lib);
+  return dir ? path.join(dir, "progress.json.bak.1") : null;
+}
+
+// Lê o progresso específico de uma biblioteca (do arquivo na raiz da biblioteca).
+async function readLibraryProgress(lib) {
+  const file = libraryProgressFile(lib);
+  if (!file) return {};
+  const main = await readJsonFile(file);
+  if (main.ok && main.parsed) return main.parsed;
 
   if (main.raw !== null) {
     console.error(
-      "progress.json corrompido; preservando o arquivo e recuperando do backup…",
+      `[PROGRESS] progress.json corrompido na biblioteca "${lib.name || lib.id}"; preservando e recuperando do backup…`,
     );
     await fs
-      .rename(PROGRESS_FILE, `${PROGRESS_FILE}.corrupt-${Date.now()}`)
+      .rename(file, `${file}.corrupt-${Date.now()}`)
       .catch(() => {});
   }
 
-  // Cadeia de backups: bak é o estado anterior ao save mais recente; bak.1 o
-  // anterior a esse. Escritos em momentos distintos — numa remoção brusca do
-  // pendrive vfat é raro que main, bak e bak.1 sejam zerados juntos, então a
-  // recuperação sempre tenta o backup mais novo que ainda estiver íntegro.
-  for (const backupFile of [PROGRESS_BACKUP_FILE, PROGRESS_BACKUP2_FILE]) {
+  const bak1 = libraryProgressBackupFile(lib);
+  const bak2 = libraryProgressBackup2File(lib);
+  for (const backupFile of [bak1, bak2]) {
+    if (!backupFile) continue;
     const backup = await readJsonFile(backupFile);
-    if (backup.ok) return backup.parsed;
+    if (backup.ok && backup.parsed) return backup.parsed;
 
     if (backup.raw !== null) {
       console.error(
-        `${path.basename(backupFile)} corrompido; preservando e tentando o próximo…`,
+        `[PROGRESS] ${path.basename(backupFile)} corrompido na biblioteca "${lib.name || lib.id}"; preservando…`,
       );
       await fs
         .rename(backupFile, `${backupFile}.corrupt-${Date.now()}`)
@@ -880,6 +915,112 @@ async function readProgress() {
     }
   }
   return {};
+}
+
+// Restaura o arquivo de progresso de uma biblioteca a partir do backup.
+async function restoreLibraryProgressFromBackup(lib) {
+  const file = libraryProgressFile(lib);
+  if (!file || file === PROGRESS_FILE) return false;
+  const main = await readJsonFile(file);
+  if (main.ok) return false;
+
+  if (main.raw !== null) {
+    console.error(
+      `[PROGRESS] progress.json corrompido na biblioteca "${lib.name || lib.id}"; preservando e restaurando do backup…`,
+    );
+    await fs
+      .rename(file, `${file}.corrupt-${Date.now()}`)
+      .catch(() => {});
+  }
+
+  const bak1 = libraryProgressBackupFile(lib);
+  const bak2 = libraryProgressBackup2File(lib);
+  for (const backupFile of [bak1, bak2]) {
+    if (!backupFile) continue;
+    const backup = await readJsonFile(backupFile);
+    if (backup.ok && backup.raw) {
+      console.log(
+        `[PROGRESS] recovery: restaurando progresso de ${path.basename(backupFile)} na biblioteca "${lib.name || lib.id}"`,
+      );
+      await writeFileAtomic(file, backup.raw);
+      return true;
+    }
+    if (backup.raw !== null) {
+      console.error(
+        `[PROGRESS] ${path.basename(backupFile)} corrompido na biblioteca "${lib.name || lib.id}"; preservando…`,
+      );
+      await fs
+        .rename(backupFile, `${backupFile}.corrupt-${Date.now()}`)
+        .catch(() => {});
+    }
+  }
+  return false;
+}
+
+// Lê o progresso com recuperação automática e consolidação multi-biblioteca.
+// O progresso gravado diretamente na raiz de cada biblioteca (.courseplayer/progress.json)
+// é a fonte de verdade portátil, integrado e espelhado com o data/progress.json central.
+async function readProgress() {
+  const consolidated = {};
+
+  // 1. Lê progresso central (data/progress.json) se existir
+  const main = await readJsonFile(PROGRESS_FILE);
+  if (main.ok && main.parsed) {
+    Object.assign(consolidated, main.parsed);
+  } else {
+    if (main.raw !== null) {
+      console.error(
+        "progress.json corrompido; preservando o arquivo e recuperando do backup…",
+      );
+      await fs
+        .rename(PROGRESS_FILE, `${PROGRESS_FILE}.corrupt-${Date.now()}`)
+        .catch(() => {});
+    }
+
+    // Cadeia de backups central
+    for (const backupFile of [PROGRESS_BACKUP_FILE, PROGRESS_BACKUP2_FILE]) {
+      const backup = await readJsonFile(backupFile);
+      if (backup.ok && backup.parsed) {
+        Object.assign(consolidated, backup.parsed);
+        break;
+      }
+
+      if (backup.raw !== null) {
+        console.error(
+          `${path.basename(backupFile)} corrompido; preservando e tentando o próximo…`,
+        );
+        await fs
+          .rename(backupFile, `${backupFile}.corrupt-${Date.now()}`)
+          .catch(() => {});
+      }
+    }
+  }
+
+  // 2. Lê e mescla o progresso de cada biblioteca registrada (<lib.path>/.courseplayer/progress.json)
+  let libs = [];
+  try {
+    libs = getLibraries();
+  } catch {}
+
+  for (const lib of libs) {
+    if (!lib || !lib.path) continue;
+    const libFile = libraryProgressFile(lib);
+    if (libFile === PROGRESS_FILE) continue;
+    try {
+      const libProg = await readLibraryProgress(lib);
+      for (const [key, val] of Object.entries(libProg)) {
+        if (!val || typeof val !== "object") continue;
+        const cleanRel = key.includes("\0") ? key.slice(key.indexOf("\0") + 1) : key;
+        const compositeKey = `${lib.id}\0${cleanRel}`;
+        const existing = consolidated[compositeKey];
+        if (!existing || (val.updatedAt && (!existing.updatedAt || val.updatedAt >= existing.updatedAt))) {
+          consolidated[compositeKey] = val;
+        }
+      }
+    } catch {}
+  }
+
+  return consolidated;
 }
 
 // Restaura o arquivo PRINCIPAL de progresso a partir do melhor backup válido
@@ -1114,9 +1255,68 @@ function updateProgress(mutator, opts = {}) {
       } catch {}
     }
 
+    // 1. Persistência na pasta de cada biblioteca (<lib.path>/.courseplayer/progress.json)
+    let defaultLib = null;
+    let libs = [];
+    try {
+      defaultLib = getDefaultLibrary();
+      libs = getLibraries();
+    } catch {}
+
+    const progressByLibId = new Map();
+    for (const lib of libs) {
+      progressByLibId.set(lib.id, {});
+    }
+
+    const defaultLibId = defaultLib ? defaultLib.id : DEFAULT_LIBRARY_ID;
+    for (const [compositeKey, entry] of Object.entries(state)) {
+      let libId = defaultLibId;
+      let rel = compositeKey;
+      if (compositeKey.includes("\0")) {
+        const idx = compositeKey.indexOf("\0");
+        libId = compositeKey.slice(0, idx);
+        rel = compositeKey.slice(idx + 1);
+      }
+      if (!progressByLibId.has(libId)) {
+        progressByLibId.set(libId, {});
+      }
+      progressByLibId.get(libId)[rel] = entry;
+    }
+
+    for (const lib of libs) {
+      const libData = progressByLibId.get(lib.id) || {};
+      const libFile = libraryProgressFile(lib);
+      if (!libFile || libFile === PROGRESS_FILE) continue;
+      try {
+        const libSerialized = JSON.stringify(libData, null, 2);
+        const currentLib = await readJsonFile(libFile);
+        if (currentLib.ok && currentLib.raw !== libSerialized) {
+          const bak1 = libraryProgressBackupFile(lib);
+          const bak2 = libraryProgressBackup2File(lib);
+          if (bak1 && bak2) {
+            await fs.copyFile(bak1, bak2).catch(() => {});
+            await writeFileAtomic(bak1, currentLib.raw);
+          }
+        } else if (!currentLib.ok && currentLib.raw === null) {
+          const bak1 = libraryProgressBackupFile(lib);
+          if (bak1) {
+            const backup = await readJsonFile(bak1);
+            if (!backup.ok) {
+              await writeFileAtomic(bak1, libSerialized);
+            }
+          }
+        }
+        await writeFileAtomic(libFile, libSerialized);
+        requestVolumeSync(libFile);
+      } catch (err) {
+        console.warn(
+          `[PROGRESS] Aviso: falha ao salvar progresso na biblioteca "${lib.name || lib.id}": ${err.message}`,
+        );
+      }
+    }
+
+    // 2. Persistência no espelho central data/progress.json
     const serialized = JSON.stringify(state, null, 2);
-    // Antes de sobrescrever, mantém o último estado válido como backup —
-    // é dele que a recuperação automática parte após uma corrupção.
     const current = await readJsonFile(PROGRESS_FILE);
     if (current.ok && current.raw !== serialized) {
       // Rotaciona: bak.1 recebe o bak atual antes de o bak ser sobrescrito —
@@ -1159,6 +1359,21 @@ async function initPersistence() {
     );
   } catch {}
 
+  // Remove temporários órfãos na pasta .courseplayer de cada biblioteca
+  for (const lib of getLibraries()) {
+    const pDir = libraryProgressDir(lib);
+    if (pDir && pDir !== DATA_DIR) {
+      try {
+        const files = await fs.readdir(pDir);
+        await Promise.all(
+          files
+            .filter((f) => f.endsWith(".tmp"))
+            .map((f) => fs.unlink(path.join(pDir, f)).catch(() => {})),
+        );
+      } catch {}
+    }
+  }
+
   // Cache de transcoding: garante a pasta e remove .tmp órfãos de transcodes
   // interrompidos (o .tmp nunca é o cache final; o final só existe após rename).
   try {
@@ -1175,6 +1390,9 @@ async function initPersistence() {
   // ausente/corrompido (preservando o arquivo danificado como .corrupt-<ts>).
   // Antes do servidor aceitar saves — sem corrida com a fila de escrita.
   await restoreProgressFromBackup();
+  for (const lib of getLibraries()) {
+    await restoreLibraryProgressFromBackup(lib);
+  }
 
   // Semeia o backup com o estado atual na primeira execução após a correção,
   // para que a recuperação automática já tenha um ponto de partida.
@@ -1191,6 +1409,28 @@ async function initPersistence() {
   }
   requestVolumeSync(PROGRESS_FILE);
 
+  // Semeia backups para cada biblioteca individual
+  for (const lib of getLibraries()) {
+    const file = libraryProgressFile(lib);
+    const bak1 = libraryProgressBackupFile(lib);
+    const bak2 = libraryProgressBackup2File(lib);
+    if (!file) continue;
+    try {
+      const [libMain, libBak, libBak2] = await Promise.all([
+        readJsonFile(file),
+        bak1 ? readJsonFile(bak1) : { ok: false, raw: null },
+        bak2 ? readJsonFile(bak2) : { ok: false, raw: null },
+      ]);
+      if (libMain.ok && !libBak.ok && bak1) {
+        await writeFileAtomic(bak1, libMain.raw).catch(() => {});
+      }
+      if (libBak.ok && !libBak2.ok && bak2) {
+        await writeFileAtomic(bak2, libBak.raw).catch(() => {});
+      }
+      if (file) requestVolumeSync(file);
+    } catch {}
+  }
+
   // Legendas: garante pastas e reconcilia jobs.json (retomada após restart).
   await loadSubtitleJobs();
   // Depois da reconciliação, varre artefatos derivados órfãos (WAV / saída do
@@ -1200,6 +1440,14 @@ async function initPersistence() {
   // Multi-biblioteca: migra as chaves de progresso legadas (sem `\0`) para o
   // namespace da biblioteca padrão. Idempotente.
   await migrateProgressKeys();
+
+  // Sincroniza progresso existente para o arquivo da biblioteca se ainda não existir
+  try {
+    const currentState = await readProgress();
+    if (Object.keys(currentState).length > 0) {
+      await updateProgress(() => {}, { allowShrink: false });
+    }
+  } catch {}
 }
 
 // ==========================================================================
@@ -9107,6 +9355,14 @@ if (require.main === module) {
     extractAndParseJson,
     buildQuizPrompt,
     buildFlashcardsPrompt,
+    libraryProgressDir,
+    libraryProgressFile,
+    libraryProgressBackupFile,
+    libraryProgressBackup2File,
+    readLibraryProgress,
+    restoreLibraryProgressFromBackup,
+    readProgress,
+    updateProgress,
     sanitizeQuizResult,
     sanitizeFlashcardsResult,
   };

@@ -269,8 +269,11 @@ Respostas-chave de `/api/video/fallback`:
 
 ## 10. Persistência de progresso
 
-Arquivo `data/progress.json`, chaveado por **`<libraryId>\0<rel>`** (rel sempre
-com `/`). Valor: `{position, duration, completed, updatedAt}`.
+O progresso é salvo diretamente na raiz de cada biblioteca em
+**`<lib.path>/.courseplayer/progress.json`** (com chaves relativas portáteis
+`rel`), viajando com a biblioteca (HD/SSD/pendrive). Um espelho consolidado
+é mantido em `data/progress.json` (chaveado por **`<libraryId>\0<rel>`**).
+Valor: `{position, duration, completed, updatedAt}`.
 
 Garantias (implementadas em `server.js`):
 
@@ -280,9 +283,10 @@ Garantias (implementadas em `server.js`):
   promises; `shuttingDown` rejeita novos saves e drena a fila no shutdown
   (`SHUTDOWN_PROGRESS_FLUSH_MS`).
 - **Backup + auto-recuperação**: `progress.json.bak` (e `.bak.1`, rotação)
-  guardam o estado pré-mudança; no boot, `restoreProgressFromBackup` recria o
-  main a partir do melhor backup se ausente/corrompido; corrompidos são
-  preservados como `.corrupt-<ts>` (nunca apagados).
+  guardam o estado pré-mudança tanto na biblioteca quanto no espelho central;
+  no boot, `restoreProgressFromBackup` recria o main a partir do melhor backup
+  se ausente/corrompido; corrompidos são preservados como `.corrupt-<ts>` (nunca
+  apagados).
 - **Guarda regressiva por conteúdo**: um save normal nunca remove chaves, não
   zera estado não-vazio, não regride `completed` (true→false exceto toggle
   explícito do ✓), não perde `duration`/`position` válidas — regressão é
