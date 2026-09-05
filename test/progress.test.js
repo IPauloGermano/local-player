@@ -323,8 +323,12 @@ test("progresso: clear de curso é delimitado e escopado; clear global limpa tud
     assert.ok(!g.data[K(idA, "Curso A/Aula 01.mp4")], "externa limpa por biblioteca");
     assert.ok(g.data[K("default", "Curso A2/Aula 01.mp4")], "padrão intacta");
 
-    // Clear global (sem coursePath): tudo some, inclusive bibliotecas externas.
-    r = await postJson(srv.base, "/api/progress/clear", {});
+    // Payload vazio/ambíguo é rejeitado com 400 (VULN-01):
+    const badReq = await postJson(srv.base, "/api/progress/clear", {});
+    assert.strictEqual(badReq.status, 400);
+
+    // Clear global explícito (all: true): tudo some, inclusive bibliotecas externas.
+    r = await postJson(srv.base, "/api/progress/clear", { all: true });
     assert.strictEqual(r.status, 200);
     g = await getJson(srv.base, "/api/progress");
     assert.deepStrictEqual(g.data, {}, "clear global zera todas as bibliotecas");

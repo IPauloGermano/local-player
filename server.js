@@ -35,10 +35,9 @@ const PROGRESS_BACKUP2_FILE = path.join(DATA_DIR, "progress.json.bak.1");
 const LIBRARIES_FILE = path.join(DATA_DIR, "libraries.json");
 const DEFAULT_LIBRARY_ID = "default";
 const PORT = process.env.PORT || 4173;
-// Interface de escuta. Por padrão o servidor escuta em todas as interfaces
-// (documentado no README: acesso pela rede local é comportamento atual).
-// Para restringir à máquina local, defina HOST=127.0.0.1.
-const HOST = process.env.HOST || undefined;
+// Interface de escuta. Por padrão o servidor escuta em 127.0.0.1 (localhost seguro).
+// Para permitir acesso pela rede local explicitamente, defina HOST=0.0.0.0.
+const HOST = process.env.HOST || "127.0.0.1";
 // Arquivo que express.static precisa servir para a SPA funcionar. Também é o
 // sinal de presença do dispositivo: como vive dentro de __dirname (que está
 // dentro de ROOT), ele some quando o pendrive é desmontado — é a sonda mais
@@ -149,7 +148,16 @@ function releaseHeavySlot() {
 }
 function refreshHeavyMax(value) {
   const n = Number(value);
-  if (Number.isFinite(n) && n >= 1) heavyMax = Math.min(8, Math.floor(n));
+  if (Number.isFinite(n) && n >= 1) {
+    heavyMax = Math.min(8, Math.floor(n));
+  }
+  while (heavySlots.used < heavyMax && heavySlots.waiters.length > 0) {
+    const next = heavySlots.waiters.shift();
+    if (next) {
+      heavySlots.used++;
+      next(releaseHeavySlot);
+    }
+  }
 }
 
 const VIDEO_EXT = new Set([
@@ -1696,6 +1704,17 @@ async function migrateProgressKeys() {
   // (reversível); a recuperação automática já cobre chaves sem "\0".
 }
 
+function sanitizeDisplayPath(p) {
+  if (!p || typeof p !== "string") return "";
+  try {
+    const home = os.homedir();
+    if (home && (p === home || p.startsWith(home + path.sep) || p.startsWith(home + "/"))) {
+      return "~" + p.slice(home.length);
+    }
+  } catch {}
+  return p;
+}
+
 // Formato público de uma biblioteca para /api/libraries e /api/tree (status
 // computado; nunca expõe estado interno).
 function librarySummary(lib, cached) {
@@ -1712,12 +1731,13 @@ function librarySummary(lib, cached) {
     courseCount = count(tree.children);
   }
   const isEnabled = lib.enabled !== false;
+  const isDefault = lib.isDefault === true;
   return {
     id: lib.id,
     name: lib.name,
-    path: lib.path,
+    path: isDefault ? null : sanitizeDisplayPath(lib.path),
     enabled: isEnabled,
-    isDefault: lib.isDefault === true,
+    isDefault,
     status: !isEnabled ? "disabled" : (cached ? cached.status : "unknown"),
     error: cached ? cached.error : null,
     lastScanAt: cached ? cached.lastScanAt : null,
@@ -1978,6 +1998,18 @@ async function runTranscode(job) {
       releaseHeavy();
     }
   };
+
+  if (
+    job.status === "cancelled" ||
+    !transcodeJobs.has(job.cacheName) ||
+    transcodeJobs.get(job.cacheName) !== job
+  ) {
+    activeTranscodes = Math.max(0, activeTranscodes - 1);
+    releaseHeavyOnce();
+    scheduleNextTranscode();
+    return;
+  }
+
   job.status = "processing";
   // Argumentos fixos, sem shell (spec 23): nada do usuário entra no comando.
   // -movflags frag_keyframe+empty_moov+default_base_moof: MP4 fragmentado com
@@ -4122,6 +4154,11 @@ async function runSubtitlePipeline(job) {
       updateSubtitleJob(hash, { status: "extracting", progress: "Extraindo áudio…", stageStartedAt: Date.now() });
       console.log(`[SUBTITLE][PROCESS] extraindo áudio: ${rel}`);
       const releaseHeavy = await acquireHeavySlot();
+      if (job.status === "cancelled" || !subtitleJobs.has(hash)) {
+        releaseHeavy();
+        await fs.unlink(wavPath).catch(() => {});
+        return;
+      }
       try {
         await extractAudioToWav(job.abs, wavPath, {
           setProc: (p) => { job.proc = p; },
@@ -4130,7 +4167,7 @@ async function runSubtitlePipeline(job) {
         job.proc = null;
         releaseHeavy();
       }
-      if (job.status === "cancelled") {
+      if (job.status === "cancelled" || !subtitleJobs.has(hash)) {
         await fs.unlink(wavPath).catch(() => {});
         return;
       }
@@ -4139,6 +4176,11 @@ async function runSubtitlePipeline(job) {
       updateSubtitleJob(hash, { status: "transcribing", progress: "Transcrevendo…", percent: null });
       console.log(`[SUBTITLE][PROCESS] transcrevendo: ${rel}`);
       const releaseHeavy2 = await acquireHeavySlot();
+      if (job.status === "cancelled" || !subtitleJobs.has(hash)) {
+        releaseHeavy2();
+        await fs.unlink(wavPath).catch(() => {});
+        return;
+      }
       try {
         const result = await runWhisperTranscription({
           provider: avail.provider,
@@ -6059,37 +6101,116 @@ function formatDocumentForTutor(baseName, ext, rawText, query = "") {
 // Web Search, Leitura Segura de Páginas e Navegação Web (Text-Only)
 // --------------------------------------------------------------------------
 
-// 1. Validador de Segurança Anti-SSRF (IPs privados, loopback, metadata APIs)
-function isPrivateIp(ip) {
+// 1. Validador de Segurança Anti-SSRF (IPs privados, loopback, metadata APIs, CGNAT e IPv6)
+function isPrivateIpv4(ip) {
   if (!ip || typeof ip !== "string") return true;
-  if (net.isIPv4(ip)) {
-    const parts = ip.split(".").map(Number);
-    if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) return true;
-    if (parts[0] === 0) return true; // 0.0.0.0/8
-    if (parts[0] === 10) return true; // 10.0.0.0/8
-    if (parts[0] === 127) return true; // 127.0.0.0/8 (Loopback)
-    if (parts[0] === 169 && parts[1] === 254) return true; // 169.254.0.0/16 (Link-local / Cloud Metadata)
-    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true; // 172.16.0.0/12
-    if (parts[0] === 192 && parts[1] === 168) return true; // 192.168.0.0/16
-    if (parts[0] >= 224) return true; // 224.0.0.0/4 (Multicast / Reserved)
-    return false;
-  }
-  if (net.isIPv6(ip)) {
-    const normalized = ip.toLowerCase();
-    if (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") return true;
-    if (normalized === "::" || normalized === "0:0:0:0:0:0:0:0") return true;
-    if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true; // fc00::/7
-    if (normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb")) return true; // fe80::/10
-    if (normalized.startsWith("::ffff:")) {
-      const v4Part = normalized.slice(7);
-      if (net.isIPv4(v4Part)) return isPrivateIp(v4Part);
-    }
-    return false;
-  }
-  return true;
+  const parts = ip.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) return true;
+  if (parts[0] === 0) return true; // 0.0.0.0/8 (RFC 1122)
+  if (parts[0] === 10) return true; // 10.0.0.0/8 (RFC 1918)
+  if (parts[0] === 127) return true; // 127.0.0.0/8 (Loopback)
+  if (parts[0] === 169 && parts[1] === 254) return true; // 169.254.0.0/16 (Link-local / Cloud Metadata)
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true; // 172.16.0.0/12 (RFC 1918)
+  if (parts[0] === 192 && parts[1] === 168) return true; // 192.168.0.0/16 (RFC 1918)
+  if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true; // 100.64.0.0/10 (CGNAT / RFC 6598)
+  if (parts[0] === 192 && parts[1] === 0 && parts[2] === 2) return true; // TEST-NET-1 (RFC 5737)
+  if (parts[0] === 198 && parts[1] === 51 && parts[2] === 100) return true; // TEST-NET-2 (RFC 5737)
+  if (parts[0] === 203 && parts[1] === 0 && parts[2] === 113) return true; // TEST-NET-3 (RFC 5737)
+  if (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19)) return true; // 198.18.0.0/15 (Benchmark)
+  if (parts[0] >= 224) return true; // 224.0.0.0/4 (Multicast / Reserved / Broadcast)
+  return false;
 }
 
-async function validateSafeUrl(rawUrl) {
+function expandIPv6(ip) {
+  if (!ip || typeof ip !== "string") return null;
+  let str = ip.trim().toLowerCase();
+  const v4Match = str.match(/(.*):(\d+\.\d+\.\d+\.\d+)$/);
+  if (v4Match) {
+    const v4Parts = v4Match[2].split(".").map(Number);
+    if (v4Parts.length !== 4 || v4Parts.some((p) => isNaN(p) || p < 0 || p > 255)) return null;
+    const w6 = ((v4Parts[0] << 8) | v4Parts[1]).toString(16);
+    const w7 = ((v4Parts[2] << 8) | v4Parts[3]).toString(16);
+    str = (v4Match[1] ? v4Match[1] : "::") + ":" + w6 + ":" + w7;
+  }
+  let parts;
+  if (str.includes("::")) {
+    const halves = str.split("::");
+    if (halves.length > 2) return null;
+    const left = halves[0] ? halves[0].split(":") : [];
+    const right = halves[1] ? halves[1].split(":") : [];
+    const missing = 8 - (left.length + right.length);
+    if (missing < 0) return null;
+    const middle = new Array(missing).fill("0");
+    parts = [...left, ...middle, ...right];
+  } else {
+    parts = str.split(":");
+  }
+  if (parts.length !== 8) return null;
+  const words = [];
+  for (const p of parts) {
+    if (!/^[0-9a-f]{1,4}$/i.test(p)) return null;
+    words.push(parseInt(p, 16));
+  }
+  return words;
+}
+
+function isPrivateIp(ip) {
+  if (!ip || typeof ip !== "string") return true;
+  const trimmed = ip.trim().replace(/^\[|\]$/g, "");
+  if (net.isIPv4(trimmed)) {
+    return isPrivateIpv4(trimmed);
+  }
+  const words = expandIPv6(trimmed);
+  if (!words) return true;
+
+  if (words.every((w, i) => (i === 7 ? w === 1 : w === 0))) return true; // ::1
+  if (words.every((w) => w === 0)) return true; // ::
+
+  const isV4Mapped =
+    words[0] === 0 &&
+    words[1] === 0 &&
+    words[2] === 0 &&
+    words[3] === 0 &&
+    words[4] === 0 &&
+    words[5] === 0xffff;
+  const isV4Compat =
+    words[0] === 0 &&
+    words[1] === 0 &&
+    words[2] === 0 &&
+    words[3] === 0 &&
+    words[4] === 0 &&
+    words[5] === 0;
+  if (isV4Mapped || isV4Compat) {
+    const v4 = [
+      words[6] >> 8,
+      words[6] & 0xff,
+      words[7] >> 8,
+      words[7] & 0xff,
+    ].join(".");
+    return isPrivateIpv4(v4);
+  }
+
+  if (words[0] === 0x2002) {
+    const v4 = [
+      words[1] >> 8,
+      words[1] & 0xff,
+      words[2] >> 8,
+      words[2] & 0xff,
+    ].join(".");
+    return isPrivateIpv4(v4);
+  }
+
+  if ((words[0] & 0xfe00) === 0xfc00) return true; // ULA fc00::/7
+  if ((words[0] & 0xffc0) === 0xfe80) return true; // Link-local fe80::/10
+  if ((words[0] & 0xff00) === 0xff00) return true; // Multicast ff00::/8
+  if (words[0] === 0x2001 && words[1] === 0x0db8) return true; // Doc 2001:db8::/32
+
+  return false;
+}
+
+const ALLOWED_WEB_PORTS = new Set([80, 443, 8080, 8443]);
+
+async function validateSafeUrl(rawUrl, opts = {}) {
   try {
     if (!rawUrl || typeof rawUrl !== "string") {
       return { ok: false, error: "URL inválida ou vazia." };
@@ -6099,41 +6220,87 @@ async function validateSafeUrl(rawUrl) {
       return { ok: false, error: `Protocolo "${parsed.protocol}" não permitido (apenas http/https).` };
     }
     const hostname = parsed.hostname.toLowerCase();
-    if (!hostname || hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".internal")) {
+    const cleanHost = hostname.replace(/^\[|\]$/g, "");
+    if (
+      !hostname ||
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local") ||
+      hostname.endsWith(".internal") ||
+      hostname.endsWith(".onion")
+    ) {
       return { ok: false, error: `Acesso ao host "${hostname}" bloqueado por segurança (SSRF).` };
     }
 
-    if (net.isIP(hostname)) {
-      if (isPrivateIp(hostname)) {
-        return { ok: false, error: `Acesso a IP privado "${hostname}" bloqueado por segurança (SSRF).` };
+    const port = parsed.port
+      ? Number(parsed.port)
+      : parsed.protocol === "https:"
+        ? 443
+        : 80;
+    if (!Number.isFinite(port) || port < 1 || port > 65535) {
+      return { ok: false, error: `Porta inválida "${parsed.port}".` };
+    }
+    if (!opts.allowAnyPort && !ALLOWED_WEB_PORTS.has(port)) {
+      return { ok: false, error: `Porta "${port}" não permitida por segurança (SSRF).` };
+    }
+
+    let validatedIp = null;
+    let family = 4;
+
+    if (net.isIP(cleanHost)) {
+      if (isPrivateIp(cleanHost)) {
+        return { ok: false, error: `Acesso a IP privado "${cleanHost}" bloqueado por segurança (SSRF).` };
       }
+      validatedIp = cleanHost;
+      family = net.isIP(cleanHost);
     } else {
+      let resolvedIps = [];
       try {
-        const addresses = await dns.resolve(hostname);
-        for (const addr of addresses) {
-          if (isPrivateIp(addr)) {
-            return { ok: false, error: `Host "${hostname}" resolve para IP privado "${addr}" (bloqueado por SSRF).` };
-          }
-        }
-      } catch (dnsErr) {
+        const [a4, a6] = await Promise.all([
+          dns.resolve4(hostname).catch(() => []),
+          dns.resolve6(hostname).catch(() => []),
+        ]);
+        resolvedIps = [...a4, ...a6];
+      } catch {}
+
+      if (!resolvedIps.length) {
         try {
-          const lookup = await dns.lookup(hostname);
-          if (lookup && lookup.address && isPrivateIp(lookup.address)) {
-            return { ok: false, error: `Host "${hostname}" resolve para IP privado "${lookup.address}" (bloqueado por SSRF).` };
-          }
+          const l = await dns.lookup(hostname, { all: true });
+          resolvedIps = (l || []).map((x) => x.address);
         } catch (lookupErr) {
           return { ok: false, error: `Não foi possível resolver o domínio "${hostname}": ${lookupErr.message}` };
         }
       }
+
+      if (!resolvedIps.length) {
+        return { ok: false, error: `Não foi possível resolver o domínio "${hostname}".` };
+      }
+
+      for (const addr of resolvedIps) {
+        if (isPrivateIp(addr)) {
+          return { ok: false, error: `Host "${hostname}" resolve para IP privado "${addr}" (bloqueado por SSRF).` };
+        }
+      }
+
+      validatedIp = resolvedIps[0];
+      family = net.isIP(validatedIp) || 4;
     }
 
-    return { ok: true, url: parsed.href, hostname };
+    return {
+      ok: true,
+      url: parsed.href,
+      parsed,
+      hostname,
+      port,
+      validatedIp,
+      family,
+    };
   } catch (err) {
     return { ok: false, error: `URL inválida: ${err.message}` };
   }
 }
 
-// 2. Leitor Seguro de Páginas Web (com limite de tamanho, timeout e redirects controlados)
+// 2. Leitor Seguro de Páginas Web (com limite de tamanho, timeout, redirects validados e socket pinado)
 async function fetchSafeWebPage(rawUrl, maxBytes = 1.5 * 1024 * 1024, timeoutMs = 8000, maxRedirects = 3) {
   let currentUrl = rawUrl;
   let redirects = 0;
@@ -6142,54 +6309,123 @@ async function fetchSafeWebPage(rawUrl, maxBytes = 1.5 * 1024 * 1024, timeoutMs 
     const valid = await validateSafeUrl(currentUrl);
     if (!valid.ok) return { ok: false, error: valid.error };
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const parsed = new URL(valid.url);
+    const isHttps = parsed.protocol === "https:";
+    const mod = isHttps ? https : http;
 
-    try {
-      const resp = await fetch(valid.url, {
-        method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
-          "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    const result = await new Promise((resolve) => {
+      let settled = false;
+      const finish = (val) => {
+        if (!settled) {
+          settled = true;
+          resolve(val);
+        }
+      };
+
+      const req = mod.request(
+        parsed,
+        {
+          method: "GET",
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            Host: parsed.host,
+          },
+          lookup: (hostname, opts, cb) => {
+            if (opts && opts.all) {
+              cb(null, [{ address: valid.validatedIp, family: valid.family }]);
+            } else {
+              cb(null, valid.validatedIp, valid.family);
+            }
+          },
+          timeout: timeoutMs,
         },
-        redirect: "manual",
-        signal: controller.signal,
+        (res) => {
+          const status = res.statusCode || 0;
+          if (status >= 300 && status < 400) {
+            const location = res.headers.location;
+            res.resume();
+            if (!location) {
+              return finish({ ok: false, error: "Redirecionamento sem cabeçalho Location." });
+            }
+            try {
+              const resolved = new URL(location, valid.url).href;
+              return finish({ redirect: true, nextUrl: resolved });
+            } catch (err) {
+              return finish({ ok: false, error: `Redirecionamento inválido: ${err.message}` });
+            }
+          }
+
+          if (status < 200 || status >= 300) {
+            res.resume();
+            return finish({ ok: false, error: `HTTP ${status} ao acessar a página.` });
+          }
+
+          const contentType = res.headers["content-type"] || "";
+          if (
+            contentType &&
+            !contentType.includes("text") &&
+            !contentType.includes("html") &&
+            !contentType.includes("xml") &&
+            !contentType.includes("json")
+          ) {
+            res.resume();
+            return finish({ ok: false, error: `Tipo de conteúdo não suportado (${contentType}).` });
+          }
+
+          const chunks = [];
+          let totalBytes = 0;
+          let truncated = false;
+
+          res.on("data", (chunk) => {
+            if (settled) return;
+            totalBytes += chunk.length;
+            if (totalBytes > maxBytes) {
+              truncated = true;
+              const allowed = chunk.length - (totalBytes - maxBytes);
+              if (allowed > 0) chunks.push(chunk.subarray(0, allowed));
+              res.destroy();
+              const buf = Buffer.concat(chunks);
+              finish({ ok: true, html: buf.toString("utf8"), url: valid.url, truncated: true });
+            } else {
+              chunks.push(chunk);
+            }
+          });
+
+          res.on("end", () => {
+            if (settled) return;
+            const buf = Buffer.concat(chunks);
+            finish({ ok: true, html: buf.toString("utf8"), url: valid.url, truncated });
+          });
+
+          res.on("error", (err) => {
+            finish({ ok: false, error: (err && err.message) || "Erro ao ler resposta." });
+          });
+        }
+      );
+
+      req.on("timeout", () => {
+        req.destroy();
+        finish({ ok: false, error: "Tempo limite de conexão esgotado." });
       });
 
-      clearTimeout(timer);
+      req.on("error", (err) => {
+        finish({ ok: false, error: (err && err.message) || "Erro ao baixar página." });
+      });
 
-      if (resp.status >= 300 && resp.status < 400) {
-        const location = resp.headers.get("location");
-        if (!location) return { ok: false, error: "Redirecionamento sem cabeçalho Location." };
-        const resolved = new URL(location, valid.url).href;
-        currentUrl = resolved;
-        redirects++;
-        continue;
-      }
+      req.end();
+    });
 
-      if (!resp.ok) {
-        return { ok: false, error: `HTTP ${resp.status} ao acessar a página.` };
-      }
-
-      const contentType = resp.headers.get("content-type") || "";
-      if (contentType && !contentType.includes("text") && !contentType.includes("html") && !contentType.includes("xml") && !contentType.includes("json")) {
-        return { ok: false, error: `Tipo de conteúdo não suportado (${contentType}).` };
-      }
-
-      const arrayBuf = await resp.arrayBuffer();
-      if (arrayBuf.byteLength > maxBytes) {
-        const truncated = Buffer.from(arrayBuf.slice(0, maxBytes)).toString("utf8");
-        return { ok: true, html: truncated, url: valid.url, truncated: true };
-      }
-
-      const text = Buffer.from(arrayBuf).toString("utf8");
-      return { ok: true, html: text, url: valid.url };
-    } catch (err) {
-      clearTimeout(timer);
-      const why = err && err.name === "AbortError" ? "Tempo limite de conexão esgotado." : (err && err.message) || "Erro ao baixar página.";
-      return { ok: false, error: why };
+    if (result.redirect) {
+      currentUrl = result.nextUrl;
+      redirects++;
+      continue;
     }
+
+    return result;
   }
 
   return { ok: false, error: "Excedido o limite de redirecionamentos." };
@@ -7388,6 +7624,59 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "100kb" }));
 
+// Verificação de origem segura e proteção anti-CSRF para operações administrativas/destrutivas.
+function isLocalRequest(req) {
+  const ip = req.socket?.remoteAddress || req.ip || "";
+  return (
+    ip === "127.0.0.1" ||
+    ip === "::1" ||
+    ip === "::ffff:127.0.0.1" ||
+    ip.endsWith("127.0.0.1")
+  );
+}
+
+function verifyCsrfAndSafeOrigin(req) {
+  const fetchSite = req.headers["sec-fetch-site"];
+  if (fetchSite === "cross-site") {
+    return { ok: false, status: 403, error: "Requisição cross-site bloqueada por segurança." };
+  }
+  const host = req.headers.host;
+  const origin = req.headers.origin;
+  if (origin && host) {
+    try {
+      const originHost = new URL(origin).host;
+      if (originHost !== host) {
+        return { ok: false, status: 403, error: "Origem não autorizada (CSRF)." };
+      }
+    } catch {
+      return { ok: false, status: 403, error: "Origem inválida." };
+    }
+  }
+  const referer = req.headers.referer;
+  if (referer && host) {
+    try {
+      const refererHost = new URL(referer).host;
+      if (refererHost !== host) {
+        return { ok: false, status: 403, error: "Referer não autorizado (CSRF)." };
+      }
+    } catch {
+      return { ok: false, status: 403, error: "Referer inválido." };
+    }
+  }
+  return { ok: true };
+}
+
+function requireAdminOrLocal(req, res, next) {
+  const csrf = verifyCsrfAndSafeOrigin(req);
+  if (!csrf.ok) {
+    return res.status(csrf.status).json({ error: csrf.error });
+  }
+  if (process.env.LP_REMOTE_ADMIN !== "1" && !isLocalRequest(req)) {
+    return res.status(403).json({ error: "Acesso administrativo restrito à máquina local (localhost)." });
+  }
+  next();
+}
+
 
 // GET /api/subtitles/editor?path=<rel> — documento editável (edição manual,
 // processed ou VTT). Sem artefato → source:null. Também serve de fonte de dados
@@ -7714,7 +8003,7 @@ app.patch("/api/libraries/:id", async (req, res) => {
 // Remove da CONFIGURAÇÃO. Nunca aceita `?path=` nem body com absolute path (a
 // decisão é por id). Id inexistente → 404; jobs ativos → 409.
 // NENHUM arquivo da biblioteca é tocado; progresso e caches permanecem intactos.
-app.delete("/api/libraries/:id", async (req, res) => {
+app.delete("/api/libraries/:id", requireAdminOrLocal, async (req, res) => {
   if (
     (req.query && req.query.path !== undefined) ||
     (req.body && typeof req.body.path === "string")
@@ -7797,10 +8086,25 @@ app.post("/api/progress", async (req, res) => {
   }
 });
 
-app.post("/api/progress/clear", async (req, res) => {
-  const { coursePath } = req.body || {};
+app.post("/api/progress/clear", requireAdminOrLocal, async (req, res) => {
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+    return res.status(400).json({ error: "Corpo da requisição deve ser um objeto JSON válido." });
+  }
+  const { coursePath, all } = req.body;
   const requestId =
-    req.body && typeof req.body.requestId === "string" ? req.body.requestId : undefined;
+    typeof req.body.requestId === "string" ? req.body.requestId : undefined;
+
+  const hasCoursePath = "coursePath" in req.body;
+  if (!hasCoursePath && all !== true) {
+    return res.status(400).json({
+      error: "Payload ambíguo: para apagar todo o progresso envie { all: true }, ou informe { coursePath }.",
+    });
+  }
+
+  if (hasCoursePath && coursePath !== null && (typeof coursePath !== "string" || !coursePath.trim())) {
+    return res.status(400).json({ error: "invalid course path" });
+  }
+
   const lib = requestLibrary(req);
   if (!lib) return res.status(400).json({ error: "unknown library" });
   const safeCourse =
@@ -7865,23 +8169,24 @@ app.get("/api/video/fallback", async (req, res) => {
 });
 
 // Limpa o cache de transcoding (spec 29). NUNCA toca progress.json.
-app.post("/api/transcode/clear", async (req, res) => {
+app.post("/api/transcode/clear", requireAdminOrLocal, async (req, res) => {
   try {
-    const procs = [...transcodeJobs.values()]
-      .filter((j) => j.proc)
-      .map((j) => j.proc);
+    const allJobs = [...transcodeJobs.values()];
+    for (const j of allJobs) {
+      j.status = "cancelled";
+      if (j.proc) {
+        try { j.proc.kill("SIGTERM"); } catch {}
+      }
+    }
     transcodeJobs.clear();
     transcodeQueue.length = 0;
-    for (const p of procs) {
-      try {
-        p.kill("SIGTERM");
-      } catch {}
-    }
+    activeTranscodes = 0;
     setTimeout(() => {
-      for (const p of procs) {
-        try {
-          p.kill("SIGKILL");
-        } catch {}
+      for (const j of allJobs) {
+        if (j.proc) {
+          try { j.proc.kill("SIGKILL"); } catch {}
+          j.proc = null;
+        }
       }
     }, 2000);
     const files = await fs.readdir(TRANSCODE_DIR).catch(() => []);
@@ -7988,8 +8293,11 @@ app.get("/api/storage/status", async (req, res) => {
       appFreeBytes: await statfsFree(DATA_DIR),
       workspace: {
         mode: cfg.workspace.mode,
-        dir: cfg.workspace.dir,
-        dirResolved: wsDir,
+        dir: sanitizeDisplayPath(cfg.workspace.dir),
+        dirResolved:
+          cfg.workspace.mode === "custom" && wsDir
+            ? sanitizeDisplayPath(wsDir)
+            : "Temporário do sistema (automático)",
         freeBytes: wsDir ? await getWorkspaceFreeBytes(wsDir) : null,
       },
     });
@@ -8070,7 +8378,7 @@ app.post("/api/ai/config", async (req, res) => {
   }
 });
 
-app.post("/api/ai/reset", async (req, res) => {
+app.post("/api/ai/reset", requireAdminOrLocal, async (req, res) => {
   try {
     await fs.rm(AI_CONFIG_FILE, { force: true });
     res.json(maskAiConfig(await loadAiConfig()));
@@ -8110,6 +8418,12 @@ app.post("/api/ai/llm/test", async (req, res) => {
       const endpoint = baseUrl.endsWith("/chat/completions")
         ? baseUrl
         : `${baseUrl}/chat/completions`;
+
+      const safeCheck = await validateSafeUrl(endpoint);
+      if (!safeCheck.ok) {
+        return res.status(400).json({ ok: false, error: safeCheck.error });
+      }
+
       const resp = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -8122,6 +8436,7 @@ app.post("/api/ai/llm/test", async (req, res) => {
           max_tokens: 5,
           temperature: 0,
         }),
+        redirect: "manual",
         signal: ctrl.signal,
       });
       const latencyMs = Date.now() - started;
@@ -8299,24 +8614,37 @@ app.post("/api/tutor/chat", async (req, res) => {
         AI_LLM_PROVIDER_TYPES.find((t) => t.id === provider.type) ||
         AI_LLM_PROVIDER_TYPES[0];
       const url = provider.baseUrl.replace(/\/+$/, "") + type.chatEndpoint;
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(provider.apiKey ? { Authorization: "Bearer " + provider.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...messages
-              .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
-              .map((m) => ({ role: m.role, content: m.content.slice(0, 16000) })),
-          ],
-          temperature: cfg.tutor.temperature,
-          stream: false,
-        }),
-      });
+      const timeoutMs = (cfg.advanced?.llmTimeoutMs || 15000) * 3;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      let resp;
+      try {
+        resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(provider.apiKey ? { Authorization: "Bearer " + provider.apiKey } : {}),
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              ...messages
+                .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+                .map((m) => ({ role: m.role, content: m.content.slice(0, 16000) })),
+            ],
+            temperature: cfg.tutor.temperature,
+            stream: false,
+          }),
+          signal: ctrl.signal,
+        });
+      } catch (err) {
+        clearTimeout(timer);
+        const why = err && err.name === "AbortError" ? "Tempo limite de resposta do modelo esgotado." : (err && err.message) || "Erro de conexão com o provedor LLM.";
+        return res.status(504).json({ error: sanitizeTestError(why) });
+      } finally {
+        clearTimeout(timer);
+      }
       if (!resp.ok) {
         return res.status(resp.status).json({ error: "Falha na chamada ao LLM." });
       }
@@ -8401,23 +8729,35 @@ app.post("/api/study/quiz", async (req, res) => {
       AI_LLM_PROVIDER_TYPES.find((t) => t.id === provider.type) ||
       AI_LLM_PROVIDER_TYPES[0];
     const url = provider.baseUrl.replace(/\/+$/, "") + type.chatEndpoint;
-
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(provider.apiKey ? { Authorization: "Bearer " + provider.apiKey } : {}),
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Gere o quiz com exatamente ${count} questões com base no conteúdo da aula "${ctx.lessonTitle}".` },
-        ],
-        temperature: 0.2,
-        stream: false,
-      }),
-    });
+    const timeoutMs = (cfg.advanced?.llmTimeoutMs || 15000) * 3;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    let resp;
+    try {
+      resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(provider.apiKey ? { Authorization: "Bearer " + provider.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Gere o quiz com exatamente ${count} questões com base no conteúdo da aula "${ctx.lessonTitle}".` },
+          ],
+          temperature: 0.2,
+          stream: false,
+        }),
+        signal: ctrl.signal,
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      const why = err && err.name === "AbortError" ? "Tempo limite para geração do quiz esgotado." : (err && err.message) || "Falha na chamada ao LLM.";
+      return res.status(504).json({ ok: false, error: sanitizeTestError(why) });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!resp.ok) {
       let errMsg = `Falha na chamada ao LLM (HTTP ${resp.status})`;
@@ -8495,23 +8835,35 @@ app.post("/api/study/flashcards", async (req, res) => {
       AI_LLM_PROVIDER_TYPES.find((t) => t.id === provider.type) ||
       AI_LLM_PROVIDER_TYPES[0];
     const url = provider.baseUrl.replace(/\/+$/, "") + type.chatEndpoint;
-
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(provider.apiKey ? { Authorization: "Bearer " + provider.apiKey } : {}),
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Gere os flashcards com exatamente ${count} cartões com base no conteúdo da aula "${ctx.lessonTitle}".` },
-        ],
-        temperature: 0.2,
-        stream: false,
-      }),
-    });
+    const timeoutMs = (cfg.advanced?.llmTimeoutMs || 15000) * 3;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    let resp;
+    try {
+      resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(provider.apiKey ? { Authorization: "Bearer " + provider.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Gere os flashcards com exatamente ${count} cartões com base no conteúdo da aula "${ctx.lessonTitle}".` },
+          ],
+          temperature: 0.2,
+          stream: false,
+        }),
+        signal: ctrl.signal,
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      const why = err && err.name === "AbortError" ? "Tempo limite para geração de flashcards esgotado." : (err && err.message) || "Falha na chamada ao LLM.";
+      return res.status(504).json({ ok: false, error: sanitizeTestError(why) });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!resp.ok) {
       let errMsg = `Falha na chamada ao LLM (HTTP ${resp.status})`;
@@ -8863,9 +9215,17 @@ app.post("/api/subtitles/cancel", async (req, res) => {
   }
 });
 
-// Exclui a legenda de um vídeo (path) ou todo o cache de legendas (sem path).
-app.post("/api/subtitles/clear", async (req, res) => {
-  const { path: relPath } = req.body || {};
+app.post("/api/subtitles/clear", requireAdminOrLocal, async (req, res) => {
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+    return res.status(400).json({ error: "Corpo da requisição deve ser um objeto JSON válido." });
+  }
+  const { path: relPath, all } = req.body;
+  const hasPath = "path" in req.body;
+  if (!hasPath && all !== true) {
+    return res.status(400).json({
+      error: "Payload ambíguo: para apagar todas as legendas envie { all: true }, ou informe { path }.",
+    });
+  }
   const lib = requestLibrary(req);
   if (!lib) return res.status(400).json({ error: "unknown library" });
   let rel = null;
@@ -9058,7 +9418,7 @@ app.get("/media/*", async (req, res, next) => {
     return res.status(404).end();
   }
   const st = await fs.stat(parsed.safe.abs).catch(() => null);
-  if (!st) return res.status(404).end();
+  if (!st || !st.isFile()) return res.status(404).end();
   // Materiais com conteúdo ativo (HTML/SVG/XML/JS/JSON) são servidos como
   // download: nunca renderizados no origin da app (XSS via material). nosniff
   // vale para todos os tipos (anti MIME-sniffing). Vídeos/imagens continuam
@@ -9389,8 +9749,11 @@ if (require.main === module) {
     .then(() => {
       server = app.listen(PORT, HOST, () => {
         console.log(
-          `Local Player rodando em http://${HOST || "0.0.0.0"}:${PORT}`,
+          `Local Player rodando em http://${HOST}:${PORT}`,
         );
+        if (HOST === "0.0.0.0" || HOST === "::") {
+          console.log("[SECURITY] Escutando em todas as interfaces. Operações administrativas destrutivas restritas a localhost.");
+        }
         const libCount = getLibraries().length;
         console.log(`Bibliotecas: ${libCount} (padrão: ${ROOT})`);
         openBrowserInBackground();
@@ -9491,6 +9854,12 @@ if (require.main === module) {
     updateProgress,
     sanitizeQuizResult,
     sanitizeFlashcardsResult,
+    verifyCsrfAndSafeOrigin,
+    isLocalRequest,
+    sanitizeDisplayPath,
+    refreshHeavyMax,
+    heavySlots,
+    app,
   };
 }
 

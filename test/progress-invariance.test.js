@@ -385,8 +385,8 @@ test("T9+T10+T11 clear explícito (curso delimitado / global) continua funcionan
     assert.ok(g.data[K(libId, "Curso A2/Aula 01.mp4")], "Curso A2 preservado (delimitação)");
     assert.ok(g.data[K(libId, "Curso B/Aula 01.mp4")], "Curso B preservado");
 
-    // Clear global: apaga tudo.
-    c = await postJson(srv.base, `/api/progress/clear?libraryId=${libId}`, {});
+    // Clear global: apaga tudo com all: true explícito.
+    c = await postJson(srv.base, `/api/progress/clear?libraryId=${libId}`, { all: true });
     assert.strictEqual(c.status, 200);
     g = await getJson(srv.base, "/api/progress");
     assert.strictEqual(Object.keys(g.data).length, 0, "clear global esvazia");

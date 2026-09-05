@@ -662,8 +662,8 @@ function collectAllFolders(root, out = []) {
 
 // ---------- Home ----------
 function clearProgress(coursePath, libId) {
-  // coursePath null = limpar tudo; senão limpa o escopo da biblioteca da aula.
-  const body = { coursePath: coursePath ?? null };
+  // coursePath null = limpar tudo com all: true explícito; senão limpa o escopo da aula.
+  const body = coursePath != null ? { coursePath } : { all: true, coursePath: null };
   if (isExternalLib(libId)) body.libraryId = libId;
   fetch("/api/progress/clear", {
     method: "POST",
@@ -678,7 +678,11 @@ function clearProgress(coursePath, libId) {
 // Remove o cache de vídeos transcodificados (data/transcoded/) e cancela
 // conversões em andamento. Nunca toca em progress.json.
 function clearTranscodeCache() {
-  fetch("/api/transcode/clear", { method: "POST" }).catch(() => {});
+  fetch("/api/transcode/clear", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  }).catch(() => {});
 }
 
 // Diálogo de confirmação próprio (sem `confirm()` nativo): overlay + modal com
@@ -2992,7 +2996,11 @@ function bindAiAdvanced(panel) {
         danger: true,
         onConfirm: async () => {
           try {
-            const res = await fetch("/api/subtitles/clear", { method: "POST" });
+            const res = await fetch("/api/subtitles/clear", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ all: true }),
+            });
             if (!res.ok) throw new Error("clear failed");
             await loadAiData();
             renderAiPanelInto(panel);
@@ -3013,7 +3021,11 @@ function bindAiAdvanced(panel) {
       cancelLabel: "Cancelar",
       danger: true,
       onConfirm: async () => {
-        await fetch("/api/ai/reset", { method: "POST" });
+        await fetch("/api/ai/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm: true }),
+        });
         await loadAiData();
         aiState.editingProviderId = null;
         aiState.form = null;
