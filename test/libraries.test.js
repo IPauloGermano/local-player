@@ -23,6 +23,7 @@ const {
   resolveLibraryRel,
   resolveSafeRelPath,
   scanLibrary,
+  librarySummary,
   transcodeCacheName,
   subtitleCacheName,
   courseSubtitlePath,
@@ -271,4 +272,38 @@ test("scanDir: nome de pasta com sufixo (TP) vira tópico (sem inferência)", as
 test("scanDir: path traversal bloqueado em resolveSafeRelPath", () => {
   const safe = resolveSafeRelPath("../../etc/passwd");
   assert.strictEqual(safe, null);
+});
+
+// --- librarySummary ----------------------------------------------------------
+
+test("librarySummary: biblioteca desativada retorna status 'disabled' e enabled: false", () => {
+  const lib = { id: "lib-off", name: "Off Lib", path: "/mnt/off", enabled: false };
+  const summary = librarySummary(lib, null);
+  assert.strictEqual(summary.id, "lib-off");
+  assert.strictEqual(summary.enabled, false);
+  assert.strictEqual(summary.status, "disabled");
+  assert.strictEqual(summary.tree, null);
+  assert.strictEqual(summary.courseCount, 0);
+});
+
+test("librarySummary: biblioteca ativada preserva status e cursos do cache", () => {
+  const lib = { id: "lib-on", name: "On Lib", path: "/mnt/on", enabled: true };
+  const mockCache = {
+    status: "ok",
+    lastScanAt: 123456,
+    error: null,
+    tree: {
+      type: "folder",
+      children: [
+        { type: "folder", name: "Curso 1", children: [{ type: "video", name: "Aula 1.mp4" }] },
+        { type: "file", name: "Doc.pdf" },
+      ],
+    },
+  };
+  const summary = librarySummary(lib, mockCache);
+  assert.strictEqual(summary.id, "lib-on");
+  assert.strictEqual(summary.enabled, true);
+  assert.strictEqual(summary.status, "ok");
+  assert.strictEqual(summary.courseCount, 1);
+  assert.strictEqual(summary.tree, mockCache.tree);
 });

@@ -1156,7 +1156,7 @@ function renderSettingsBibliotecas() {
             : `<span class="lib-badge lib-badge-ok">✓ Disponível</span>`;
       const pathText = isDefault && !lib.path ? "Biblioteca da instalação" : lib.path;
       const actions = [
-        `<button type="button" class="lib-btn" data-action="rescan">Reescanear</button>`,
+        `<button type="button" class="lib-btn" data-action="rescan"${lib.enabled === false ? " disabled" : ""}>Reescanear</button>`,
         `<button type="button" class="lib-btn" data-action="edit">Editar</button>`,
         `<button type="button" class="lib-btn" data-action="toggle">${
           lib.enabled === false ? "Ativar" : "Desativar"
@@ -3144,10 +3144,11 @@ function renderNodeCard(node) {
   }
   const stats = getNodeProgressStats(node, progFor);
   const pct = stats.pct;
+  const isCompleted = stats.total > 0 && stats.done === stats.total;
   const coverImage = node.coverImage ? mediaUrl(node.coverImage, node.libId) : null;
   const href = courseRoute(node);
   return `
-    <div class="course-card">
+    <div class="course-card ${isCompleted ? "is-completed" : ""}">
       <a class="course-card-link" href="#${href}">
         <div class="course-card-thumb ${coverImage ? "has-image" : ""}"${coverImage ? "" : ` style="background:${courseColor(node.name)}"`}>
           ${coverImage ? `<img src="${coverImage}" alt="${escapeHtml(courseTitle(node))}" />` : initials(courseTitle(node))}
@@ -3443,13 +3444,14 @@ function renderFolderChildren(folderNode, depth = 1) {
     if (!isSidebarNavigableNode(child)) continue;
     if (child.type === "folder" || child.type === "topic") {
       const stats = countStats(child);
+      const isCompleted = stats.total > 0 && stats.done === stats.total;
       const isOpen = expandedFolders.has(child.path);
       // data-depth permite ao CSS diferenciar módulo (1) de submódulo (2+) e
       // capar a indentação em níveis profundos. Tabindex/role/aria-expanded
       // tornam a pasta operável por teclado.
       html += `
-        <div class="tree-folder">
-          <div class="tree-folder-head ${isOpen ? "open" : ""}" data-folder="${encodeURIComponent(child.path)}" data-depth="${Math.min(depth, 4)}" role="button" tabindex="0" aria-expanded="${isOpen}">
+        <div class="tree-folder ${isCompleted ? "completed" : ""}">
+          <div class="tree-folder-head ${isOpen ? "open" : ""} ${isCompleted ? "completed" : ""}" data-folder="${encodeURIComponent(child.path)}" data-depth="${Math.min(depth, 4)}" role="button" tabindex="0" aria-expanded="${isOpen}">
             <span class="chev">▶</span>
             <span class="folder-title"><span class="folder-title-inner">${escapeHtml(moduleTitle(child))}</span></span>
             <span class="folder-progress">${stats.done}/${stats.total}</span>
@@ -4377,7 +4379,7 @@ function renderPlayerAndLesson() {
                 </div>
                 <div class="pc-menu-group pc-menu-sep"></div>
                 <div class="pc-menu-group">
-                  <button type="button" class="pc-menu-item pc-cc-action" id="pc-cc-action" hidden></button>
+                  <button type="button" class="pc-menu-item pc-cc-action" id="pc-cc-action" data-cc="action" hidden></button>
                   <span class="pc-cc-status" id="pc-cc-status"></span>
                 </div>
               </div>
@@ -4397,7 +4399,7 @@ function renderPlayerAndLesson() {
                 <div class="pc-menu-group pc-more-narrow" id="pc-more-cc-group">
                   <span class="pc-menu-label">Legendas</span>
                   <div class="pc-cc-langs" id="pc-more-cc-langs"></div>
-                  <button type="button" class="pc-menu-item pc-cc-action" id="pc-more-cc-action" hidden></button>
+                  <button type="button" class="pc-menu-item pc-cc-action" id="pc-more-cc-action" data-cc="action" hidden></button>
                   <span class="pc-cc-status" id="pc-more-cc-status"></span>
                 </div>
               </div>
@@ -5096,6 +5098,40 @@ function syncSubtitleCcUi() {
     const el = document.getElementById(id);
     if (el && el.innerHTML !== langsHtml) el.innerHTML = langsHtml;
   });
+  // Formata mensagens de erro de legenda para exibição amigável e resolutiva
+  function formatSubtitleErrorMessage(error) {
+    if (!error) return "Erro ao gerar legenda. Clique em 'Tentar novamente'.";
+    const err = String(error).trim();
+    if (err.includes("Binário do Whisper") || err.includes("binary_not_installed")) {
+      return "Whisper não instalado. Configure o executável em Configurações → Central de IA.";
+    }
+    if (err.includes("Modelo do Whisper") || err.includes("model_not_installed")) {
+      return "Modelo do Whisper não instalado. Baixe o modelo em Configurações → Central de IA.";
+    }
+    if (err.includes("Transcrição desabilitada")) {
+      return "A transcrição está desativada. Ative em Configurações → Central de IA.";
+    }
+    if (err.includes("não possui faixa de áudio") || err.includes("vazio")) {
+      return "O vídeo não possui áudio audível para gerar legendas.";
+    }
+    if (err.includes("Espaço insuficiente")) {
+      return err;
+    }
+    if (err.includes("Tempo limite")) {
+      return "Tempo limite de processamento excedido. Clique em 'Tentar novamente'.";
+    }
+    if (err.includes("FFmpeg") || err.includes("ffmpeg")) {
+      return `Falha no FFmpeg: ${err}. Verifique se o FFmpeg está instalado.`;
+    }
+    if (err.includes("fora da biblioteca")) {
+      return "O arquivo do vídeo está fora do diretório da biblioteca.";
+    }
+    if (err.includes("não encontrado")) {
+      return "Arquivo de vídeo não encontrado no disco.";
+    }
+    return `Erro: ${err}. Clique em 'Tentar novamente'.`;
+  }
+
   // Ação contextual (Gerar/Regenerar) e linha de status.
   const statusEls = [
     document.getElementById("pc-cc-status"),
@@ -5108,12 +5144,14 @@ function syncSubtitleCcUi() {
   let statusText = "";
   let actionText = "";
   let showAction = false;
+  const isError = kind === "failed";
   if (kind === "generating") statusText = "Gerando legenda…";
   else if (kind === "waiting") statusText = "Aguardando o dispositivo…";
   else if (kind === "no-translate") statusText = "Tradução indisponível — configure um LLM";
   else if (kind === "failed") {
-    statusText = "Erro ao gerar — tente novamente";
-    actionText = "Gerar legenda";
+    const errorDetail = subtitleState.lastError || "";
+    statusText = formatSubtitleErrorMessage(errorDetail);
+    actionText = "Tentar novamente";
     showAction = true;
   } else if (kind === "unavailable") {
     actionText = "Gerar legenda";
@@ -5125,6 +5163,9 @@ function syncSubtitleCcUi() {
   statusEls.forEach((el) => {
     el.textContent = statusText;
     el.hidden = !statusText;
+    el.classList.toggle("is-error", isError);
+    if (isError) el.title = statusText;
+    else el.removeAttribute("title");
   });
   actionEls.forEach((el) => {
     el.textContent = actionText;
@@ -5135,12 +5176,13 @@ function syncSubtitleCcUi() {
 
 // Badge não-bloqueante sobre o player: feedback VISÍVEL de que a legenda está
 // sendo gerada (ou aguardando a fonte) — o dot do botão CC sozinho era sutil
-// demais. Some quando pronto/falha/desativado. Reusa o spinner do transcode.
+// demais. Some quando pronto/desativado; exibe aviso claro em falha.
 function updateSubtitleBadge() {
   const badge = document.getElementById("player-substatus");
   if (!badge) return;
   const kind = subtitleState.ccKind || null;
   let msg = "";
+  const isError = kind === "failed";
   if (kind === "generating") {
     const isTranslation =
       subtitleState.lang &&
@@ -5153,7 +5195,23 @@ function updateSubtitleBadge() {
     }
   } else if (kind === "waiting") {
     msg = "Aguardando o dispositivo…";
+  } else if (kind === "failed") {
+    const err = subtitleState.lastError || "";
+    let shortReason = "Falha ao gerar legenda";
+    if (err.includes("Binário") || err.includes("binary_not_installed")) {
+      shortReason = "Whisper não instalado";
+    } else if (err.includes("Modelo") || err.includes("model_not_installed")) {
+      shortReason = "Modelo não instalado";
+    } else if (err.includes("faixa de áudio")) {
+      shortReason = "Vídeo sem áudio audível";
+    } else if (err.includes("Espaço insuficiente")) {
+      shortReason = "Espaço insuficiente em disco";
+    } else if (err.includes("Tempo limite")) {
+      shortReason = "Tempo limite excedido";
+    }
+    msg = `⚠ ${shortReason} — abra o menu CC para detalhes`;
   }
+  badge.classList.toggle("is-error", isError);
   badge.hidden = !msg;
   const textEl = badge.querySelector("#player-substatus-text");
   if (textEl && textEl.textContent !== msg) textEl.textContent = msg;
@@ -6966,21 +7024,39 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
     return l ? "&lang=" + encodeURIComponent(l) : "";
   };
   // Ação do menu CC (Gerar/Regenerar): registrada para o delegation do player.
-  // Força regeneração quando já existe ou falhou; re-sonda até ficar pronta.
-  subtitleGenerateApi = () => {
-    const force = stReady || stFailed ? "&force=1" : "";
+  // Força regeneração quando solicitado pelo usuário; cancela jobs órfãos e re-sonda até ficar pronta.
+  subtitleGenerateApi = async () => {
+    subtitleState.lastError = null;
     subtitleState.ccKind = "generating";
     syncSubtitleCcUi();
-    fetch(
-      "/api/subtitles/generate?path=" +
-        encodeURIComponent(rel) +
-        libQuery(video) +
-        langQuery() +
-        "&priority=0" +
-        force,
-      { method: "POST" },
-    ).catch(() => {});
+    try {
+      const res = await fetch(
+        "/api/subtitles/generate?path=" +
+          encodeURIComponent(rel) +
+          libQuery(video) +
+          langQuery() +
+          "&priority=0&force=1",
+        { method: "POST" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || (data && data.ok === false)) {
+        stReady = false;
+        stFailed = true;
+        subtitleState.lastError = (data && data.error) || "Falha ao iniciar geração de legendas";
+        setCc("failed");
+        stopPolling();
+        return;
+      }
+    } catch (err) {
+      stReady = false;
+      stFailed = true;
+      subtitleState.lastError = (err && err.message) || "Erro de conexão ao solicitar legendas";
+      setCc("failed");
+      stopPolling();
+      return;
+    }
     if (!subtitlePollTimer) subtitlePollTimer = setInterval(check, 2500);
+    check().catch(() => {});
   };
   // Converte o estado sondado em exibição do botão CC (dot + tooltip + menu).
   const setCc = (kind) => {
@@ -7011,6 +7087,9 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
       );
       if (!res.ok) throw new Error("http " + res.status);
       st = await res.json();
+      if (st && st.error) {
+        subtitleState.lastError = st.error;
+      }
       // Progresso real do job (whisper -pp) para o badge "Gerando legenda…".
       subtitleState.percent = typeof st.percent === "number" ? st.percent : null;
       // Língua-fonte real e possibilidade de tradução vêm da sondagem; o
@@ -7098,6 +7177,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
     if (st.status === "failed") {
       stReady = false;
       stFailed = true;
+      subtitleState.lastError = (st && st.error) || subtitleState.lastError || null;
       setCc("failed");
       stopPolling();
       return;

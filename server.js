@@ -537,6 +537,7 @@ function chooseCoverImage(currentCover, childCovers) {
 // file descriptors abertos. Este pool executa `fn` sobre `items` com no
 // máximo `limit` chamadas simultâneas e preserva a ordem por índice.
 const SCAN_STAT_CONCURRENCY = 16;
+const SCAN_DIR_CONCURRENCY = 8;
 async function mapLimit(items, limit, fn) {
   const results = new Array(items.length);
   let next = 0;
@@ -584,14 +585,44 @@ async function scanDir(absDir, relDir) {
   dirs.sort(naturalSort);
   files.sort(naturalSort);
 
+  const directCover = pickCoverImage(files, relDir);
+
+  // Filtra antes de estat: ignora extensões e a capa direta (mesma lógica
+  // sequencial anterior), montando a lista de candidatos com os dados fixos.
+  const candidates = [];
+  for (const entry of files) {
+    const ext = path.extname(entry.name).toLowerCase();
+    if (IGNORED_EXT.has(ext)) continue;
+    const entryRel = relDir ? `${relDir}/${entry.name}` : entry.name;
+    // A imagem de capa/banner é usada como thumbnail do card, não deve
+    // aparecer como material na sidebar nem nos resultados de busca.
+    if (entryRel === directCover) continue;
+    candidates.push({ entry, ext, entryRel });
+  }
+
+  // Executa o scan das subpastas (com concorrência controlada) e o stat dos
+  // arquivos da pasta atual em paralelo. A ordem é preservada por mapLimit.
+  const [subResults, sizes] = await Promise.all([
+    mapLimit(dirs, SCAN_DIR_CONCURRENCY, async (entry) => {
+      const entryRel = relDir ? `${relDir}/${entry.name}` : entry.name;
+      const entryAbs = path.join(absDir, entry.name);
+      const sub = await scanDir(entryAbs, entryRel);
+      return { entry, entryRel, sub };
+    }),
+    mapLimit(candidates, SCAN_STAT_CONCURRENCY, async (c) => {
+      try {
+        return (await fs.stat(path.join(absDir, c.entry.name))).size;
+      } catch {
+        return null;
+      }
+    }),
+  ]);
+
   const children = [];
   let videoCount = 0;
   const childCoverCandidates = [];
 
-  for (const entry of dirs) {
-    const entryRel = relDir ? `${relDir}/${entry.name}` : entry.name;
-    const entryAbs = path.join(absDir, entry.name);
-    const sub = await scanDir(entryAbs, entryRel);
+  for (const { entry, entryRel, sub } of subResults) {
     videoCount += sub.videoCount;
     children.push({
       // Classificação explícita: "topic" (marcador `.topic` ou nome com "(TP)")
@@ -621,33 +652,6 @@ async function scanDir(absDir, relDir) {
       });
     }
   }
-
-  const directCover = pickCoverImage(files, relDir);
-
-  // Filtra antes de estat: ignora extensões e a capa direta (mesma lógica
-  // sequencial anterior), montando a lista de candidatos com os dados fixos.
-  const candidates = [];
-  for (const entry of files) {
-    const ext = path.extname(entry.name).toLowerCase();
-    if (IGNORED_EXT.has(ext)) continue;
-    const entryRel = relDir ? `${relDir}/${entry.name}` : entry.name;
-    // A imagem de capa/banner é usada como thumbnail do card, não deve
-    // aparecer como material na sidebar nem nos resultados de busca.
-    if (entryRel === directCover) continue;
-    candidates.push({ entry, ext, entryRel });
-  }
-
-  // BUG-005: os stats rodam em paralelo com limite de concorrência; a ordem
-  // é preservada (mapLimit preenche por índice), então os filhos continuam
-  // na mesma ordem de `files.sort(naturalSort)`. Arquivo que some/ilegível
-  // no meio do scan vira size === null e é pulado — como o `continue` antes.
-  const sizes = await mapLimit(candidates, SCAN_STAT_CONCURRENCY, async (c) => {
-    try {
-      return (await fs.stat(path.join(absDir, c.entry.name))).size;
-    } catch {
-      return null;
-    }
-  });
 
   for (let i = 0; i < candidates.length; i++) {
     const { entry, ext, entryRel } = candidates[i];
@@ -723,7 +727,54 @@ async function scanLibrary(lib) {
   }
 }
 
-// Re-escaneia UMA biblioteca (deduplicado por id) e atualiza o cache dela.
+function libraryTreeCacheFile(libId) {
+  return path.join(DATA_DIR, `tree-cache-${libId}.json`);
+}
+
+async function saveLibraryTreeCache(lib, scanned) {
+  if (!scanned || scanned.status !== "ok" || !scanned.tree) return;
+  const file = libraryTreeCacheFile(lib.id);
+  const payload = {
+    version: 1,
+    libraryId: lib.id,
+    libraryPath: lib.path,
+    status: scanned.status,
+    lastScanAt: scanned.lastScanAt || Date.now(),
+    tree: scanned.tree,
+  };
+  try {
+    await writeFileAtomic(file, JSON.stringify(payload));
+  } catch (err) {
+    console.error(`[TREE] Falha ao persistir cache da biblioteca ${lib.name || lib.id}:`, err && err.message);
+  }
+}
+
+async function loadLibraryTreeCache(lib) {
+  const file = libraryTreeCacheFile(lib.id);
+  const res = await readJsonFile(file);
+  if (!res.ok || !res.parsed || !res.parsed.tree) return null;
+  const doc = res.parsed;
+  if (doc.libraryPath && path.resolve(doc.libraryPath) !== path.resolve(lib.path)) {
+    return null;
+  }
+  const st = await fs.stat(lib.path).catch(() => null);
+  if (!st || !st.isDirectory()) {
+    return {
+      status: "unavailable",
+      error: "not a directory",
+      tree: null,
+      lastScanAt: doc.lastScanAt || null,
+    };
+  }
+  return {
+    status: "ok",
+    error: null,
+    lastScanAt: doc.lastScanAt || Date.now(),
+    tree: doc.tree,
+  };
+}
+
+// Re-escaneia UMA biblioteca (deduplicado por id) e atualiza o cache dela (em memória e em disco).
 // Retorna o summary com status/lastScanAt/error atuais.
 async function rescanLibrary(lib) {
   if (scanningLibraryIds.has(lib.id)) {
@@ -736,6 +787,9 @@ async function rescanLibrary(lib) {
     const scanned = await scanLibrary(lib);
     scanned.lastScanAt = Date.now();
     treeCaches.set(lib.id, scanned);
+    if (scanned.status === "ok") {
+      await saveLibraryTreeCache(lib, scanned);
+    }
     return librarySummary(lib, scanned);
   } finally {
     scanningLibraryIds.delete(lib.id);
@@ -744,13 +798,26 @@ async function rescanLibrary(lib) {
 
 // Árvore consolidada (opção A da auditoria): lista de { library, tree }.
 // Scan SEQUENCIAL das bibliotecas habilitadas (pendrive/disco externo: paralelo
-// martela o barramento/USB). `force` re-escaneia tudo; desativadas não escaneiam.
+// martela o barramento/USB). `force` re-escaneia tudo; desativadas não escaneiam,
+// mas são mantidas na lista (com status 'disabled' e sem árvore) para que o
+// frontend em Configurações > Bibliotecas possa exibi-las, reativá-las ou removê-las.
+// Se houver cache persistido em disco e não for `force`, o carregamento é instantâneo.
 async function getTree(force) {
   await loadLibraries();
-  const libraries = getLibraries().filter((l) => l.enabled !== false);
+  const libraries = getLibraries();
   const results = [];
   for (const lib of libraries) {
-    const cached = treeCaches.get(lib.id);
+    if (lib.enabled === false) {
+      results.push(librarySummary(lib, null));
+      continue;
+    }
+    let cached = treeCaches.get(lib.id);
+    if (!cached && !force) {
+      cached = await loadLibraryTreeCache(lib).catch(() => null);
+      if (cached) {
+        treeCaches.set(lib.id, cached);
+      }
+    }
     if (!cached || force) {
       results.push(await rescanLibrary(lib));
     } else {
@@ -1448,6 +1515,18 @@ async function initPersistence() {
       await updateProgress(() => {}, { allowShrink: false });
     }
   } catch {}
+
+  // Pré-carrega caches de árvore persistidos em disco para inicialização instantânea
+  for (const lib of getLibraries()) {
+    if (lib.enabled !== false && !treeCaches.has(lib.id)) {
+      try {
+        const cached = await loadLibraryTreeCache(lib);
+        if (cached) {
+          treeCaches.set(lib.id, cached);
+        }
+      } catch {}
+    }
+  }
 }
 
 // ==========================================================================
@@ -1632,13 +1711,14 @@ function librarySummary(lib, cached) {
       );
     courseCount = count(tree.children);
   }
+  const isEnabled = lib.enabled !== false;
   return {
     id: lib.id,
     name: lib.name,
     path: lib.path,
-    enabled: lib.enabled !== false,
+    enabled: isEnabled,
     isDefault: lib.isDefault === true,
-    status: cached ? cached.status : "unknown",
+    status: !isEnabled ? "disabled" : (cached ? cached.status : "unknown"),
     error: cached ? cached.error : null,
     lastScanAt: cached ? cached.lastScanAt : null,
     courseCount,
@@ -3603,12 +3683,18 @@ function startSubtitleJob(lib, rel, abs, opts = {}) {
     "translating",
   ]);
   if (existing && active.has(existing.status)) {
-    const promoted = priority < existing.priority;
-    if (promoted) {
-      updateSubtitleJob(hash, { priority });
-      console.log(`[SUBTITLE] promovido P${priority}: ${rel}${isTranslation ? " → " + opts.lang : ""}`);
+    if (force) {
+      console.log(`[SUBTITLE] force solicitado para job ativo; cancelando execução anterior para reiniciar: ${rel}`);
+      cancelSubtitleJob(hash);
+      activeSubtitleHashes.delete(hash);
+    } else {
+      const promoted = priority < existing.priority;
+      if (promoted) {
+        updateSubtitleJob(hash, { priority });
+        console.log(`[SUBTITLE] promovido P${priority}: ${rel}${isTranslation ? " → " + opts.lang : ""}`);
+      }
+      return { job: existing, alreadyRunning: true, promoted };
     }
-    return { job: existing, alreadyRunning: true, promoted };
   }
   const job = {
     hash,
@@ -4037,8 +4123,11 @@ async function runSubtitlePipeline(job) {
       console.log(`[SUBTITLE][PROCESS] extraindo áudio: ${rel}`);
       const releaseHeavy = await acquireHeavySlot();
       try {
-        await extractAudioToWav(job.abs, wavPath);
+        await extractAudioToWav(job.abs, wavPath, {
+          setProc: (p) => { job.proc = p; },
+        });
       } finally {
+        job.proc = null;
         releaseHeavy();
       }
       if (job.status === "cancelled") {
@@ -4357,7 +4446,7 @@ function getOptimalTranscriptionThreads(configuredThreads) {
   return Math.max(1, Math.min(8, cpus));
 }
 
-function extractAudioToWav(srcAbs, wavPath) {
+function extractAudioToWav(srcAbs, wavPath, opts = {}) {
   return new Promise((resolve, reject) => {
     const args = [
       "-y",
@@ -4377,15 +4466,37 @@ function extractAudioToWav(srcAbs, wavPath) {
       wavPath,
     ];
     const proc = spawn(FFMPEG_BIN, args, { stdio: ["ignore", "pipe", "pipe"] });
+    if (typeof opts.setProc === "function") opts.setProc(proc);
     let stderr = "";
+    let completed = false;
+
+    const timeoutTimer = setTimeout(() => {
+      if (completed) return;
+      completed = true;
+      try {
+        proc.kill("SIGTERM");
+        setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, 3000);
+      } catch {}
+      if (typeof opts.setProc === "function") opts.setProc(null);
+      reject(new Error("Tempo limite para extração de áudio excedido (5 min)."));
+    }, opts.timeoutMs || 5 * 60 * 1000);
+
     proc.stderr.on("data", (c) => {
       stderr += c.toString();
       if (stderr.length > 4000) stderr = stderr.slice(-4000);
     });
     proc.on("error", (err) => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timeoutTimer);
+      if (typeof opts.setProc === "function") opts.setProc(null);
       reject(new Error(`não foi possível iniciar o FFmpeg: ${err.message}`));
     });
     proc.on("close", async (code) => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timeoutTimer);
+      if (typeof opts.setProc === "function") opts.setProc(null);
       if (code === 0) {
         try {
           const st = await fs.stat(wavPath).catch(() => null);
@@ -7587,9 +7698,13 @@ app.patch("/api/libraries/:id", async (req, res) => {
   }
   if (req.body && typeof req.body.enabled === "boolean") {
     lib.enabled = req.body.enabled;
+    if (!lib.enabled) {
+      treeCaches.delete(lib.id);
+    }
   }
   if (newPath) {
     treeCaches.delete(lib.id);
+    fs.rm(libraryTreeCacheFile(lib.id), { force: true }).catch(() => {});
     lib.path = newPath;
   }
   await persistLibraries();
@@ -7617,6 +7732,7 @@ app.delete("/api/libraries/:id", async (req, res) => {
   }
   discardQueuedJobsForLibrary(lib.id);
   treeCaches.delete(lib.id);
+  fs.rm(libraryTreeCacheFile(lib.id), { force: true }).catch(() => {});
   scanningLibraryIds.delete(lib.id);
   librariesCache = getLibraries().filter((l) => l.id !== lib.id);
   await persistLibraries();
@@ -9309,12 +9425,22 @@ if (require.main === module) {
     getDefaultLibrary,
     initLibraries,
     persistLibraries,
+    getTree,
+    librarySummary,
+    libraryTreeCacheFile,
+    saveLibraryTreeCache,
+    loadLibraryTreeCache,
+    treeCaches,
     migrateProgressKeys,
     transcodeCacheName,
     subtitleCacheName,
     translationCacheName,
     translationDocPath,
     courseSubtitlePath,
+    startSubtitleJob,
+    cancelSubtitleJob,
+    subtitleStatusFor,
+    subtitleJobs,
     scanLibrary,
     defaultAiConfig,
     sanitizeAiConfig,

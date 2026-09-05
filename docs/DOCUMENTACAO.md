@@ -114,7 +114,8 @@ Regras:
   .m4v .wmv`. Imagens (`IMAGE_EXT`) são usadas como capas quando o nome contém
   uma dica.
 - Ordenação: `localeCompare(..., "pt-BR", {numeric:true, sensitivity:"base"})`.
-- Árvore cacheada em `treeCaches` (Map **por biblioteca**); rescan via
+- Árvore cacheada em `treeCaches` (Map **por biblioteca**, persistido em
+  `data/tree-cache-<libId>.json` para boot instantâneo); rescan via
   `GET /api/tree?rescan=1` ou `POST /api/rescan` (todas) /
   `POST /api/libraries/:id/rescan` (uma). Uma biblioteca indisponível não
   corrompe o cache das demais.

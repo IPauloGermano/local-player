@@ -92,6 +92,20 @@ async function getJson(base, urlPath) {
   return { status: res.status, data: await res.json().catch(() => null) };
 }
 
+async function patchJson(base, urlPath, body) {
+  const res = await fetch(base + urlPath, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, data: await res.json().catch(() => null) };
+}
+
+async function deleteJson(base, urlPath) {
+  const res = await fetch(base + urlPath, { method: "DELETE" });
+  return { status: res.status, data: await res.json().catch(() => null) };
+}
+
 test("libraryProgress helpers: caminhos canônicos dentro da biblioteca", () => {
   const fakeLib = { id: "ext-1", path: "/mnt/pendrive/Cursos" };
   assert.strictEqual(libraryProgressDir(fakeLib), path.join("/mnt/pendrive/Cursos", ".courseplayer"));
@@ -273,4 +287,81 @@ test("progresso na biblioteca: recuperação automática de .bak na biblioteca",
   assert.ok(files.some((f) => f.includes(".corrupt-")), "deve preservar arquivo corrompido como .corrupt-<ts>");
 
   await fs.rm(libDir, { recursive: true, force: true });
+});
+
+test("bibliotecas: desativar biblioteca mantém no /api/tree com enabled:false e status:disabled, permitindo reativação e remoção", async () => {
+  const dataDir = tmpDir("lp-libtoggle-data-");
+  const libDir = tmpDir("lp-libtoggle-lib-");
+
+  const courseDir = path.join(libDir, "Curso Go");
+  await fs.mkdir(courseDir, { recursive: true });
+  await fs.writeFile(path.join(courseDir, "Aula 01.mp4"), "dummy video");
+
+  const srv = await startServer(dataDir);
+  try {
+    // 1. Cadastra a biblioteca externa
+    const regRes = await postJson(srv.base, "/api/libraries", {
+      name: "Cursos Go",
+      path: libDir,
+    });
+    assert.strictEqual(regRes.status, 201);
+    const libId = regRes.data.id;
+
+    // 2. Verifica que /api/tree lista a biblioteca e seus cursos
+    const tree1 = await getJson(srv.base, "/api/tree");
+    assert.strictEqual(tree1.status, 200);
+    const found1 = (tree1.data.libraries || []).find((l) => l.id === libId);
+    assert.ok(found1, "biblioteca deve constar em /api/tree");
+    assert.strictEqual(found1.enabled, true);
+    assert.strictEqual(found1.status, "ok");
+    assert.ok(found1.tree, "árvore deve estar presente");
+
+    // 3. Desativa a biblioteca via PATCH
+    const patchRes = await patchJson(srv.base, `/api/libraries/${encodeURIComponent(libId)}`, {
+      enabled: false,
+    });
+    assert.strictEqual(patchRes.status, 200);
+    assert.strictEqual(patchRes.data.enabled, false);
+
+    // 4. Verifica que /api/tree AINDA contém a biblioteca (para a tela de configurações),
+    // mas com enabled: false, status: 'disabled' e sem árvore (não escaneia)
+    const tree2 = await getJson(srv.base, "/api/tree");
+    assert.strictEqual(tree2.status, 200);
+    const found2 = (tree2.data.libraries || []).find((l) => l.id === libId);
+    assert.ok(found2, "biblioteca desativada NÃO deve sumir de /api/tree");
+    assert.strictEqual(found2.enabled, false);
+    assert.strictEqual(found2.status, "disabled");
+    assert.strictEqual(found2.tree, null);
+
+    // 5. Reativa a biblioteca
+    const reactivateRes = await patchJson(srv.base, `/api/libraries/${encodeURIComponent(libId)}`, {
+      enabled: true,
+    });
+    assert.strictEqual(reactivateRes.status, 200);
+    assert.strictEqual(reactivateRes.data.enabled, true);
+
+    // 6. Verifica que /api/tree volta a escanear e trazer a árvore da biblioteca
+    const tree3 = await getJson(srv.base, "/api/tree");
+    assert.strictEqual(tree3.status, 200);
+    const found3 = (tree3.data.libraries || []).find((l) => l.id === libId);
+    assert.ok(found3);
+    assert.strictEqual(found3.enabled, true);
+    assert.strictEqual(found3.status, "ok");
+    assert.ok(found3.tree);
+
+    // 7. Remove a biblioteca
+    const delRes = await deleteJson(srv.base, `/api/libraries/${encodeURIComponent(libId)}`);
+    assert.strictEqual(delRes.status, 200);
+    assert.strictEqual(delRes.data.ok, true);
+
+    // 8. Verifica que agora sim sumiu de /api/tree
+    const tree4 = await getJson(srv.base, "/api/tree");
+    assert.strictEqual(tree4.status, 200);
+    const found4 = (tree4.data.libraries || []).find((l) => l.id === libId);
+    assert.strictEqual(found4, undefined, "biblioteca removida não deve mais constar em /api/tree");
+  } finally {
+    await srv.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+    await fs.rm(libDir, { recursive: true, force: true });
+  }
 });

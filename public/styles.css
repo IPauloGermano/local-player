@@ -1074,6 +1074,32 @@ body {
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
 }
 
+/* Cards de módulos/cursos concluídos: mais discretos e esmaecidos na Home e tópicos */
+.course-card.is-completed {
+  opacity: 0.58;
+  filter: saturate(0.85);
+  border-color: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition:
+    opacity 0.2s ease,
+    filter 0.2s ease,
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.course-card.is-completed:hover,
+.course-card.is-completed:focus-within {
+  opacity: 1;
+  filter: saturate(1);
+  border-color: rgba(74, 222, 128, 0.4);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
+}
+
+.course-card.is-completed .progress-bar-fill {
+  background: var(--success);
+}
+
 .course-card-thumb {
   height: 165px;
   display: flex;
@@ -1738,6 +1764,14 @@ body {
 .player-substatus[hidden] {
   display: none;
 }
+.player-substatus.is-error {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(24, 10, 10, 0.88);
+  color: #fca5a5;
+}
+.player-substatus.is-error .pc-preparing-spinner {
+  display: none;
+}
 /* BUG-006: aviso discreto de falha ao salvar progresso (não bloqueia o player;
    some sozinho quando o próximo save volta a funcionar). */
 .player-progress-warning {
@@ -1912,6 +1946,16 @@ body {
 }
 .pc-cc-status[hidden] {
   display: none;
+}
+.pc-cc-status.is-error {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.09);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 4px 6px;
+  white-space: normal;
+  word-break: break-word;
 }
 /* Velocidade/Legendas dobram para o menu ⋮ apenas em telas estreitas. */
 .pc-more-narrow {
@@ -2972,6 +3016,34 @@ body {
 .tree-folder-head[data-depth="4"] .folder-progress {
   font-size: 11px;
   color: var(--text-dim);
+}
+
+/* Módulos com todas as aulas concluídas: mais discretos e esmaecidos na sidebar */
+.tree-folder.completed > .tree-folder-head,
+.tree-folder-head.completed {
+  opacity: 0.55;
+  transition:
+    opacity 0.2s ease,
+    color 0.2s ease,
+    background 0.15s ease;
+}
+
+.tree-folder.completed > .tree-folder-head:hover,
+.tree-folder.completed > .tree-folder-head:focus-visible,
+.tree-folder-head.completed:hover,
+.tree-folder-head.completed:focus-visible {
+  opacity: 0.95;
+}
+
+.tree-folder.completed > .tree-folder-head .folder-title,
+.tree-folder-head.completed .folder-title {
+  font-weight: 500;
+}
+
+.tree-folder.completed > .tree-folder-head .folder-progress,
+.tree-folder-head.completed .folder-progress {
+  color: var(--success);
+  opacity: 0.85;
 }
 
 .tree-folder-children {
