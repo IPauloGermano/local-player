@@ -99,38 +99,51 @@ let expandedFolders = new Set();
 // "<libraryId>\0<path>" — duas bibliotecas podem ter o mesmo rel path.
 // Migração: favoritos salvos antes das bibliotecas são paths crus ("Curso X")
 // → entram na biblioteca padrão ("default\0Curso X").
-const favorites = new Set(
-  JSON.parse(localStorage.getItem("course-favorites") || "[]").map((k) =>
-    k.includes("\0") ? k : DEFAULT_LIB_ID + "\0" + k,
-  ),
-);
+let favorites = new Set();
+try {
+  const rawFavs = localStorage.getItem("course-favorites");
+  if (rawFavs) {
+    const list = JSON.parse(rawFavs);
+    if (Array.isArray(list)) {
+      favorites = new Set(
+        list.map((k) => (typeof k === "string" && k.includes("\0") ? k : DEFAULT_LIB_ID + "\0" + k)),
+      );
+    }
+  }
+} catch {
+  favorites = new Set();
+}
 
 function isFavorite(path, libId) {
+  if (!path) return false;
   return favorites.has(progKey(path, libId));
 }
 
 function toggleFavorite(path, libId) {
+  if (!path) return;
   const key = progKey(path, libId);
   if (favorites.has(key)) favorites.delete(key);
   else favorites.add(key);
-  localStorage.setItem("course-favorites", JSON.stringify([...favorites]));
+  try {
+    localStorage.setItem("course-favorites", JSON.stringify([...favorites]));
+  } catch (err) {
+    console.warn("Falha ao persistir favoritos no localStorage:", err);
+  }
 }
 
 function favButtonHtml(path, libId) {
   const on = isFavorite(path, libId);
-  return `<button class="fav-btn ${on ? "on" : ""}" data-fav="${encodeURIComponent(path)}" data-lib="${encodeURIComponent(libId || "")}" title="${on ? "Remover dos favoritos" : "Favoritar curso"}">${on ? "★" : "☆"}</button>`;
+  return `<button class="fav-btn ${on ? "on" : ""}" type="button" data-fav="${encodeURIComponent(path || "")}" data-lib="${encodeURIComponent(libId || "")}" title="${on ? "Remover dos favoritos" : "Favoritar curso"}" aria-label="${on ? "Remover dos favoritos" : "Favoritar curso"}">${on ? "★" : "☆"}</button>`;
 }
 
 // Modo da seção "Seu progresso" (expandida/compacta), persistido no
-// localStorage. Sem preferência salva, telas pequenas começam compactas.
+// localStorage. Padrão: compacta em qualquer resolução.
 const PROGRESS_MODE_KEY = "course-player-progress-mode";
 
 function getProgressMode() {
   const saved = localStorage.getItem(PROGRESS_MODE_KEY);
   if (saved === "expanded" || saved === "compact") return saved;
-  return window.matchMedia("(max-width: 640px)").matches
-    ? "compact"
-    : "expanded";
+  return "compact";
 }
 
 function setProgressMode(mode, section) {
@@ -932,6 +945,61 @@ function renderSettingsGeral() {
           <span class="switch-thumb"></span>
         </button>
       </div>
+    </section>
+
+    <!-- Atalhos no Sistema (Opcional) -->
+    <section class="settings-card" aria-label="Atalhos do Sistema">
+      <div class="settings-card-head">
+        <div class="settings-card-head-main">
+          <div class="settings-card-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+          </div>
+          <div>
+            <h2 class="settings-section-heading">Atalho no Sistema Operacional</h2>
+            <p class="settings-section-desc">Crie ou remova opcionalmente o atalho de 1 clique do Local Player na sua Área de Trabalho e no menu de aplicativos deste computador.</p>
+          </div>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-text">
+          <div class="settings-row-title">Atalho na Área de Trabalho e Menu</div>
+          <div class="settings-row-desc" id="shortcut-status-desc">Opcional: crie o atalho apenas se desejar integrar o player a este computador.</div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button class="btn btn--secondary" id="btn-create-shortcut" type="button">Criar atalho</button>
+          <button class="btn btn--secondary" id="btn-remove-shortcut" type="button">Remover</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Economia de Energia & Desligamento por Inatividade -->
+    <section class="settings-card" aria-label="Economia de Energia">
+      <div class="settings-card-head">
+        <div class="settings-card-head-main">
+          <div class="settings-card-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line><line x1="6" y1="11" x2="6" y2="13"></line><line x1="10" y1="11" x2="10" y2="13"></line></svg>
+          </div>
+          <div>
+            <h2 class="settings-section-heading">Economia de Bateria e Energia</h2>
+            <p class="settings-section-desc">Encerra o servidor automaticamente após um período sem nenhuma aba aberta nem jobs ativos em segundo plano.</p>
+          </div>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-text">
+          <div class="settings-row-title">Desligamento automático por inatividade</div>
+          <div class="settings-row-desc" id="idle-status-desc">O servidor encerra com segurança após o tempo configurado sem nenhuma aba aberta e sem jobs ativos.</div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <select id="select-idle-timeout" class="topbar-search-input" style="width: auto; max-width: 220px; padding: 6px 12px; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; cursor: pointer;">
+            <option value="15">15 minutos</option>
+            <option value="30">30 minutos (recomendado)</option>
+            <option value="60">1 hora</option>
+            <option value="120">2 horas</option>
+            <option value="0">Desativado</option>
+          </select>
+        </div>
+      </div>
     </section>`;
 }
 
@@ -949,6 +1017,105 @@ function bindSettingsGeral(app) {
   app.querySelector("#close-modules-row").addEventListener("click", () => {
     applySwitch(!getSettings().closeOtherModules);
   });
+
+  // Gerenciamento opcional de atalhos
+  const createBtn = app.querySelector("#btn-create-shortcut");
+  const removeBtn = app.querySelector("#btn-remove-shortcut");
+  const statusDesc = app.querySelector("#shortcut-status-desc");
+
+  fetch("/api/system/shortcut")
+    .then((r) => r.json())
+    .then((d) => {
+      if (d && d.installed && statusDesc) {
+        statusDesc.textContent = "Atalho atualmente instalado neste computador.";
+      }
+    })
+    .catch(() => {});
+
+  if (createBtn) {
+    createBtn.addEventListener("click", async () => {
+      createBtn.disabled = true;
+      if (statusDesc) statusDesc.textContent = "Criando atalho...";
+      try {
+        const res = await fetch("/api/system/shortcut", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+        });
+        const data = await res.json();
+        if (statusDesc) {
+          statusDesc.textContent = data.message || (data.ok ? "Atalho criado com sucesso!" : data.error);
+        }
+      } catch (err) {
+        if (statusDesc) statusDesc.textContent = "Falha ao conectar com o servidor.";
+      } finally {
+        createBtn.disabled = false;
+      }
+    });
+  }
+
+  if (removeBtn) {
+    removeBtn.addEventListener("click", async () => {
+      removeBtn.disabled = true;
+      if (statusDesc) statusDesc.textContent = "Removendo atalho...";
+      try {
+        const res = await fetch("/api/system/shortcut", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+        });
+        const data = await res.json();
+        if (statusDesc) {
+          statusDesc.textContent = data.message || (data.ok ? "Atalhos removidos com sucesso." : data.error);
+        }
+      } catch (err) {
+        if (statusDesc) statusDesc.textContent = "Falha ao conectar com o servidor.";
+      } finally {
+        removeBtn.disabled = false;
+      }
+    });
+  }
+
+  // Economia de Bateria / Desligamento por Inatividade
+  const idleSelect = app.querySelector("#select-idle-timeout");
+  const idleDesc = app.querySelector("#idle-status-desc");
+
+  if (idleSelect) {
+    fetch("/api/system/idle")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && data.ok) {
+          idleSelect.value = String(data.idleTimeoutMinutes);
+          if (idleDesc) {
+            if (data.idleTimeoutMinutes === 0) {
+              idleDesc.textContent = "Desligamento automático desativado. O servidor continuará em execução mesmo sem abas abertas.";
+            } else {
+              idleDesc.textContent = `O servidor será encerrado após ${data.idleTimeoutMinutes} minutos sem nenhuma aba aberta e sem jobs ativos.`;
+            }
+          }
+        }
+      })
+      .catch(() => {});
+
+    idleSelect.addEventListener("change", async () => {
+      const minutes = parseInt(idleSelect.value, 10);
+      try {
+        const res = await fetch("/api/system/idle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+          body: JSON.stringify({ minutes }),
+        });
+        const data = await res.json();
+        if (idleDesc) {
+          if (minutes === 0) {
+            idleDesc.textContent = "Desligamento automático desativado.";
+          } else {
+            idleDesc.textContent = `Desligamento automático configurado para ${minutes} minutos.`;
+          }
+        }
+      } catch (err) {
+        if (idleDesc) idleDesc.textContent = "Erro ao atualizar configuração de inatividade.";
+      }
+    });
+  }
 }
 
 // --- Categoria: Reprodução ---
@@ -3438,9 +3605,14 @@ function renderHome(app) {
   // arrastar e "abrir em nova aba". O route() (via hashchange) segue o mesmo.
   app.querySelectorAll(".fav-btn").forEach((el) => {
     el.addEventListener("click", (e) => {
+      e.preventDefault();
       e.stopPropagation();
-      toggleFavorite(decodeURIComponent(el.dataset.fav), decodeURIComponent(el.dataset.lib || ""));
-      renderHome(app);
+      const favPath = el.dataset.fav ? decodeURIComponent(el.dataset.fav) : null;
+      const favLib = el.dataset.lib ? decodeURIComponent(el.dataset.lib) : "";
+      if (favPath) {
+        toggleFavorite(favPath, favLib);
+        renderHome(app);
+      }
     });
   });
 
@@ -8395,8 +8567,11 @@ function renderTopic(app, topicPath, libId) {
     );
     const loose = children.filter((c) => c.type !== "folder");
     if (folders.length) {
+      const orderedFolders = folders.slice().sort(
+        (a, b) => Number(isFavorite(b.path, b.libId)) - Number(isFavorite(a.path, a.libId)),
+      );
       html += `<div class="course-grid">`;
-      for (const child of folders) {
+      for (const child of orderedFolders) {
         html += renderNodeCard(child);
       }
       html += `</div>`;
@@ -8411,6 +8586,18 @@ function renderTopic(app, topicPath, libId) {
   }
   html += `</div>`;
   app.innerHTML = html;
+  app.querySelectorAll(".fav-btn").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const favPath = el.dataset.fav ? decodeURIComponent(el.dataset.fav) : null;
+      const favLib = el.dataset.lib ? decodeURIComponent(el.dataset.lib) : "";
+      if (favPath) {
+        toggleFavorite(favPath, favLib);
+        renderTopic(app, topicPath, libId);
+      }
+    });
+  });
   bindProgressToggle();
 }
 
@@ -8523,9 +8710,12 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
     ?.addEventListener("click", () => closeMobileDrawer());
   document
     .getElementById("toggle-fav-course")
-    ?.addEventListener("click", () => {
+    ?.addEventListener("click", (e) => {
+      e.preventDefault();
       toggleFavorite(course.path, course.libId);
-      route();
+      const isFav = isFavorite(course.path, course.libId);
+      const btn = document.getElementById("toggle-fav-course");
+      if (btn) btn.textContent = isFav ? "★ Favorito" : "☆ Favoritar";
     });
   document
     .getElementById("clear-course-progress")
@@ -8653,7 +8843,19 @@ function route() {
   }
 }
 
+function initHeartbeat() {
+  const ping = () => {
+    fetch("/api/system/heartbeat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }).catch(() => {});
+  };
+  ping();
+  setInterval(ping, 60000);
+}
+
 async function init() {
+  initHeartbeat();
   await loadAll();
   route();
   window.addEventListener("hashchange", route);
@@ -8670,6 +8872,28 @@ async function init() {
   });
   registerShortcutCaptureListener();
   registerShortcuts();
+
+  // Rede de segurança universal para qualquer botão de favoritar (.fav-btn).
+  document.addEventListener("click", (e) => {
+    const favBtn = e.target.closest(".fav-btn");
+    if (!favBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const favPath = favBtn.dataset.fav ? decodeURIComponent(favBtn.dataset.fav) : null;
+    const favLib = favBtn.dataset.lib ? decodeURIComponent(favLib.dataset.lib) : "";
+    if (!favPath) return;
+    toggleFavorite(favPath, favLib);
+    const on = isFavorite(favPath, favLib);
+    favBtn.classList.toggle("on", on);
+    favBtn.textContent = on ? "★" : "☆";
+    favBtn.title = on ? "Remover dos favoritos" : "Favoritar curso";
+    favBtn.setAttribute("aria-label", on ? "Remover dos favoritos" : "Favoritar curso");
+    const hash = (location.hash || "").replace(/^#/, "");
+    if (!hash || hash === "/") {
+      const appEl = document.getElementById("app");
+      if (appEl) renderHome(appEl);
+    }
+  });
 
   // Fecha os popovers do player (volume/velocidade/CC/⋮) ao clicar/tocar fora.
   document.addEventListener("pointerdown", (e) => {

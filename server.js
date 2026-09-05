@@ -33,7 +33,17 @@ const PROGRESS_BACKUP2_FILE = path.join(DATA_DIR, "progress.json.bak.1");
 // não configura nada. Mesmo contrato de durabilidade do progresso (atômico +
 // .bak + .corrupt-<ts>).
 const LIBRARIES_FILE = path.join(DATA_DIR, "libraries.json");
+const SYSTEM_CONFIG_FILE = path.join(DATA_DIR, "system-config.json");
 const DEFAULT_LIBRARY_ID = "default";
+const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
+let idleTimeoutMinutes = process.env.LP_IDLE_TIMEOUT_MINUTES !== undefined
+  ? Math.max(0, parseInt(process.env.LP_IDLE_TIMEOUT_MINUTES, 10) || 0)
+  : DEFAULT_IDLE_TIMEOUT_MINUTES;
+let lastActivityAt = Date.now();
+
+function recordActivity() {
+  lastActivityAt = Date.now();
+}
 const PORT = process.env.PORT || 4173;
 // Interface de escuta. Por padrão o servidor escuta em 127.0.0.1 (localhost seguro).
 // Para permitir acesso pela rede local explicitamente, defina HOST=0.0.0.0.
@@ -1420,7 +1430,28 @@ function updateProgress(mutator, opts = {}) {
   return run;
 }
 
+async function loadSystemConfig() {
+  try {
+    const raw = await fs.readFile(SYSTEM_CONFIG_FILE, "utf-8");
+    const json = JSON.parse(raw);
+    if (typeof json.idleTimeoutMinutes === "number" && json.idleTimeoutMinutes >= 0) {
+      if (process.env.LP_IDLE_TIMEOUT_MINUTES === undefined) {
+        idleTimeoutMinutes = json.idleTimeoutMinutes;
+      }
+    }
+  } catch {}
+}
+
+async function saveSystemConfig() {
+  try {
+    await writeFileAtomic(SYSTEM_CONFIG_FILE, JSON.stringify({ idleTimeoutMinutes }, null, 2));
+  } catch (err) {
+    console.warn("[SYSTEM] Falha ao salvar system-config.json:", err && err.message);
+  }
+}
+
 async function initPersistence() {
+  await loadSystemConfig();
   // Multi-biblioteca: carrega o registry ANTES de reconciliar jobs de legenda
   // (que resolvem `rel` → `abs` pelo libraryId persistido no job).
   await initLibraries();
@@ -7621,6 +7652,18 @@ app.use((req, res, next) => {
   next();
 });
 
+// Monitoramento de atividade para economia de energia e desligamento automático por inatividade
+app.use((req, res, next) => {
+  if (
+    req.path !== "/api/system/idle" &&
+    req.path !== "/api/system/status" &&
+    req.path !== "/api/logs"
+  ) {
+    recordActivity();
+  }
+  next();
+});
+
 
 app.use(express.json({ limit: "100kb" }));
 
@@ -8316,6 +8359,77 @@ app.get("/api/system/status", async (req, res) => {
     return res.status(503).json({ server: "online", ready: false, reason: "unexpected" });
   }
   res.set("Cache-Control", "no-store").json(st);
+});
+
+// Gerenciamento opcional de atalho no sistema (Área de Trabalho / Menu)
+app.get("/api/system/shortcut", async (req, res) => {
+  try {
+    const status = await checkDesktopShortcuts();
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err && err.message });
+  }
+});
+
+app.post("/api/system/shortcut", requireAdminOrLocal, async (req, res) => {
+  try {
+    const result = await createDesktopShortcuts();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err && err.message });
+  }
+});
+
+app.delete("/api/system/shortcut", requireAdminOrLocal, async (req, res) => {
+  try {
+    const result = await removeDesktopShortcuts();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err && err.message });
+  }
+});
+
+// Monitoramento de atividade e economia de energia (Desligamento automático por inatividade)
+app.post("/api/system/heartbeat", (req, res) => {
+  recordActivity();
+  res.json({
+    ok: true,
+    lastActivityAt,
+    idleTimeoutMinutes,
+    enabled: idleTimeoutMinutes > 0,
+  });
+});
+
+app.get("/api/system/idle", (req, res) => {
+  const timeoutMs = idleTimeoutMinutes * 60 * 1000;
+  const elapsedMs = Date.now() - lastActivityAt;
+  const remainingMs = idleTimeoutMinutes > 0 ? Math.max(0, timeoutMs - elapsedMs) : null;
+  res.json({
+    ok: true,
+    idleTimeoutMinutes,
+    enabled: idleTimeoutMinutes > 0,
+    lastActivityAt,
+    idleSecondsRemaining: remainingMs !== null ? Math.round(remainingMs / 1000) : null,
+    busy: isSystemBusy(),
+  });
+});
+
+app.post("/api/system/idle", requireAdminOrLocal, async (req, res) => {
+  const minutes = parseInt(req.body && req.body.minutes, 10);
+  if (isNaN(minutes) || minutes < 0 || minutes > 1440) {
+    return res.status(400).json({ ok: false, error: "Tempo de inatividade inválido (deve ser entre 0 e 1440 minutos)." });
+  }
+  idleTimeoutMinutes = minutes;
+  await saveSystemConfig();
+  recordActivity();
+  res.json({
+    ok: true,
+    idleTimeoutMinutes,
+    enabled: idleTimeoutMinutes > 0,
+    message: minutes === 0
+      ? "Desligamento automático por inatividade desativado."
+      : `Desligamento automático configurado para ${minutes} minutos.`,
+  });
 });
 
 // Logs técnicos em memória (anel). Filtros opcionais:
@@ -9719,6 +9833,173 @@ process.on("uncaughtException", (err) => {
 
 let server;
 
+// Verificação e gerenciamento OPCIONAL de atalhos de sistema (Linux)
+async function checkDesktopShortcuts() {
+  if (process.platform !== "linux") {
+    return { ok: false, error: "Gerenciamento de atalhos suportado apenas no Linux." };
+  }
+  const appDir = path.resolve(__dirname);
+  try {
+    const home = os.homedir();
+    const appsDir = path.join(home, ".local", "share", "applications");
+    const appFile = path.join(appsDir, "localplayer.desktop");
+    const inMenu = await fs.readFile(appFile, "utf-8").then((c) => c.includes(appDir)).catch(() => false);
+    let onDesktop = false;
+    for (const d of [path.join(home, "Desktop"), path.join(home, "Área de trabalho")]) {
+      const deskFile = path.join(d, "Local Player.desktop");
+      if (await fs.readFile(deskFile, "utf-8").then((c) => c.includes(appDir)).catch(() => false)) {
+        onDesktop = true;
+        break;
+      }
+    }
+    return { ok: true, platform: "linux", installed: inMenu || onDesktop, inMenu, onDesktop };
+  } catch {
+    return { ok: true, platform: "linux", installed: false };
+  }
+}
+
+async function createDesktopShortcuts() {
+  if (process.platform !== "linux") {
+    return { ok: false, error: "A criação de atalhos está disponível apenas para Linux." };
+  }
+  const appDir = path.resolve(__dirname);
+  const home = os.homedir();
+  const appsDir = path.join(home, ".local", "share", "applications");
+  const hicolorDir = path.join(home, ".local", "share", "icons", "hicolor");
+  await fs.mkdir(appsDir, { recursive: true }).catch(() => {});
+
+  for (const size of [16, 24, 32, 48, 64, 128, 256, 512]) {
+    const dir = path.join(hicolorDir, `${size}x${size}`, "apps");
+    await fs.mkdir(dir, { recursive: true }).catch(() => {});
+    const src = path.join(appDir, "assets", "local-player.png");
+    const dst = path.join(dir, "localplayer.png");
+    await fs.copyFile(src, dst).catch(() => {});
+  }
+  const scalableDir = path.join(hicolorDir, "scalable", "apps");
+  await fs.mkdir(scalableDir, { recursive: true }).catch(() => {});
+  const svgSrc = path.join(appDir, "assets", "icon.svg");
+  if (await fs.stat(svgSrc).catch(() => null)) {
+    await fs.copyFile(svgSrc, path.join(scalableDir, "localplayer.svg")).catch(() => {});
+  }
+
+  const launcherScript = path.join(appDir, "local-player.sh");
+  const desktopContent = [
+    "[Desktop Entry]",
+    "Version=1.0",
+    "Type=Application",
+    "Name=Local Player",
+    "GenericName=Player de Mídia e Cursos",
+    "Comment=Player local/offline de cursos e mídia com suporte a legendas IA",
+    `Exec="${launcherScript}"`,
+    "Icon=localplayer",
+    "Terminal=false",
+    "StartupNotify=true",
+    "Categories=AudioVideo;Player;Video;Education;",
+    "Keywords=video;player;curso;aula;offline;local;",
+    "",
+  ].join("\n");
+
+  const appFile = path.join(appsDir, "localplayer.desktop");
+  await fs.unlink(path.join(appsDir, "local-player.desktop")).catch(() => {});
+  await fs.writeFile(appFile, desktopContent, { mode: 0o755 });
+
+  let onDesktop = false;
+  for (const d of [path.join(home, "Desktop"), path.join(home, "Área de trabalho")]) {
+    const exists = await fs.stat(d).then((s) => s.isDirectory()).catch(() => false);
+    if (exists) {
+      const deskFile = path.join(d, "Local Player.desktop");
+      await fs.writeFile(deskFile, desktopContent, { mode: 0o755 });
+      onDesktop = true;
+    }
+  }
+
+  spawn("gtk-update-icon-cache", ["-f", "-t", hicolorDir], { stdio: "ignore" }).on("error", () => {});
+  spawn("update-desktop-database", [appsDir], { stdio: "ignore" }).on("error", () => {});
+
+  return {
+    ok: true,
+    message: onDesktop
+      ? "Atalho criado com sucesso na Área de Trabalho e no Menu!"
+      : "Atalho criado com sucesso no Menu de Aplicativos!",
+  };
+}
+
+async function removeDesktopShortcuts() {
+  if (process.platform !== "linux") {
+    return { ok: false, error: "A remoção de atalhos está disponível apenas para Linux." };
+  }
+  const home = os.homedir();
+  const appsDir = path.join(home, ".local", "share", "applications");
+  const hicolorDir = path.join(home, ".local", "share", "icons", "hicolor");
+
+  await fs.unlink(path.join(appsDir, "localplayer.desktop")).catch(() => {});
+  await fs.unlink(path.join(appsDir, "local-player.desktop")).catch(() => {});
+
+  for (const d of [path.join(home, "Desktop"), path.join(home, "Área de trabalho")]) {
+    await fs.unlink(path.join(d, "Local Player.desktop")).catch(() => {});
+  }
+
+  for (const size of [16, 24, 32, 48, 64, 128, 256, 512]) {
+    await fs.unlink(path.join(hicolorDir, `${size}x${size}`, "apps", "localplayer.png")).catch(() => {});
+    await fs.unlink(path.join(hicolorDir, `${size}x${size}`, "apps", "local-player.png")).catch(() => {});
+  }
+  await fs.unlink(path.join(hicolorDir, "scalable", "apps", "localplayer.svg")).catch(() => {});
+  await fs.unlink(path.join(hicolorDir, "scalable", "apps", "local-player.svg")).catch(() => {});
+
+  spawn("gtk-update-icon-cache", ["-f", "-t", hicolorDir], { stdio: "ignore" }).on("error", () => {});
+  spawn("update-desktop-database", [appsDir], { stdio: "ignore" }).on("error", () => {});
+
+  return { ok: true, message: "Atalhos removidos com sucesso." };
+}
+
+// Verificação de ociosidade e desligamento automático para economia de bateria
+function isSystemBusy() {
+  if (shuttingDown) return true;
+  if (typeof heavySlots !== "undefined" && heavySlots.used > 0) return true;
+  if (typeof transcodeJobs !== "undefined" && (transcodeJobs.size > 0 || (typeof transcodeQueue !== "undefined" && transcodeQueue.length > 0))) return true;
+  if (typeof subtitleJobs !== "undefined") {
+    for (const job of subtitleJobs.values()) {
+      if (
+        job.status === "queued" ||
+        ["extracting", "transcribing", "processing", "correcting", "formatting"].includes(job.status)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+let idleCheckTimer = null;
+function checkIdleStatus() {
+  if (idleTimeoutMinutes <= 0) return false;
+  if (isSystemBusy()) {
+    recordActivity();
+    return false;
+  }
+  const elapsedMs = Date.now() - lastActivityAt;
+  const timeoutMs = idleTimeoutMinutes * 60 * 1000;
+  if (elapsedMs >= timeoutMs) {
+    console.log(`[IDLE] Inatividade detectada por ${idleTimeoutMinutes} minutos (nenhuma aba aberta ou atividade).`);
+    console.log("[IDLE] Encerrando o servidor automaticamente para economia de bateria.");
+    if (idleCheckTimer) {
+      clearInterval(idleCheckTimer);
+      idleCheckTimer = null;
+    }
+    shutdownNow(0);
+    return true;
+  }
+  return false;
+}
+
+function startIdleCheckLoop() {
+  if (idleCheckTimer) clearInterval(idleCheckTimer);
+  idleCheckTimer = setInterval(checkIdleStatus, 15000);
+  if (idleCheckTimer && idleCheckTimer.unref) {
+    idleCheckTimer.unref();
+  }
+}
+
 // Abre o navegador padrão na home após o boot (conveniência de uso local).
 // spawn SEM shell (a URL é construída só de HOST/PORT — nunca entrada do
 // usuário); detached + unref para não segurar o processo. Nunca roda em modo
@@ -9757,6 +10038,7 @@ if (require.main === module) {
         const libCount = getLibraries().length;
         console.log(`Bibliotecas: ${libCount} (padrão: ${ROOT})`);
         openBrowserInBackground();
+        startIdleCheckLoop();
       });
 
       // Duas instâncias simultâneas escrevendo no mesmo progress.json podem
@@ -9859,6 +10141,14 @@ if (require.main === module) {
     sanitizeDisplayPath,
     refreshHeavyMax,
     heavySlots,
+    recordActivity,
+    isSystemBusy,
+    checkIdleStatus,
+    startIdleCheckLoop,
+    getIdleTimeoutMinutes: () => idleTimeoutMinutes,
+    setIdleTimeoutMinutes: (m) => { idleTimeoutMinutes = m; },
+    lastActivityAt: () => lastActivityAt,
+    setLastActivityAt: (ts) => { lastActivityAt = ts; },
     app,
   };
 }
@@ -9880,6 +10170,10 @@ let shuttingDown = false;
 async function shutdownNow(code) {
   if (shuttingDown) return;
   shuttingDown = true;
+  if (idleCheckTimer) {
+    clearInterval(idleCheckTimer);
+    idleCheckTimer = null;
+  }
   console.log("[SHUTDOWN] encerrando processos e jobs ativos…");
   // 1a. Subtitle jobs: cancela fila + mata processos whisper em andamento.
   const subtitleProcs = [];

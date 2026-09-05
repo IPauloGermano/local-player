@@ -2,9 +2,9 @@
 
 Player local/offline em Node.js + Express (backend único `server.js`, SPA em
 `public/` em JS puro, **sem build step**) para organizar e reproduzir mídia em
-disco — módulos, treinamentos, cursos e bibliotecas de vídeo. Lê tudo direto do
-armazenamento local ou externo (HD, SSD, pendrive, cartão SD), sem envio para a
-internet.
+disco — módulos, treinamentos, cursos e bibliotecas de vídeo no **Linux**. Lê
+tudo direto do armazenamento local ou externo (HD, SSD, pendrive, cartão SD),
+sem envio para a internet.
 
 ## Funcionalidades
 
@@ -12,6 +12,10 @@ internet.
   (`data/tree-cache-<libId>.json`) e varredura paralela com concorrência
   controlada, carregando bibliotecas com milhares de aulas em milissegundos mesmo
   em pendrives ou discos USB.
+- **Execução sem terminal e atalhos de sistema (Linux)**: inicialização desacoplada
+  em segundo plano (`setsid`), sem janelas de terminal abertas. Integração nativa
+  opcional com o menu de aplicativos e área de trabalho (GNOME, KDE, XFCE) com
+  ícones nítidos em SVG/PNG via especificação FreeDesktop (`.desktop` e `hicolor`).
 - **Tópicos hierárquicos**: pastas declaradas como tópicos (`.topic` ou nome
   terminando em `(TP)`) viram navegação com breadcrumb (`Home › TI › Python`).
 - **Cards com capa inteligente**: capas automáticas detectadas pelo nome da
@@ -51,14 +55,13 @@ internet.
 
 ## Requisitos
 
-- Node.js 18+.
-- Navegador moderno (Chrome, Firefox, Edge, Safari).
-- FFmpeg / FFprobe **opcionais**: necessários apenas para transcoding de vídeos
+- **Sistema Operacional**: Linux (Fedora, Ubuntu, Debian, Arch Linux, openSUSE, etc.).
+- **Node.js**: 18+.
+- **Navegador moderno**: Firefox, Chrome, Chromium, Brave, Edge.
+- **FFmpeg / FFprobe (opcionais)**: necessários apenas para transcoding de vídeos
   incompatíveis e extração de áudio para legendas.
-- Whisper.cpp **opcional**: necessário apenas para transcrição local de legendas
+- **Whisper.cpp (opcional)**: necessário apenas para transcrição local de legendas
   (ver `docs/whisper.md`).
-
-Linux e Windows — o mesmo código roda nativamente em ambos os sistemas.
 
 ## Como rodar
 
@@ -72,13 +75,60 @@ Minha Biblioteca/
 └── _LocalPlayer/          ← pasta do app (nome livre)
 ```
 
+### Instalação
+
 ```bash
 npm install --no-bin-links   # --no-bin-links ajuda em drives externos/FAT/exFAT
+```
+
+### Execução
+
+Você pode executar o Local Player de duas formas:
+
+#### Opção 1: Em segundo plano (sem janela de terminal aberta)
+
+```bash
+./local-player.sh
+# ou via npm:
+npm run start:bg
+```
+
+O script inicia o servidor desacoplado da sessão (`setsid`), abre o navegador padrão automaticamente e libera o terminal imediatamente. Para encerrar o servidor em background:
+
+```bash
+./stop.sh
+# ou:
+npm run stop
+```
+
+#### Opção 2: No terminal (foreground tradicional)
+
+```bash
 npm start                    # servidor em http://localhost:4173
 ```
 
 `PORT` e `HOST` sobrescrevem porta e interface (padrão: todas as interfaces —
 use `HOST=127.0.0.1` para restringir à máquina local).
+
+---
+
+### Atalho de Aplicativo no Sistema (Opcional)
+
+A criação do atalho no sistema é **100% opcional** e nunca é imposta automaticamente:
+
+- **Pela Interface Web**: Acesse **Configurações → Geral** no app e clique no botão **Criar Atalho no Sistema** (ou **Remover Atalho**).
+- **Pelo Terminal**:
+  - Para instalar no menu de aplicativos e área de trabalho:
+    ```bash
+    ./instalar-atalho.sh     # ou: npm run shortcut:install
+    ```
+  - Para desinstalar e limpar os ícones do sistema:
+    ```bash
+    ./remover-atalho.sh      # ou: npm run shortcut:remove
+    ```
+
+O instalador gera o arquivo `localplayer.desktop` em `~/.local/share/applications/`, distribui os ícones em SVG e PNG na hierarquia de temas `hicolor` e atualiza a base de dados do ambiente gráfico (GNOME, KDE, etc.).
+
 
 ## Configuração (variáveis de ambiente)
 
@@ -97,6 +147,7 @@ Todas opcionais:
 | `LP_DATA_DIR` | `data/` | Redireciona os dados de runtime (usado para sandbox de testes) |
 | `LP_NO_BROWSER` | (inativo) | `1` impede abertura automática do navegador no boot |
 | `LP_PROGRESS_FORENSIC` | (inativo) | `1` ativa logs forenses detalhados de escrita de progresso |
+| `LP_IDLE_TIMEOUT_MINUTES` | `30` | Minutos de inatividade sem abas para auto-shutdown (`0` = desativado) |
 
 ## Uso rápido
 
@@ -164,14 +215,12 @@ Na aba lateral do Player, você tem acesso às ferramentas de estudo por IA:
 ## Segurança e Privacidade
 
 - **100% Local**: sem telemetria e sem dependência de nuvem para execução do player.
-- As únicas saídas de rede externas acontecem caso o usuário configure LLMs remotos
-  (OpenAI, Anthropic, Gemini, Groq) ou ative a pesquisa web do Tutor IA.
-- Proteção anti-SSRF com validação estrita de endereços IP privados na pesquisa web.
-- Proteção contra Path Traversal em todos os endpoints de arquivos e mídia.
-- Materiais com código executável (HTML, JS, SVG, JSON) são servidos estritamente
-  com headers `attachment` e `X-Content-Type-Options: nosniff`.
-- Chaves de API ficam gravadas exclusivamente no backend (`data/ai-config.json`) e
-  nunca são expostas ao frontend nem impressas nos logs.
+- **Proteção Anti-CSRF e Origem Segura**: endpoints mutáveis e sensíveis (limpeza de progresso, transcoding, atalhos do sistema) exigem verificação de mesma origem (`Sec-Fetch-Site: same-origin` / `same-site`) e validação estrita de cabeçalhos `Host` e `Origin`.
+- **Proteção Anti-SSRF na Pesquisa Web**: bloqueio rigoroso contra requisições a redes privadas e especiais (RFC 1918, loopback `127.0.0.0/8`, link-local `169.254.0.0/16`, CGNAT `100.64.0.0/10`, IPv6 `::1`, `fc00::/7`, `fe80::/10`, IPv4-mapped IPv6 `::ffff:`, túneis 6to4) e bloqueio de portas não-web perigosas.
+- **Proteção contra Path Traversal**: todas as rotas de mídia e arquivos passam por resolução canônica que impede escape do diretório da biblioteca ou do aplicativo.
+- **Sanitização de Caminhos na Interface**: caminhos absolutos do sistema exibidos no frontend substituem a pasta do usuário por `~` para proteger a privacidade do sistema de arquivos local.
+- **Isolamento de Materiais**: arquivos de suporte com potencial executável (HTML, JS, SVG, JSON) são servidos obrigatoriamente como anexo com cabeçalhos `attachment` e `X-Content-Type-Options: nosniff`.
+- **Chaves de API protegidas**: credenciais de provedores de IA ficam salvas exclusivamente no servidor (`data/ai-config.json`), nunca retornam para o navegador e são censuradas em logs.
 
 ## Desenvolvimento e Testes
 
@@ -182,18 +231,24 @@ Na aba lateral do Player, você tem acesso às ferramentas de estudo por IA:
 node --check server.js public/app.js public/scope.js
 ```
 
-- **Execução da suíte completa de testes (144 testes)**:
+- **Execução da suíte completa de testes (150 testes)**:
 
 ```bash
-node --test test/*.js
+npm test
+# ou diretamente:
+node --test test/*.test.js test/*-smoke.js
 ```
 
 - **Validação manual**: consulte `docs/VALIDACAO.md` para o checklist completo.
 
 ## Estrutura do projeto
 
-- `server.js` — Backend completo (scan com cache, API REST, media Range, persistência atômica, fallback ffmpeg, pipeline Whisper e rotas do Tutor).
-- `public/` — SPA em JS/CSS puro (`index.html`, `app.js`, `scope.js`, `styles.css`).
+- `server.js` — Backend completo (scan com cache, API REST, media Range, persistência atômica, fallback ffmpeg, pipeline Whisper, rotas do Tutor e integração com atalhos de sistema).
+- `public/` — SPA em JS/CSS puro (`index.html`, `app.js`, `scope.js`, `styles.css`, `favicon.svg`, `favicon.png`).
+- `assets/` — Ícones de alta fidelidade da aplicação em SVG e PNG.
+- `local-player.sh` — Script de inicialização desacoplada em background para Linux (sem console aberto).
+- `instalar-atalho.sh` / `remover-atalho.sh` — Scripts auxiliares para instalação e remoção dos atalhos `.desktop` e ícones no sistema.
+- `stop.sh` — Script para encerramento gracioso do servidor em segundo plano.
 - `data/` — Runtime local: `progress.json` (+ backups), `tree-cache-<libId>.json`, `ai-config.json`, `libraries.json`, `subtitles/`, `transcoded/`.
-- `test/` — Suíte de testes automatizados com `node:test` (unitários, invariância, persistência, forense e runtime smoke).
+- `test/` — Suíte de testes automatizados com `node:test` (unitários, invariância, persistência, segurança anti-SSRF/CSRF, forense e runtime smoke).
 - `docs/` — Documentação técnica (`DOCUMENTACAO.md`, `SUBTITLES.md`, `whisper.md`, `VALIDACAO.md`).

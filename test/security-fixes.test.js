@@ -15,6 +15,13 @@ const {
   sanitizeDisplayPath,
   refreshHeavyMax,
   heavySlots,
+  recordActivity,
+  isSystemBusy,
+  checkIdleStatus,
+  getIdleTimeoutMinutes,
+  setIdleTimeoutMinutes,
+  lastActivityAt,
+  setLastActivityAt,
 } = require("../server");
 
 const SERVER = path.join(__dirname, "..", "server.js");
@@ -359,7 +366,135 @@ test("Integração HTTP: proteção CSRF e validações em endpoints destrutivos
     const defaultLib = dataLibs.libraries.find((l) => l.isDefault || l.id === "default");
     assert.ok(defaultLib, "Biblioteca padrão deve existir");
     assert.strictEqual(defaultLib.path, null, "Caminho da biblioteca padrão deve ser null");
+
+    // 9. POST /api/system/shortcut cross-site deve retornar 403 Forbidden
+    const resShortcutCross = await fetch(`${srv.base}/api/system/shortcut`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "cross-site" },
+    });
+    assert.strictEqual(resShortcutCross.status, 403, "Atalho cross-site deve ser bloqueado");
+
+    // 10. DELETE /api/system/shortcut cross-site deve retornar 403 Forbidden
+    const resShortcutDelCross = await fetch(`${srv.base}/api/system/shortcut`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "cross-site" },
+    });
+    assert.strictEqual(resShortcutDelCross.status, 403, "Remoção de atalho cross-site deve ser bloqueada");
+
+    // 11. GET /api/system/shortcut deve retornar 200 e informações da plataforma
+    const resShortcutStatus = await fetch(`${srv.base}/api/system/shortcut`);
+    assert.strictEqual(resShortcutStatus.status, 200);
+    const shortcutJson = await resShortcutStatus.json();
+    assert.strictEqual(shortcutJson.ok, true);
+    assert.ok(typeof shortcutJson.platform === "string");
+
+    // 12. POST /api/system/heartbeat deve responder 200 e atualizar lastActivityAt
+    const resHb = await fetch(`${srv.base}/api/system/heartbeat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    assert.strictEqual(resHb.status, 200);
+    const hbJson = await resHb.json();
+    assert.strictEqual(hbJson.ok, true);
+    assert.ok(typeof hbJson.lastActivityAt === "number");
+    assert.strictEqual(hbJson.enabled, true);
+
+    // 13. GET /api/system/idle deve retornar status de inatividade e tempo restante
+    const resIdle = await fetch(`${srv.base}/api/system/idle`);
+    assert.strictEqual(resIdle.status, 200);
+    const idleJson = await resIdle.json();
+    assert.strictEqual(idleJson.ok, true);
+    assert.strictEqual(typeof idleJson.idleTimeoutMinutes, "number");
+    assert.strictEqual(idleJson.enabled, true);
+    assert.ok(typeof idleJson.idleSecondsRemaining === "number");
+
+    // 14. POST /api/system/idle cross-site deve ser bloqueado por CSRF (403)
+    const resIdleCross = await fetch(`${srv.base}/api/system/idle`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "cross-site" },
+      body: JSON.stringify({ minutes: 15 }),
+    });
+    assert.strictEqual(resIdleCross.status, 403, "Configuração de idle cross-site deve retornar 403");
+
+    // 15. POST /api/system/idle com minutos inválidos deve retornar 400
+    const resIdleInvalid = await fetch(`${srv.base}/api/system/idle`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+      body: JSON.stringify({ minutes: -10 }),
+    });
+    assert.strictEqual(resIdleInvalid.status, 400, "Minutos negativos devem retornar 400");
+
+    // 16. POST /api/system/idle com mesmo-origem válido deve configurar timeout (200)
+    const resIdleOk = await fetch(`${srv.base}/api/system/idle`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+      body: JSON.stringify({ minutes: 45 }),
+    });
+    assert.strictEqual(resIdleOk.status, 200);
+    const okJson = await resIdleOk.json();
+    assert.strictEqual(okJson.ok, true);
+    assert.strictEqual(okJson.idleTimeoutMinutes, 45);
+    assert.strictEqual(okJson.enabled, true);
+
+    // 17. Desativar idle timeout enviando 0
+    const resIdleOff = await fetch(`${srv.base}/api/system/idle`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+      body: JSON.stringify({ minutes: 0 }),
+    });
+    assert.strictEqual(resIdleOff.status, 200);
+    const offJson = await resIdleOff.json();
+    assert.strictEqual(offJson.ok, true);
+    assert.strictEqual(offJson.idleTimeoutMinutes, 0);
+    assert.strictEqual(offJson.enabled, false);
   } finally {
     await srv.stop();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 6. Inatividade e Economia de Energia (Lógica pura)
+// ---------------------------------------------------------------------------
+test("Inatividade e Economia de Energia: controle de ociosidade e timeout", () => {
+  const origTimeout = getIdleTimeoutMinutes();
+  const origLast = lastActivityAt();
+
+  try {
+    // 1. recordActivity deve atualizar o timestamp de última atividade
+    const before = Date.now() - 50;
+    setLastActivityAt(before);
+    assert.strictEqual(lastActivityAt(), before);
+    recordActivity();
+    assert.ok(lastActivityAt() >= before);
+
+    // 2. setIdleTimeoutMinutes altera o timeout
+    setIdleTimeoutMinutes(60);
+    assert.strictEqual(getIdleTimeoutMinutes(), 60);
+
+    // 3. checkIdleStatus quando timeout = 0 (desativado) nunca encerra
+    setIdleTimeoutMinutes(0);
+    setLastActivityAt(Date.now() - 1000000);
+    assert.strictEqual(checkIdleStatus(), false);
+
+    // 4. checkIdleStatus quando ativo mas com atividade recente não encerra
+    setIdleTimeoutMinutes(30);
+    setLastActivityAt(Date.now());
+    assert.strictEqual(checkIdleStatus(), false);
+
+    // 5. isSystemBusy detecta slots pesados ocupados
+    const origSlots = heavySlots.used;
+    try {
+      heavySlots.used = 1;
+      assert.strictEqual(isSystemBusy(), true);
+      // Se ocupado, checkIdleStatus renova atividade e não encerra
+      setLastActivityAt(Date.now() - 3600000);
+      assert.strictEqual(checkIdleStatus(), false);
+      assert.ok(Date.now() - lastActivityAt() < 1000, "Deve ter renovado lastActivityAt");
+    } finally {
+      heavySlots.used = origSlots;
+    }
+  } finally {
+    setIdleTimeoutMinutes(origTimeout);
+    setLastActivityAt(origLast);
   }
 });

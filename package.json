@@ -5,7 +5,12 @@
   "private": true,
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "start:bg": "./local-player.sh",
+    "stop": "./stop.sh",
+    "shortcut:install": "./instalar-atalho.sh",
+    "shortcut:remove": "./remover-atalho.sh",
+    "test": "node --test test/*.test.js test/*-smoke.js"
   },
   "dependencies": {
     "express": "^4.19.2"
