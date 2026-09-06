@@ -446,3 +446,75 @@ test("T12 rescan não reescreve progress.json em disco (arquivo preservado byte 
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+// T13 — Toggle manual de aula concluída preserva duration existente >0 se duration enviada for 0,
+// e garante que saves subsequentes de tracking aceitam o estado sem regressão de completed.
+test("T13 toggle manual de conclusão preserva duration existente e suporta saves normais subsequentes", async () => {
+  const dataDir = tmpDir("lp-inv-t13-");
+  let srv = null;
+  try {
+    srv = await startServer(dataDir);
+    const lessonPath = "Curso Teste/Aula 01.mp4";
+
+    // 1. Save inicial com duration conhecida
+    const s1 = await postJson(srv.base, "/api/progress", {
+      path: lessonPath,
+      position: 10,
+      duration: 600,
+      completed: false,
+    });
+    assert.strictEqual(s1.status, 200);
+
+    // 2. Toggle manual (ex.: botão 'Concluir' na UI) enviado com duration 0
+    // O backend deve preservar a duration 600 existente em vez de falhar por durationLost
+    const s2 = await postJson(srv.base, "/api/progress", {
+      path: lessonPath,
+      position: 10,
+      duration: 0,
+      completed: true,
+      explicitToggle: true,
+    });
+    assert.strictEqual(s2.status, 200, "toggle manual com duration 0 deve ser aceito");
+
+    let g = await getJson(srv.base, "/api/progress");
+    const entry = g.data[K("default", lessonPath)];
+    assert.ok(entry);
+    assert.strictEqual(entry.completed, true);
+    assert.strictEqual(entry.duration, 600, "duration existente deve ser preservada");
+
+    // 3. Save subsequente de tracking com completed=true sem explicitToggle
+    const s3 = await postJson(srv.base, "/api/progress", {
+      path: lessonPath,
+      position: 25,
+      duration: 600,
+      completed: true,
+    });
+    assert.strictEqual(s3.status, 200, "save de tracking para aula concluída deve ser aceito");
+
+    // 4. Toggle manual para desmarcar (completed=false com explicitToggle=true)
+    const s4 = await postJson(srv.base, "/api/progress", {
+      path: lessonPath,
+      position: 25,
+      duration: 600,
+      completed: false,
+      explicitToggle: true,
+    });
+    assert.strictEqual(s4.status, 200, "desmarcar aula com explicitToggle deve ser aceito");
+
+    g = await getJson(srv.base, "/api/progress");
+    assert.strictEqual(g.data[K("default", lessonPath)].completed, false);
+
+    // 5. Save subsequente de tracking após desmarcar não causa erro 500
+    const s5 = await postJson(srv.base, "/api/progress", {
+      path: lessonPath,
+      position: 30,
+      duration: 600,
+      completed: false,
+    });
+    assert.strictEqual(s5.status, 200);
+  } finally {
+    if (srv) await srv.stop();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+

@@ -5423,9 +5423,16 @@ app.post("/api/progress", async (req, res) => {
   try {
     await updateProgress(
       (progress) => {
+        const existing = progress[key];
+        const finalDuration =
+          duration > 0
+            ? duration
+            : existing && Number.isFinite(existing.duration) && existing.duration > 0
+              ? existing.duration
+              : Math.max(0, duration);
         progress[key] = {
           position: Math.max(0, position),
-          duration: Math.max(0, duration),
+          duration: finalDuration,
           completed: !!completed,
           updatedAt: Date.now(),
         };

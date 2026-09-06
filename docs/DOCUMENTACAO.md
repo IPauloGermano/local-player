@@ -41,7 +41,8 @@ Arquivos principais:
 | `server.js` | Backend principal: orquestração de rotas, API, media, scan e ciclo de vida |
 | `server/` | Módulos desacoplados do backend (`core/`, `services/`, `ai/`) sem build step |
 | `public/index.html` | Casca da SPA (topbar + `<main id="app">`) |
-| `public/app.js` | UI, roteamento, player, atalhos |
+| `public/app.js` | Orquestração da SPA, roteamento e views principais (Home, Curso, Tópico) |
+| `public/js/` | Módulos desacoplados da SPA (`player`, `subtitles`, `tutor`, `study`, `settings`, `shortcuts`, `editor`) |
 | `public/scope.js` | Helpers puros de escopo/navegação (require-ável pelos testes) |
 | `public/styles.css` | Estilos (tema escuro, responsivo) |
 | `test/` | Testes `node:test` |
@@ -79,6 +80,7 @@ Biblioteca/                  ← ROOT (pasta-pai do app; biblioteca padrão)
     ├── server.js, package.json, README.md, AGENTS.md
     ├── server/              ← submódulos modularizados (core/, services/, ai/)
     ├── public/              ← SPA (index.html, app.js, scope.js, styles.css)
+    │   └── js/              ← submódulos da SPA (player, subtitles, tutor, study, settings, shortcuts, editor)
     ├── data/                ← runtime (gitignored)
     │   ├── progress.json (+ .bak, .corrupt-<ts>, .tmp órfãos)
     │   ├── libraries.json   ← registro das bibliotecas
