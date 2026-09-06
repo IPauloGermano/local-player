@@ -33,11 +33,11 @@ npm start                    # node server.js, escuta em :4173 (PORT/HOST overri
 node --test test/progress.test.js test/topics.test.js test/libraries.test.js \
   test/scope.test.js test/sidebar.test.js test/sidebar-runtime-smoke.js \
   test/progress-invariance.test.js test/progress-persistence.test.js \
-  test/progress-forensic.test.js test/tutor.test.js
+  test/progress-forensic.test.js test/tutor.test.js test/idle-shutdown.test.js
 ```
 
   `progress`, `sidebar-runtime-smoke`, `progress-invariance`,
-  `progress-persistence`, `progress-forensic` e `tutor` sobem servidor real com
+  `progress-persistence`, `progress-forensic`, `tutor` e `idle-shutdown` sobem servidor real com
   `LP_DATA_DIR` em dir temporário; os demais são puros.
 - **`LP_DATA_DIR`** (env opcional): redireciona `data/` — usada pelos testes
   como sandbox; uso normal não define.

@@ -125,6 +125,13 @@ let lastActivityAt = Date.now();
 function recordActivity() {
   lastActivityAt = Date.now();
 }
+
+function getIdleTimeoutMs() {
+  if (process.env.LP_IDLE_TIMEOUT_MS !== undefined) {
+    return Math.max(0, parseInt(process.env.LP_IDLE_TIMEOUT_MS, 10) || 0);
+  }
+  return idleTimeoutMinutes > 0 ? idleTimeoutMinutes * 60 * 1000 : 0;
+}
 const PORT = process.env.PORT || 4173;
 // Interface de escuta. Por padrão o servidor escuta em 127.0.0.1 (localhost seguro).
 // Para permitir acesso pela rede local explicitamente, defina HOST=0.0.0.0.
@@ -5709,22 +5716,23 @@ app.delete("/api/system/shortcut", requireAdminOrLocal, async (req, res) => {
 // Monitoramento de atividade e economia de energia (Desligamento automático por inatividade)
 app.post("/api/system/heartbeat", (req, res) => {
   recordActivity();
+  const timeoutMs = getIdleTimeoutMs();
   res.json({
     ok: true,
     lastActivityAt,
     idleTimeoutMinutes,
-    enabled: idleTimeoutMinutes > 0,
+    enabled: timeoutMs > 0,
   });
 });
 
 app.get("/api/system/idle", (req, res) => {
-  const timeoutMs = idleTimeoutMinutes * 60 * 1000;
+  const timeoutMs = getIdleTimeoutMs();
   const elapsedMs = Date.now() - lastActivityAt;
-  const remainingMs = idleTimeoutMinutes > 0 ? Math.max(0, timeoutMs - elapsedMs) : null;
+  const remainingMs = timeoutMs > 0 ? Math.max(0, timeoutMs - elapsedMs) : null;
   res.json({
     ok: true,
     idleTimeoutMinutes,
-    enabled: idleTimeoutMinutes > 0,
+    enabled: timeoutMs > 0,
     lastActivityAt,
     idleSecondsRemaining: remainingMs !== null ? Math.round(remainingMs / 1000) : null,
     busy: isSystemBusy(),
@@ -7273,7 +7281,12 @@ async function removeDesktopShortcuts() {
 function isSystemBusy() {
   if (shuttingDown) return true;
   if (typeof heavySlots !== "undefined" && heavySlots.used > 0) return true;
-  if (typeof transcodeJobs !== "undefined" && (transcodeJobs.size > 0 || (typeof transcodeQueue !== "undefined" && transcodeQueue.length > 0))) return true;
+  if (typeof transcodeJobs !== "undefined") {
+    for (const job of transcodeJobs.values()) {
+      if (job.status === "processing") return true;
+    }
+    if (typeof transcodeQueue !== "undefined" && transcodeQueue.length > 0) return true;
+  }
   if (typeof subtitleJobs !== "undefined") {
     for (const job of subtitleJobs.values()) {
       if (
@@ -7289,15 +7302,18 @@ function isSystemBusy() {
 
 let idleCheckTimer = null;
 function checkIdleStatus() {
-  if (idleTimeoutMinutes <= 0) return false;
+  const timeoutMs = getIdleTimeoutMs();
+  if (timeoutMs <= 0) return false;
   if (isSystemBusy()) {
     recordActivity();
     return false;
   }
   const elapsedMs = Date.now() - lastActivityAt;
-  const timeoutMs = idleTimeoutMinutes * 60 * 1000;
   if (elapsedMs >= timeoutMs) {
-    console.log(`[IDLE] Inatividade detectada por ${idleTimeoutMinutes} minutos (nenhuma aba aberta ou atividade).`);
+    const desc = process.env.LP_IDLE_TIMEOUT_MS
+      ? `${elapsedMs}ms`
+      : `${idleTimeoutMinutes} minutos`;
+    console.log(`[IDLE] Inatividade detectada por ${desc} (nenhuma aba aberta ou atividade).`);
     console.log("[IDLE] Encerrando o servidor automaticamente para economia de bateria.");
     if (idleCheckTimer) {
       clearInterval(idleCheckTimer);
@@ -7311,7 +7327,10 @@ function checkIdleStatus() {
 
 function startIdleCheckLoop() {
   if (idleCheckTimer) clearInterval(idleCheckTimer);
-  idleCheckTimer = setInterval(checkIdleStatus, 15000);
+  const intervalMs = process.env.LP_IDLE_CHECK_INTERVAL_MS
+    ? Math.max(50, parseInt(process.env.LP_IDLE_CHECK_INTERVAL_MS, 10) || 60000)
+    : 60000;
+  idleCheckTimer = setInterval(checkIdleStatus, intervalMs);
   if (idleCheckTimer && idleCheckTimer.unref) {
     idleCheckTimer.unref();
   }
@@ -7463,6 +7482,7 @@ if (require.main === module) {
     isSystemBusy,
     checkIdleStatus,
     startIdleCheckLoop,
+    getIdleTimeoutMs,
     getIdleTimeoutMinutes: () => idleTimeoutMinutes,
     setIdleTimeoutMinutes: (m) => { idleTimeoutMinutes = m; },
     lastActivityAt: () => lastActivityAt,
@@ -7485,7 +7505,7 @@ if (require.main === module) {
 // ficamos enforcados esperando um ffmpeg/whisper preso num disco que sumiu.
 // --------------------------------------------------------------------------
 let shuttingDown = false;
-async function shutdownNow(code) {
+async function shutdownNow(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   if (idleCheckTimer) {
@@ -7546,12 +7566,18 @@ async function shutdownNow(code) {
     exited = true;
     process.exit(code);
   }, 5000);
-  server.close(() => {
-    if (exited) return;
+  if (server && typeof server.close === "function") {
+    server.close(() => {
+      if (exited) return;
+      exited = true;
+      clearTimeout(forceExit);
+      process.exit(code);
+    });
+  } else {
     exited = true;
     clearTimeout(forceExit);
     process.exit(code);
-  });
+  }
   // close() não espera conexões keep-alive eternas: força em 3s.
   setTimeout(() => {
     if (!exited) {
