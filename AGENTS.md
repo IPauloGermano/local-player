@@ -6,12 +6,12 @@ instalação do whisper: `docs/whisper.md`; checklist de validação: `docs/VALI
 
 ## Projeto
 
-Player local/offline em Node.js + Express (backend único `server.js`, SPA em
-`public/` em JS puro, ambos **sem build step**) para organizar/reproduzir mídia
-em disco: scan da árvore, serve originais com Range, progresso por aula, busca,
-favoritos, atalhos, **transcoding de fallback** (ffmpeg, só para formatos que o
-navegador não reproduz) e **legendas automáticas por IA** (Whisper local +
-correção LLM opcional — adicional, nunca dependência). Texto de UI/README/
+Player local/offline em Node.js + Express (backend orquestrador `server.js` +
+submódulos desacoplados em `server/`, SPA em `public/` em JS puro, ambos **sem build step**)
+para organizar/reproduzir mídia em disco: scan da árvore, serve originais com Range,
+progresso por aula, busca, favoritos, atalhos, **transcoding de fallback** (ffmpeg,
+só para formatos que o navegador não reproduz) e **legendas automáticas por IA** (Whisper
+local + correção LLM opcional — adicional, nunca dependência). Texto de UI/README/
 comentários em **pt-BR**.
 
 **Tópicos vs cursos (explícito, sem inferência estrutural)**: pasta é **tópico**
@@ -26,7 +26,7 @@ npm install --no-bin-links   # --no-bin-links ajuda em drives externos/FAT/exFAT
 npm start                    # node server.js, escuta em :4173 (PORT/HOST override)
 ```
 
-- Sintaxe: `node --check server.js public/app.js public/scope.js`
+- Sintaxe: `node --check server.js public/app.js public/scope.js server/*.js server/**/*.js`
 - Testes:
 
 ```bash
@@ -86,8 +86,11 @@ node --test test/progress.test.js test/topics.test.js test/libraries.test.js \
   Helpers puros de escopo/navegação em `public/scope.js` (require-ável pelos
   testes).
 
-### API (`server.js`)
+### Backend e API (`server.js` + `server/`)
 
+Backend orquestrado por `server.js` com módulos especializados em `server/`
+(`core/titles.js`, `core/fs-atomic.js`, `core/security.js`, `services/document-extractors.js`,
+`services/web-search.js`, `ai/config.js`, `ai/skills.js`, `ai/study.js`, `ai/subtitles-helpers.js`).
 Rotas de legendas/IA → `docs/SUBTITLES.md`.
 
 | Rota | Propósito |

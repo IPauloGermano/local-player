@@ -38,7 +38,8 @@ Arquivos principais:
 
 | Arquivo | Papel |
 | --- | --- |
-| `server.js` | Backend completo: scan, API, media, persistência, transcoding, legendas |
+| `server.js` | Backend principal: orquestração de rotas, API, media, scan e ciclo de vida |
+| `server/` | Módulos desacoplados do backend (`core/`, `services/`, `ai/`) sem build step |
 | `public/index.html` | Casca da SPA (topbar + `<main id="app">`) |
 | `public/app.js` | UI, roteamento, player, atalhos |
 | `public/scope.js` | Helpers puros de escopo/navegação (require-ável pelos testes) |
@@ -75,7 +76,8 @@ na montagem → setupPlayerSubtitles → status → overlay+badge+botão; nunca 
 Biblioteca/                  ← ROOT (pasta-pai do app; biblioteca padrão)
 ├── Curso A/
 └── _LocalPlayer/            ← o app
-    ├── server.js, package.json, README.md, CLAUDE.md
+    ├── server.js, package.json, README.md, AGENTS.md
+    ├── server/              ← submódulos modularizados (core/, services/, ai/)
     ├── public/              ← SPA (index.html, app.js, scope.js, styles.css)
     ├── data/                ← runtime (gitignored)
     │   ├── progress.json (+ .bak, .corrupt-<ts>, .tmp órfãos)
