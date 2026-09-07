@@ -177,6 +177,51 @@ test("Tutor IA: múltiplos códigos inline consecutivos e fórmulas LaTeX não c
   assert.ok(html.includes("→"));
 });
 
+test("Tutor IA: renderização rica de fórmulas matemáticas LaTeX com KaTeX", () => {
+  // 1. Bloco $$ com fórmula complexa (E[Y | theta] = a)
+  const blockMd = "$$\nE[Y \\mid \\theta] = a\n$$";
+  const blockHtml = renderMarkdownToHtml(blockMd);
+  assert.ok(blockHtml.includes("tutor-math-block"), "Deve conter container de bloco matemático");
+  assert.ok(blockHtml.includes("katex-display"), "KaTeX deve renderizar no modo display");
+  assert.ok(blockHtml.includes("θ"), "Deve renderizar a letra grega theta");
+  assert.ok(blockHtml.includes("∣"), "Deve renderizar o operador mid");
+
+  // 2. Fração, somatório, raiz e matriz
+  const fracHtml = renderMarkdownToHtml("$$\\frac{a}{b}$$");
+  assert.ok(fracHtml.includes("katex"), "Deve renderizar fração com KaTeX");
+
+  const sumHtml = renderMarkdownToHtml("$$\\sum_{i=1}^{n} x_i$$");
+  assert.ok(sumHtml.includes("katex"), "Deve renderizar somatório com KaTeX");
+  assert.ok(sumHtml.includes("∑"), "Deve conter símbolo de somatório");
+
+  const sqrtHtml = renderMarkdownToHtml("$$\\sqrt{x^2+y^2}$$");
+  assert.ok(sqrtHtml.includes("katex"), "Deve renderizar raiz com KaTeX");
+
+  const matrixHtml = renderMarkdownToHtml("$$\\begin{bmatrix} 1 & 2 \\\\ 3 & 4 \\end{bmatrix}$$");
+  assert.ok(matrixHtml.includes("katex"), "Deve renderizar matriz com KaTeX");
+
+  // 3. Delimitadores padrão LaTeX \[...\] e \(...\)
+  const bracketBlockHtml = renderMarkdownToHtml("\\[\\int_0^\\infty e^{-x} dx = 1\\]");
+  assert.ok(bracketBlockHtml.includes("tutor-math-block"), "Deve reconhecer \\[...\\] como bloco");
+  assert.ok(bracketBlockHtml.includes("katex"), "Deve renderizar integral com KaTeX");
+
+  const parenInlineHtml = renderMarkdownToHtml("A equação \\(a^2 + b^2 = c^2\\) é de Pitágoras.");
+  assert.ok(parenInlineHtml.includes("katex"), "Deve reconhecer \\(...\\) como inline");
+  assert.ok(!parenInlineHtml.includes("tutor-math-block"), "Inline não deve criar bloco isolado");
+
+  // 4. Proteção anti-falso-positivo com moedas ($10 e $20)
+  const moneyText = "O produto custa $10 e o outro $20 no total.";
+  const moneyHtml = renderMarkdownToHtml(moneyText);
+  assert.ok(!moneyHtml.includes("katex"), "Moedas com espaços não devem ser tratadas como matemática");
+  assert.ok(moneyHtml.includes("$10 e o outro $20"), "Texto monetário deve ser preservado intacto");
+
+  // 5. Resiliência durante streaming com fórmula incompleta (delimitador aberto)
+  const incompleteStream = "$$\nE[Y \\mid \\theta]";
+  const streamHtml = renderMarkdownToHtml(incompleteStream);
+  assert.ok(!streamHtml.includes("katex-error"), "Fórmula aberta no streaming não deve explodir erro do KaTeX");
+  assert.ok(streamHtml.includes("E[Y \\mid \\theta]"), "Texto parcial deve ser preservado com segurança durante streaming");
+});
+
 test("Whisper: cálculo dinâmico de threads ideais (getOptimalTranscriptionThreads)", () => {
   assert.strictEqual(getOptimalTranscriptionThreads(4), 4);
   assert.strictEqual(getOptimalTranscriptionThreads(12), 12);

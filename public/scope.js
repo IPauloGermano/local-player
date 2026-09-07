@@ -207,6 +207,37 @@
     return "";
   }
 
+  // Sanitização de texto plano para prevenção de XSS.
+  function escapeHtml(str) {
+    return String(str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // Localiza a biblioteca KaTeX disponível no ambiente (Browser ou Node.js).
+  function getKatex() {
+    if (typeof katex !== "undefined" && katex && typeof katex.renderToString === "function") {
+      return katex;
+    }
+    if (typeof globalThis !== "undefined" && globalThis.katex && typeof globalThis.katex.renderToString === "function") {
+      return globalThis.katex;
+    }
+    if (typeof window !== "undefined" && window.katex && typeof window.katex.renderToString === "function") {
+      return window.katex;
+    }
+    if (typeof require === "function") {
+      try {
+        const path = require("path");
+        const k = require(path.join(__dirname, "vendor", "katex", "katex.min.js"));
+        if (k && typeof k.renderToString === "function") return k;
+      } catch {}
+    }
+    return null;
+  }
+
   // Converte formatos HH:MM:SS ou MM:SS em segundos (número).
   function parseTimestampToSeconds(ts) {
     if (!ts || typeof ts !== "string") return 0;
@@ -316,14 +347,28 @@
       return placeholder;
     });
 
-    // 1b. Isola fórmulas matemáticas LaTeX em bloco ($$...$$) e inline ($...$)
+    // 1b. Isola fórmulas matemáticas LaTeX em bloco ($$...$$ e \[...\]) e inline ($...$ e \(...\))
     const mathItems = [];
+    // Bloco: $$...$$
     processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => {
       const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
       mathItems.push({ block: true, content: math.trim() });
       return placeholder;
     });
-    processed = processed.replace(/(?<!\\)\$([^\$\n]+)\$/g, (_, math) => {
+    // Bloco: \[...\]
+    processed = processed.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => {
+      const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
+      mathItems.push({ block: true, content: math.trim() });
+      return placeholder;
+    });
+    // Inline: \(...\)
+    processed = processed.replace(/\\\((.+?)\\\)/g, (_, math) => {
+      const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
+      mathItems.push({ block: false, content: math.trim() });
+      return placeholder;
+    });
+    // Inline: $...$ (com proteção anti-espaço no início e fim)
+    processed = processed.replace(/(?<!\\)\$(?!\s)([^\$\n]+?)(?<!\s)\$/g, (_, math) => {
       const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
       mathItems.push({ block: false, content: math.trim() });
       return placeholder;
@@ -530,14 +575,33 @@
     });
 
     // 8. Restaura fórmulas matemáticas (inline e bloco)
+    const kLib = getKatex();
     processedBlocks = processedBlocks.replace(/\x00LPMATH(\d+)END\x00/g, (_, idx) => {
       const item = mathItems[Number(idx)];
       if (!item) return "";
-      let math = item.content
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      math = math
+
+      if (kLib && typeof kLib.renderToString === "function") {
+        try {
+          const rendered = kLib.renderToString(item.content, {
+            displayMode: item.block,
+            throwOnError: false,
+            trust: false,
+          });
+          if (item.block) {
+            return `<div class="tutor-math-block">${rendered}</div>`;
+          }
+          return rendered;
+        } catch {
+          // Fallback seguro caso a fórmula esteja incompleta durante o streaming
+          const safe = escapeHtml(item.content);
+          return item.block
+            ? `<div class="tutor-math-block"><code class="tutor-math">${safe}</code></div>`
+            : `<code class="tutor-math tutor-math-inline">${safe}</code>`;
+        }
+      }
+
+      // Fallback sem KaTeX (ex: ambiente sem lib ou renderização textual pura)
+      let math = escapeHtml(item.content)
         .replace(/\\rightarrow/g, "→")
         .replace(/\\leftarrow/g, "←")
         .replace(/\\Rightarrow/g, "⇒")
@@ -604,5 +668,7 @@
     parseMarkdownTable,
     parseTimestampToSeconds,
     renderMarkdownToHtml,
+    escapeHtml,
+    getKatex,
   };
 });

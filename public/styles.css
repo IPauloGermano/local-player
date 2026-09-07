@@ -5444,6 +5444,16 @@ body {
   overflow-x: auto;
 }
 
+.tutor-math-block .katex-display {
+  margin: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.tutor-msg-bubble .katex {
+  color: #f1f5f9;
+}
+
 .tutor-link {
   color: var(--accent);
   text-decoration: underline;
