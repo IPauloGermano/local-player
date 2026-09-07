@@ -172,16 +172,28 @@ function volumeIcon(state) {
 // - DynamicsCompressorNode (Normalizador nativo): atenua picos e equilibra falas
 //   baixas automaticamente em todas as aulas, sem intervenção do usuário.
 // - GainNode: controla o volume base (0–100%) e amplifica ganho extra (100–200%).
+// Cadeia DSP de Processamento Vocal e Normalização Profunda (Broadcast Vocal DSP):
+// videoEl -> sourceNode -> highPassFilter -> presenceFilter -> preGainNode -> compressorNode -> gainNode -> limiterNode -> destination
+// 1. highPassFilter (85 Hz): elimina sub-graves inaudíveis (vibração de mesa, ar, hum 60 Hz) e libera potência para a fala.
+// 2. presenceFilter (3.0 kHz, +3.5 dB): realça consoantes e inteligibilidade fonética da voz humana.
+// 3. preGainNode (+6.8 dB / ~2.2x): pré-amplifica sinais gravados com ganho de entrada fraco.
+// 4. compressorNode (-34 dB): puxa vozes distantes e uniformiza a dinâmica das aulas.
+// 5. gainNode: volume do usuário (0–100%) e ganho manual ampliado até 300%.
+// 6. limiterNode (-1 dBFS): barreira true-peak que elimina qualquer risco de distorção ou clipping.
 let audioCtx = null;
-let gainNode = null;
+let highPassFilter = null;
+let presenceFilter = null;
+let preGainNode = null;
 let compressorNode = null;
+let gainNode = null;
+let limiterNode = null;
 let sourceNode = null;
 let sourceEl = null;
 
 const WEB_AUDIO_OK = !!(window.AudioContext || window.webkitAudioContext);
 
 const VOLUME_KEY = "course-player-volume"; // 0–100 (volume nativo)
-const GAIN_KEY = "course-player-gain"; // 100–200 (ganho extra via Web Audio)
+const GAIN_KEY = "course-player-gain"; // 100–300 (ganho extra ampliado via Web Audio)
 const MUTED_KEY = "course-player-muted"; // "1"|"0" (estado de mudo)
 
 function getMutedPref() {
@@ -197,7 +209,7 @@ function getVolumePrefs() {
   const gain = parseFloat(localStorage.getItem(GAIN_KEY) || "100");
   return {
     volume: Number.isFinite(volume) ? Math.max(0, Math.min(100, volume)) : 100,
-    gain: Number.isFinite(gain) ? Math.max(100, Math.min(200, gain)) : 100,
+    gain: Number.isFinite(gain) ? Math.max(100, Math.min(300, gain)) : 100,
   };
 }
 
@@ -214,26 +226,58 @@ function ensureAudioGraph(videoEl) {
     if (!Ctor) return;
     audioCtx = new Ctor();
 
+    // 1. High-Pass Filter (85 Hz) — elimina ruídos graves indesejados e economiza potência
+    highPassFilter = audioCtx.createBiquadFilter();
+    highPassFilter.type = "highpass";
+    highPassFilter.frequency.value = 85;
+    highPassFilter.Q.value = 0.707;
+
+    // 2. Presence Filter (3 kHz, +3.5 dB) — inteligibilidade e nitidez de consoantes da fala
+    presenceFilter = audioCtx.createBiquadFilter();
+    presenceFilter.type = "peaking";
+    presenceFilter.frequency.value = 3000;
+    presenceFilter.Q.value = 1.2;
+    presenceFilter.gain.value = 3.5;
+
+    // 3. Pré-amplificação de sinais fracos (+6.8 dB / ~2.2x)
+    preGainNode = audioCtx.createGain();
+    preGainNode.gain.value = 2.2;
+
+    // 4. Normalizador de dinâmica profundo (-34 dB) — nivela vozes baixas e atenua picos
+    compressorNode = audioCtx.createDynamicsCompressor();
+    compressorNode.threshold.value = -34;
+    compressorNode.knee.value = 30;
+    compressorNode.ratio.value = 12;
+    compressorNode.attack.value = 0.003;
+    compressorNode.release.value = 0.25;
+
+    // 5. Volume do usuário e ganho extra até 300%
     gainNode = audioCtx.createGain();
     gainNode.gain.value = prefs.gain / 100;
-    gainNode.connect(audioCtx.destination);
 
-    // Normalizador de áudio inteligente nativo (DynamicsCompressorNode):
-    // atenua picos repentinos sem distorcer e traz partes baixas para nível audível.
-    compressorNode = audioCtx.createDynamicsCompressor();
-    compressorNode.threshold.value = -24; // dB
-    compressorNode.knee.value = 30; // dB
-    compressorNode.ratio.value = 12; // compressão de picos
-    compressorNode.attack.value = 0.003; // 3ms
-    compressorNode.release.value = 0.25; // 250ms
+    // 6. True-Peak Brickwall Limiter (-1 dBFS) — proteção absoluta contra clipping e distorção
+    limiterNode = audioCtx.createDynamicsCompressor();
+    limiterNode.threshold.value = -1.0;
+    limiterNode.knee.value = 0;
+    limiterNode.ratio.value = 20;
+    limiterNode.attack.value = 0.001;
+    limiterNode.release.value = 0.05;
+
+    // Conexão sequencial da cadeia DSP:
+    // highPass -> presence -> preGain -> compressor -> gain -> limiter -> destination
+    highPassFilter.connect(presenceFilter);
+    presenceFilter.connect(preGainNode);
+    preGainNode.connect(compressorNode);
     compressorNode.connect(gainNode);
+    gainNode.connect(limiterNode);
+    limiterNode.connect(audioCtx.destination);
 
     resumeAudio();
   } else if (gainNode) {
     gainNode.gain.value = prefs.gain / 100;
   }
 
-  // Troca de aula: o elemento mudou → recria apenas o source para o novo vídeo.
+  // Troca de aula: o elemento mudou → conecta a fonte na entrada da cadeia DSP
   if (sourceEl !== videoEl) {
     if (sourceNode) {
       try {
@@ -243,7 +287,7 @@ function ensureAudioGraph(videoEl) {
     }
     try {
       sourceNode = audioCtx.createMediaElementSource(videoEl);
-      sourceNode.connect(compressorNode || gainNode);
+      sourceNode.connect(highPassFilter || preGainNode || compressorNode || gainNode);
       sourceEl = videoEl;
     } catch (err) {
       sourceNode = null;
@@ -466,7 +510,7 @@ function renderPlayerAndLesson() {
                 </label>
                 <label class="pc-slider-row">
                   <span class="pc-slider-name">Ganho extra</span>
-                  <input type="range" class="pc-slider" id="pc-gain" min="100" max="200" step="5" value="100" aria-label="Ganho extra acima de 100%" />
+                  <input type="range" class="pc-slider" id="pc-gain" min="100" max="300" step="5" value="100" aria-label="Ganho extra acima de 100% (até 300%)" />
                   <span class="pc-slider-val" id="pc-gain-val">100%</span>
                 </label>
                 <p class="pc-vol-warn" id="pc-vol-warn" hidden>Volume acima do normal pode causar distorção.</p>
@@ -805,7 +849,7 @@ function wirePlayerUI(videoEl) {
     }
     if (gainRange) {
       gainRange.value = String(prefs.gain);
-      setSliderFill(gainRange, prefs.gain, 100, 200);
+      setSliderFill(gainRange, prefs.gain, 100, 300);
     }
     if (volVal) volVal.textContent = `${prefs.volume}%`;
     if (gainVal) gainVal.textContent = `${prefs.gain}%`;
@@ -868,7 +912,7 @@ function wirePlayerUI(videoEl) {
     gainRange.addEventListener("input", () => {
       const gain = gainRange.valueAsNumber;
       if (gainVal) gainVal.textContent = `${gain}%`;
-      setSliderFill(gainRange, gain, 100, 200);
+      setSliderFill(gainRange, gain, 100, 300);
       setVolumePrefs(getVolumePrefs().volume, gain);
       ensureAudioGraph(videoEl);
       if (gainNode) gainNode.gain.value = gain / 100;

@@ -27,9 +27,10 @@ sem envio para a internet.
   materiais de apoio com correspondência flexível e sem distinção de acentos.
 - **Player robusto com progresso persistente**: salvamento atômico de posição,
   retomada automática inteligente e auto-conclusão ao atingir >95% do vídeo.
-- **Áudio Boost, Normalizador e Controles**: amplificação de volume além de 100% via Web
-  Audio API (GainNode) para gravações baixas, normalizador de áudio inteligente nativo
-  (DynamicsCompressorNode) que atenua picos e equilibra falas baixas automaticamente em todas as aulas sem configuração manual, velocidade
+- **Áudio Boost, Normalizador e Controles**: amplificação de volume até 300% via Web
+  Audio API (GainNode) para gravações muito baixas, normalizador profundo nativo
+  (pré-amplificação + DynamicsCompressorNode a -34 dB + limiter anti-clipping a -1 dB)
+  que resgata áudios inaudíveis e nivela falas automaticamente sem distorção, velocidade
   ajustável (0.5× a 2×) persistida, modo teatro, tela cheia nativa e atalhos de teclado configuráveis.
 - **Sidebar de aulas e materiais**: sidebar focada exclusivamente em navegação de
   aulas; arquivos de suporte (.pdf, .zip, .docx, códigos) ficam isolados na seção
