@@ -166,18 +166,18 @@ function volumeIcon(state) {
   return ICON_VOLUME_DOWN;
 }
 
-// ---------- Volume e ganho extra (Web Audio) ----------
-// Volume 0–100% usa video.volume; acima de 100% o excesso vem de um GainNode
-// (100% = 1.0, 200% = 2.0). Um único AudioContext por página, reutilizado
-// entre aulas; apenas o MediaElementAudioSourceNode é recriado quando o
-// elemento <video> muda. Nunca usa video.volume > 1.
+// ---------- Pipeline de Áudio Nativo (Web Audio API) ----------
+// Pipeline inteligente permanente e transparente:
+// videoEl -> sourceNode -> DynamicsCompressorNode -> GainNode -> destination
+// - DynamicsCompressorNode (Normalizador nativo): atenua picos e equilibra falas
+//   baixas automaticamente em todas as aulas, sem intervenção do usuário.
+// - GainNode: controla o volume base (0–100%) e amplifica ganho extra (100–200%).
 let audioCtx = null;
 let gainNode = null;
+let compressorNode = null;
 let sourceNode = null;
 let sourceEl = null;
 
-// Todos os navegadores modernos têm Web Audio, mas o badge "EXTRA" não pode
-// mentir caso o AudioContext esteja indisponível.
 const WEB_AUDIO_OK = !!(window.AudioContext || window.webkitAudioContext);
 
 const VOLUME_KEY = "course-player-volume"; // 0–100 (volume nativo)
@@ -207,26 +207,33 @@ function setVolumePrefs(base, gainPct) {
 }
 
 function ensureAudioGraph(videoEl) {
-  if (!videoEl) return;
+  if (!videoEl || !WEB_AUDIO_OK) return;
   const prefs = getVolumePrefs();
-  // Sem ganho extra (gain <= 100%) o elemento segue roteado direto, sem
-  // AudioContext — evita custo e problemas de autoplay policy.
-  if (prefs.gain <= 100) return;
   if (!audioCtx) {
     const Ctor = window.AudioContext || window.webkitAudioContext;
     if (!Ctor) return;
     audioCtx = new Ctor();
+
     gainNode = audioCtx.createGain();
     gainNode.gain.value = prefs.gain / 100;
     gainNode.connect(audioCtx.destination);
-    // O contexto nasce suspenso; se o vídeo já está tocando, retomá-lo aqui
-    // evita silêncio até o próximo play/pause (chamada normalmente dentro de
-    // um gesto do usuário — ex.: arrastar "Ganho extra" — então resume() ok).
+
+    // Normalizador de áudio inteligente nativo (DynamicsCompressorNode):
+    // atenua picos repentinos sem distorcer e traz partes baixas para nível audível.
+    compressorNode = audioCtx.createDynamicsCompressor();
+    compressorNode.threshold.value = -24; // dB
+    compressorNode.knee.value = 30; // dB
+    compressorNode.ratio.value = 12; // compressão de picos
+    compressorNode.attack.value = 0.003; // 3ms
+    compressorNode.release.value = 0.25; // 250ms
+    compressorNode.connect(gainNode);
+
     resumeAudio();
   } else if (gainNode) {
     gainNode.gain.value = prefs.gain / 100;
   }
-  // Troca de aula: o elemento mudou → recria apenas o source para ele.
+
+  // Troca de aula: o elemento mudou → recria apenas o source para o novo vídeo.
   if (sourceEl !== videoEl) {
     if (sourceNode) {
       try {
@@ -236,7 +243,7 @@ function ensureAudioGraph(videoEl) {
     }
     try {
       sourceNode = audioCtx.createMediaElementSource(videoEl);
-      sourceNode.connect(gainNode);
+      sourceNode.connect(compressorNode || gainNode);
       sourceEl = videoEl;
     } catch (err) {
       sourceNode = null;
@@ -286,16 +293,12 @@ function updateVolumeUI(videoEl) {
   const badge = document.getElementById("pc-extra-badge");
   const icon = document.getElementById("pc-vol-icon");
   const prefs = getVolumePrefs();
+
   // Sem suporte a Web Audio o ganho extra não é aplicado na prática; mostra
   // só o volume nativo para o badge/label não prometerem um boost inexistente.
   const gainFactor = WEB_AUDIO_OK ? prefs.gain / 100 : 1;
   const eff = (videoEl ? videoEl.volume : 1) * gainFactor;
   const pct = Math.round(eff * 100);
-  // O rótulo mostra o volume EFETIVO (volume nativo × ganho). Já o badge
-  // "EXTRA" acompanha o slider de ganho (ativo quando >100%), independente do
-  // volume base: se o usuário puser 150% de ganho com volume 50%, o resultado
-  // é 75% — honesto no rótulo, mas o EXTRA continua indicando que o ganho
-  // extra está engajado (antes, esse caso não mostrava indicação nenhuma).
   const extraActive = WEB_AUDIO_OK && prefs.gain > 100;
   if (label) {
     label.textContent = `${pct}%`;
@@ -867,12 +870,17 @@ function wirePlayerUI(videoEl) {
       if (gainVal) gainVal.textContent = `${gain}%`;
       setSliderFill(gainRange, gain, 100, 200);
       setVolumePrefs(getVolumePrefs().volume, gain);
-      if (gain > 100) ensureAudioGraph(videoEl);
+      ensureAudioGraph(videoEl);
       if (gainNode) gainNode.gain.value = gain / 100;
       updateVolumeUI(videoEl);
       refreshWarn();
     });
   }
+  // Garante que qualquer reprodução inicialize o grafo e retome o áudio
+  videoEl.addEventListener("play", () => {
+    ensureAudioGraph(videoEl);
+    resumeAudio();
+  });
 
   if (speedBtn && speedMenu) {
     speedBtn.addEventListener("click", (e) => {

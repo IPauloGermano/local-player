@@ -197,7 +197,8 @@ funciona normal.**
   mantém conclusão; posição 0 não apaga; sem metadata não grava. Retomada:
   seek em `loadedmetadata` quando `3 < position < duration-2`.
 - **Áudio**: `video.volume` até 100%; excesso via GainNode (AudioContext único,
-  recria só o source node na troca de `<video>`). Velocidade 0.5–2× persistida.
+  recria só o source node na troca de `<video>`). Normalizador nativo transparente via DynamicsCompressorNode
+  (equilibra falas baixas e atenua picos automaticamente em todas as aulas). Velocidade 0.5–2× persistida.
 - **Atalhos configuráveis**: 14 ações em `DEFAULT_SHORTCUTS` (modo captura,
   conflito rejeitado, pulados em inputs, `Esc` fecha popovers).
 - Fallback: `error` → `prepareTranscoded()` (badge, troca `src`, retoma em

@@ -394,6 +394,7 @@ Resumo:
   (`position > 5 && !completed`, por `updatedAt`) → 1ª não concluída → 1ª vídeo.
 - **Áudio**: `video.volume` até 100%; excesso (100–200%) via GainNode do Web
   Audio (AudioContext único; recria só o source na troca de `<video>`).
+  Normalizador de áudio nativo transparente via DynamicsCompressorNode (atenua picos e equilibra falas baixas automaticamente em todos os vídeos).
   Velocidade 0.5–2× persistida.
 - **Atalhos configuráveis**: 14 ações em `DEFAULT_SHORTCUTS` (modo captura,
   conflito rejeitado, pulados em inputs, `Esc` fecha popovers); reconhecidos
