@@ -1,4 +1,4 @@
-// Gerenciamento de Legendas, Overlay, Geometria, Arraste e Tradução por IA
+// Gerenciamento de Legendas, Overlay, Geometria e Arraste
 // ---------- Legendas por IA (estágio 6) ----------
 // Integração NÃO-bloqueante com o player: o vídeo toca primeiro; quando a
 // legenda está pronta, o texto é exibido no overlay .subtitle-overlay (nunca
@@ -7,9 +7,6 @@
 // (nunca um modal): "Legenda disponível", "Gerando legenda…", "Legenda
 // indisponível" ou "Erro ao gerar".
 let subtitlePollTimer = null;
-// Último idioma cujo overlay foi carregado (por aula); muda ⇒ recarrega mesmo
-// com `overlayLoaded` ligado (troca de idioma no menu CC).
-let subtitleLastLoadedLang = null;
 // Guarda de P1: só antecipa a próxima aula uma vez por montagem do player
 // (o backend já dedupa, mas isto evita POSTs repetidos a cada sondagem).
 let subtitlePregenNextPath = null;
@@ -31,7 +28,7 @@ var subtitleState = {
   rel: null,
   libId: null,
   ready: false,
-  source: null, // 'edited' | 'processed' | 'vtt' | 'translated' | null
+  source: null, // 'edited' | 'processed' | 'vtt' | null
   edited: false,
   staleSource: false,
   segments: [],
@@ -44,13 +41,7 @@ var subtitleState = {
   // (localStorage) decide se o overlay aparece mesmo com legenda pronta.
   ccKind: null,
   enabled: true,
-  // Idiomas (preenchidos pela sondagem do status): `lang` = idioma ativo
-  // (null = original), `sourceLang` = língua-fonte da transcrição, `targetLang`
-  // = idioma-alvo de tradução configurado, `canTranslate` = LLM habilitado.
-  lang: null,
-  sourceLang: null,
-  targetLang: null,
-  canTranslate: false,
+  // Visibilidade das legendas (localStorage); sem seleção de idioma.
   // Posição arrastável da legenda (como no YouTube): normalizada e por aula —
   // `pos.v` = fração da altura do quadro medida da base (0 = padrão, 1 = topo),
   // `pos.h` = fração horizontal do centro (0.5 = centro). null = padrão.
@@ -66,33 +57,6 @@ var subtitleState = {
 // A preferência Ligado/Desativado fica no localStorage (nunca no servidor).
 // ---------------------------------------------------------------------------
 const SUBTITLES_ENABLED_KEY = "course-player-subtitles-enabled";
-// Idioma de exibição escolhido (localStorage, padrão global): "original" ou um
-// id de idioma de tradução (ex. "pt"). O id exibido cai para "original" quando
-// a aula não oferece tradução (língua-fonte == alvo ou sem LLM).
-const SUBTITLES_LANG_KEY = "course-player-subtitles-lang";
-// Nomes curtos (sem "Brasil" etc.) para o menu CC não alargar; o idioma-fonte
-// aparece como "Original (<nome>)".
-const SUBTITLE_LANG_NAMES = {
-  auto: "Detecção automática",
-  pt: "Português",
-  en: "Inglês",
-  es: "Espanhol",
-  fr: "Francês",
-  de: "Alemão",
-  it: "Italiano",
-  nl: "Holandês",
-  ja: "Japonês",
-  ko: "Coreano",
-  zh: "Chinês",
-  ru: "Russo",
-};
-function subtitleLangName(id) {
-  return SUBTITLE_LANG_NAMES[id] || id || "Original";
-}
-function getSubtitleLang() {
-  const v = localStorage.getItem(SUBTITLES_LANG_KEY) || "original";
-  return /^[a-z]{2,10}$/.test(v) ? v : null;
-}
 
 function getSubtitleEnabled() {
   return localStorage.getItem(SUBTITLES_ENABLED_KEY) !== "0";
@@ -105,21 +69,6 @@ function setSubtitleEnabled(v) {
   applySubtitleVisibility();
   syncSubtitleCcUi();
   if (v && typeof subtitleCheckApi === "function") subtitleCheckApi();
-}
-
-// Troca o idioma de exibição da legenda da aula atual (null = original, ou o
-// id do idioma-alvo de tradução). Selecionar um idioma liga as legendas. A
-// sondagem (check) recarrega o overlay e dispara a geração da tradução se
-// preciso — sem nunca bloquear a reprodução.
-function setSubtitleLang(lang) {
-  subtitleState.lang = lang || null;
-  try {
-    localStorage.setItem(SUBTITLES_LANG_KEY, subtitleState.lang || "original");
-  } catch {}
-  setSubtitleEnabled(true);
-  syncSubtitleCcUi();
-  if (typeof subtitleCheckApi === "function") subtitleCheckApi();
-  applySubtitleVisibility();
 }
 
 // Mostra/esconde o overlay conforme prontidão + preferência, sem recarregar os
@@ -172,9 +121,6 @@ function syncSubtitleCcUi() {
   } else if (kind === "unavailable") {
     cls = "is-off";
     title = "Legendas indisponíveis — o menu permite gerar";
-  } else if (kind === "no-translate") {
-    cls = "is-off";
-    title = "Tradução indisponível — configure um LLM na Central de IA";
   } else if (kind === "off") {
     cls = "is-off";
     title = "Legendas desativadas";
@@ -195,40 +141,14 @@ function syncSubtitleCcUi() {
     dot.hidden = !showDot;
     dot.textContent = kind === "failed" || kind === "waiting" ? "!" : "";
   }
-  // Seletor de idioma (Original / <tradução> / Desativado) — montado nos dois
-  // menus (barra e ⋮ mobile). `activeLang` = idioma ativo; quando o escolhido
-  // é a língua-fonte ou a tradução não está disponível, o "Original" é o ativo.
-  const activeLang =
-    subtitleState.lang &&
-    subtitleState.targetLang &&
-    subtitleState.lang === subtitleState.targetLang &&
-    subtitleState.targetLang !== subtitleState.sourceLang
-      ? subtitleState.lang
-      : null;
-  const srcLabel =
-    "Original" +
-    (subtitleState.sourceLang
-      ? ` (${escapeHtml(subtitleLangName(subtitleState.sourceLang))})`
-      : "");
-  const isSrcActive = enabled && activeLang === null;
-  const isTrActive = (t) => enabled && activeLang === t;
+  // Seletor (Original / Desativado) — montado nos dois menus (barra e ⋮ mobile).
+  const isSrcActive = enabled;
   const isOffActive = !enabled;
 
   const langItems = [
-    `<button type="button" class="pc-menu-item${isSrcActive ? " is-active" : ""}" data-cc="lang-source" aria-pressed="${isSrcActive}">${escapeHtml(srcLabel)}</button>`,
-  ];
-  if (
-    subtitleState.targetLang &&
-    subtitleState.targetLang !== subtitleState.sourceLang
-  ) {
-    const t = subtitleState.targetLang;
-    langItems.push(
-      `<button type="button" class="pc-menu-item${isTrActive(t) ? " is-active" : ""}" data-cc="lang-${escapeHtml(t)}" aria-pressed="${isTrActive(t)}">${escapeHtml(subtitleLangName(t))}</button>`,
-    );
-  }
-  langItems.push(
+    `<button type="button" class="pc-menu-item${isSrcActive ? " is-active" : ""}" data-cc="lang-source" aria-pressed="${isSrcActive}">Original</button>`,
     `<button type="button" class="pc-menu-item${isOffActive ? " is-active" : ""}" data-cc="off" aria-pressed="${isOffActive}">Desativado</button>`,
-  );
+  ];
   const langsHtml = langItems.join("");
   ["pc-cc-langs", "pc-more-cc-langs"].forEach((id) => {
     const el = document.getElementById(id);
@@ -283,7 +203,6 @@ function syncSubtitleCcUi() {
   const isError = kind === "failed";
   if (kind === "generating") statusText = "Gerando legenda…";
   else if (kind === "waiting") statusText = "Aguardando o dispositivo…";
-  else if (kind === "no-translate") statusText = "Tradução indisponível — configure um LLM";
   else if (kind === "failed") {
     const errorDetail = subtitleState.lastError || "";
     statusText = formatSubtitleErrorMessage(errorDetail);
@@ -293,8 +212,12 @@ function syncSubtitleCcUi() {
     actionText = "Gerar legenda";
     showAction = true;
   } else if (kind === "ready" || kind === "stale") {
-    actionText = "Regenerar";
-    showAction = true;
+    // "Regenerar" exige pipeline — sem Whisper o botão some (ação morta),
+    // mas o seletor de idioma (Original/Desativado) continua funcional.
+    if (subtitleState.canGenerate !== false) {
+      actionText = "Regenerar";
+      showAction = true;
+    }
   }
   statusEls.forEach((el) => {
     el.textContent = statusText;
@@ -320,12 +243,7 @@ function updateSubtitleBadge() {
   let msg = "";
   const isError = kind === "failed";
   if (kind === "generating") {
-    const isTranslation =
-      subtitleState.lang &&
-      subtitleState.targetLang &&
-      subtitleState.lang === subtitleState.targetLang &&
-      subtitleState.targetLang !== subtitleState.sourceLang;
-    msg = isTranslation ? "Traduzindo…" : "Gerando legenda…";
+    msg = "Gerando legenda…";
     if (typeof subtitleState.percent === "number") {
       msg += " " + Math.round(subtitleState.percent) + "%";
     }
@@ -356,7 +274,7 @@ function updateSubtitleBadge() {
 // Dispara a geração/regeneração da legenda da aula atual a partir do menu CC.
 // O backend dedupa; `force` regenera do zero quando já existe ou falhou.
 let subtitleGenerateApi = null; // preenchido em setupPlayerSubtitles
-// Re-sondagem do status (usado por setSubtitleLang ao trocar o idioma).
+// Re-sondagem do status.
 let subtitleCheckApi = null; // preenchido em setupPlayerSubtitles
 function requestSubtitleGenerate() {
   if (subtitleGenerateApi) subtitleGenerateApi();
@@ -879,11 +797,10 @@ function updateSubtitleOverlay(time) {
 
 // Carrega o documento editável do backend e liga o overlay à reprodução.
 // Usa /api/subtitles/editor (fonte: edited > processed > vtt; nunca raw).
-async function loadSubtitleOverlay(videoEl, rel, libId, lang) {
+async function loadSubtitleOverlay(videoEl, rel, libId) {
   let doc;
   try {
-    let url = "/api/subtitles/editor?path=" + encodeURIComponent(rel) + libQuery({ libId });
-    if (lang) url += "&lang=" + encodeURIComponent(lang);
+    const url = "/api/subtitles/editor?path=" + encodeURIComponent(rel) + libQuery({ libId });
     const res = await fetch(url);
     if (!res.ok) return false;
     doc = await res.json();
@@ -930,7 +847,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   subtitlePregenNextPath = null;
   teardownSubtitleGeometry();
   // Zera o estado do overlay e do botão CC (nova aula); a preferência
-  // Ligado/Desativado e o idioma vêm do localStorage.
+  // Ligado/Desativado vem do localStorage.
   subtitleState.hash = null;
   subtitleState.rel = null;
   subtitleState.ready = false;
@@ -941,16 +858,11 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   subtitleState.currentIndex = -1;
   subtitleState.ccKind = null;
   subtitleState.enabled = getSubtitleEnabled();
-  subtitleState.lang = getSubtitleLang();
-  subtitleState.sourceLang = null;
-  subtitleState.targetLang = null;
-  subtitleState.canTranslate = false;
   subtitleState.libId = video.libId || null;
   subtitleState.pos = null; // posição arrastável volta ao padrão a cada aula
   subtitleState.percent = null;
   subtitleGenerateApi = null;
   subtitleCheckApi = null;
-  subtitleLastLoadedLang = null;
   const overlayEl = document.getElementById("subtitle-overlay");
   if (overlayEl) overlayEl.hidden = true;
   syncSubtitleCcUi();
@@ -969,20 +881,6 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
     }
   };
   const rel = video.path;
-  // Idioma efetivo: a seleção cai para "original" quando o idioma escolhido é
-  // a própria língua-fonte, quando a tradução está desabilitada ou quando o
-  // idioma-alvo mudou (o backend também trata assim).
-  const effectiveLang = () =>
-    subtitleState.lang &&
-    subtitleState.targetLang &&
-    subtitleState.lang === subtitleState.targetLang &&
-    subtitleState.targetLang !== subtitleState.sourceLang
-      ? subtitleState.lang
-      : null;
-  const langQuery = () => {
-    const l = effectiveLang();
-    return l ? "&lang=" + encodeURIComponent(l) : "";
-  };
   // Ação do menu CC (Gerar/Regenerar): registrada para o delegation do player.
   // Força regeneração quando solicitado pelo usuário; cancela jobs órfãos e re-sonda até ficar pronta.
   subtitleGenerateApi = async () => {
@@ -994,7 +892,6 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
         "/api/subtitles/generate?path=" +
           encodeURIComponent(rel) +
           libQuery(video) +
-          langQuery() +
           "&priority=0&force=1",
         { method: "POST" },
       );
@@ -1042,8 +939,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
       const res = await fetch(
         "/api/subtitles/status?path=" +
           encodeURIComponent(rel) +
-          libQuery(video) +
-          langQuery(),
+          libQuery(video),
       );
       if (!res.ok) throw new Error("http " + res.status);
       st = await res.json();
@@ -1052,32 +948,25 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
       }
       // Progresso real do job (whisper -pp) para o badge "Gerando legenda…".
       subtitleState.percent = typeof st.percent === "number" ? st.percent : null;
-      // Língua-fonte real e possibilidade de tradução vêm da sondagem; o
-      // seletor de idioma do menu CC é montado a partir deles.
-      if (st.language) subtitleState.sourceLang = st.language;
-      subtitleState.targetLang =
-        st.translation && st.translation.enabled
-          ? st.translation.targetLanguage || null
-          : null;
-      subtitleState.canTranslate = !!st.canTranslate;
-      // Sem Whisper/LLM configurado ⇒ o controle CC não tem o que fazer (gerar
-      // nem regenerar) e fica oculto — mesmo se sobrar uma legenda pronta de
-      // geração anterior; sem o pipeline o menu só teria ações mortas.
-      const showCc = !!st.canGenerate || !!st.canTranslate;
+      subtitleState.canGenerate = !!st.canGenerate;
+      // Sem Whisper configurado ⇒ o controle CC não tem o que GERAR e
+      // fica oculto — EXCETO com legenda pronta: alternar Original/Desativado
+      // de uma legenda existente sempre funciona (sem pipeline) e escondê-la
+      // deixaria o usuário sem acesso às legendas que já tem.
+      const showCc = !!st.canGenerate || !!st.ready;
       if (ccGroupEl) ccGroupEl.style.display = showCc ? "" : "none";
       if (moreCcGroupEl) moreCcGroupEl.style.display = showCc ? "" : "none";
     } catch {
       return; // API indisponível: silencioso — nunca bloqueia a reprodução.
     }
-    // Troca de idioma: recarrega o overlay mesmo com `overlayLoaded` ligado.
-    const effLang = effectiveLang();
-    if (overlayLoaded && effLang !== subtitleLastLoadedLang) overlayLoaded = false;
-    subtitleLastLoadedLang = effLang;
     // Sem legenda pronta → overlay oculto; se voltar a ficar pronta depois
     // (ex.: regeneração), refetch no próximo poll (overlayLoaded é resetado).
+    // EXCEÇÃO: com segmentos válidos já carregados (ex.: original exibido
+    // enquanto a tradução gera), mantém o texto visível — apagar deixaria a
+    // tela sem legenda durante toda a geração e para sempre se ela falhar.
     if (!st.ready) {
       if (overlayLoaded) overlayLoaded = false;
-      hideOverlay();
+      if (!subtitleState.segments.length) hideOverlay();
     }
     if (st.ready) {
       stReady = true;
@@ -1091,11 +980,10 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
         return;
       }
       // Overlay custom no lugar do <track>: carrega o documento editável do
-      // backend (edited > processed > vtt > traduzido; nunca raw) e liga à
-      // reprodução.
+      // backend (edited > processed > vtt; nunca raw) e liga à reprodução.
       if (!overlayLoaded) {
         overlayLoaded = true;
-        loadSubtitleOverlay(videoEl, rel, video.libId, effLang).then((ok) => {
+        loadSubtitleOverlay(videoEl, rel, video.libId).then((ok) => {
           if (!ok) return;
           // timeupdate SÓ atualiza o texto do segmento ativo — sem re-render.
           videoEl.addEventListener("timeupdate", () =>
@@ -1115,8 +1003,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
       return;
     }
     const active = [
-      "queued", "extracting", "transcribing", "processing", "correcting", "formatting",
-      "translating",
+      "queued", "extracting", "transcribing", "processing", "formatting",
     ].includes(st.status);
     if (active) {
       stReady = false;
@@ -1139,50 +1026,6 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
       stFailed = true;
       subtitleState.lastError = (st && st.error) || subtitleState.lastError || null;
       setCc("failed");
-      stopPolling();
-      return;
-    }
-    // Tradução selecionada sem legenda original: encadeia a transcrição (P0)
-    // primeiro — quando a original estiver pronta, o próprio backend/frontend
-    // dispara a tradução. A seleção explícita gera sob demanda (independe do
-    // generateMode).
-    if (st.needTranscription) {
-      if (st.canGenerateSource) {
-        stReady = false;
-        stFailed = false;
-        setCc("generating");
-        fetch(
-          "/api/subtitles/generate?path=" + encodeURIComponent(rel) + libQuery(video),
-          { method: "POST" },
-        ).catch(() => {});
-        return; // continua a sondar
-      }
-      stReady = false;
-      stFailed = false;
-      setCc("unavailable");
-      stopPolling();
-      return;
-    }
-    if (effLang && st.canGenerate) {
-      stReady = false;
-      stFailed = false;
-      setCc("generating");
-      fetch(
-        "/api/subtitles/generate?path=" +
-          encodeURIComponent(rel) +
-          libQuery(video) +
-          langQuery() +
-          "&priority=0",
-        { method: "POST" },
-      ).catch(() => {});
-      return; // continua a sondar até a tradução ficar pronta
-    }
-    // Tradução selecionada mas sem LLM configurado: informa sem oferecer ação
-    // morta (o botão CC indica indisponível, sem job inútil na fila).
-    if (effLang && !st.canTranslate) {
-      stReady = false;
-      stFailed = false;
-      setCc("no-translate");
       stopPolling();
       return;
     }
@@ -1211,7 +1054,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   // duplicado; `skipIfReady` evita ruído "cache encontrado" na fila.
   const maybePregenNextLesson = () => {
     if (!st || st.pregenNextLesson !== true) return;
-    if (!st.ready && !["queued", "extracting", "transcribing", "processing", "correcting", "formatting", "translating"].includes(st.status)) return;
+    if (!st.ready && !["queued", "extracting", "transcribing", "processing", "formatting"].includes(st.status)) return;
     const idx = state.flatVideos.indexOf(video);
     const next = idx >= 0 ? state.flatVideos[idx + 1] : null;
     if (!next) return;

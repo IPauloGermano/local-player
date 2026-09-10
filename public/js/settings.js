@@ -1095,11 +1095,6 @@ const AI_TABS = [
     icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`,
   },
   {
-    id: "correction",
-    label: "Correção & Tradução",
-    icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`,
-  },
-  {
     id: "providers",
     label: "Provedores LLM",
     icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>`,
@@ -1227,7 +1222,6 @@ function renderAiPanel() {
     case "tutor": return renderAiTutor();
     case "skills": return renderAiSkills();
     case "transcription": return renderAiTranscription();
-    case "correction": return renderAiCorrection();
     case "providers": return renderAiProviders();
     case "models": return renderAiModels();
     case "advanced": return renderAiAdvanced();
@@ -1239,7 +1233,6 @@ function bindAiPanel(panel) {
     case "tutor": return bindAiTutor(panel);
     case "skills": return bindAiSkills(panel);
     case "transcription": return bindAiTranscription(panel);
-    case "correction": return bindAiCorrection(panel);
     case "providers": return bindAiProviders(panel);
     case "models": return bindAiModels(panel);
     case "advanced": return bindAiAdvanced(panel);
@@ -1288,15 +1281,6 @@ function renderAiOverview() {
     : (tr && tr.available
       ? "Modelo não instalado (veja a aba Modelos)"
       : "Não instalado");
-  const co = cfg?.correction || {};
-  const coProvider = aiLlmProvider(co.providerId);
-  const coConfigured = co.enabled && coProvider && coProvider.baseUrl;
-  const coDot = coConfigured ? "ok" : (coProvider ? "warn" : "off");
-  const coSub = coProvider
-    ? (co.enabled ? "Ativa" : "Desativada")
-      + ` · ${escapeHtml(coProvider.name)}`
-      + (co.model ? ` · ${escapeHtml(co.model)}` : "")
-    : "Nenhum provedor de LLM configurado";
   // Resumo do pipeline de legendas (processados / em fila / com erro).
   const s = aiState.subtitles;
   const stat = (n, label, cls) =>
@@ -1310,14 +1294,6 @@ function renderAiOverview() {
         </div>
         <p class="ai-status-sub">${trSub}</p>
         <p class="ai-status-desc">Converte áudio em texto com timestamps, 100% offline.</p>
-      </div>
-      <div class="ai-status-card">
-        <div class="ai-status-head">
-          <span class="ai-status-dot ${coDot}"></span>
-          <span class="ai-status-title">Correção por IA</span>
-        </div>
-        <p class="ai-status-sub">${coSub}</p>
-        <p class="ai-status-desc">Etapa opcional que melhora pontuação e legibilidade sem alterar o conteúdo falado.</p>
       </div>
     </div>
     <div class="ai-pipeline-stats">
@@ -1499,163 +1475,6 @@ function aiGoToTab(tab) {
   });
   const panel = document.getElementById("ai-panel");
   if (panel) renderAiPanelInto(panel);
-}
-
-function renderAiCorrection() {
-  const co = aiState.config.correction;
-  const tr = aiState.config.translation || { enabled: false, targetLanguage: "pt", keepTerms: true };
-  const pp = aiState.config.postprocessing || { capitalize: true, segment: true, technicalDictionary: false };
-  const providers = aiState.config.llm.providers || [];
-  const trLangList =
-    (aiState.status?.transcription?.providers || []).find((p) => p.id === "whisper")?.languages ||
-    Object.keys(SUBTITLE_LANG_NAMES).map((id) => ({ id, name: SUBTITLE_LANG_NAMES[id] }));
-  const trLangOptions = trLangList
-    .map((l) => `<option value="${l.id}" ${l.id === tr.targetLanguage ? "selected" : ""}>${escapeHtml(l.name)}</option>`)
-    .join("");
-  const ppSwitch = (id, label, on, desc) => `
-    <div class="ai-field ai-field-switch">
-      <button class="switch ${on ? "on" : ""}" id="${id}" type="button" role="switch" aria-checked="${on}">
-        <span class="switch-track"></span>
-        <span class="switch-thumb"></span>
-      </button>
-      <div class="ai-switch-text">
-        <label class="ai-label" for="${id}">${label}</label>
-        <p class="ai-field-desc">${desc}</p>
-      </div>
-    </div>`;
-  const llmBlock = providers.length ? `
-    <h4 class="ai-block-title">Correção por LLM <span class="ai-block-tag">opcional</span></h4>
-    <div class="ai-field ai-field-switch">
-      <button class="switch ${co.enabled ? "on" : ""}" id="ai-co-enabled" type="button" role="switch" aria-checked="${co.enabled}">
-        <span class="switch-track"></span>
-        <span class="switch-thumb"></span>
-      </button>
-      <div class="ai-switch-text">
-        <label class="ai-label" for="ai-co-enabled">Corrigir e formatar legendas com um modelo de linguagem</label>
-      </div>
-    </div>
-    <div class="ai-field">
-      <label class="ai-label" for="ai-co-provider">Provedor de correção</label>
-      <select class="ai-select" id="ai-co-provider">
-        ${providers.map((p) => `<option value="${p.id}" ${p.id === co.providerId ? "selected" : ""}>${escapeHtml(p.name)}${p.baseUrl ? "" : " — sem URL"}</option>`).join("")}
-      </select>
-    </div>
-    <div class="ai-field">
-      <label class="ai-label" for="ai-co-model">Modelo</label>
-      <input class="ai-input" id="ai-co-model" type="text" value="${escapeHtml(co.model)}" placeholder="ex.: gpt-4o-mini, llama-3.1-8b, claude-…">
-    </div>
-    <hr class="ai-sep">
-    <h4 class="ai-block-title">Tradução de legendas <span class="ai-block-tag">opcional</span></h4>
-    <div class="ai-field ai-field-switch">
-      <button class="switch ${tr.enabled ? "on" : ""}" id="ai-tr-tr-enabled" type="button" role="switch" aria-checked="${tr.enabled}">
-        <span class="switch-track"></span>
-        <span class="switch-thumb"></span>
-      </button>
-      <div class="ai-switch-text">
-        <label class="ai-label" for="ai-tr-tr-enabled">Traduzir legendas para outro idioma</label>
-        <p class="ai-field-desc">Uma aula em outro idioma (ex. inglês) ganha legenda traduzida sob demanda, selecionável no menu de legendas do player. Reusa o LLM da correção — a transcrição original nunca é alterada.</p>
-      </div>
-    </div>
-    <div class="ai-field">
-      <label class="ai-label" for="ai-tr-tr-lang">Idioma da legenda traduzida</label>
-      <select class="ai-select" id="ai-tr-tr-lang">${trLangOptions || '<option value="pt">Português</option>'}</select>
-    </div>
-    <div class="ai-field ai-field-switch">
-      <button class="switch ${tr.keepTerms ? "on" : ""}" id="ai-tr-tr-terms" type="button" role="switch" aria-checked="${tr.keepTerms}">
-        <span class="switch-track"></span>
-        <span class="switch-thumb"></span>
-      </button>
-      <div class="ai-switch-text">
-        <label class="ai-label" for="ai-tr-tr-terms">Preservar termos da língua original</label>
-        <p class="ai-field-desc">Mantém termos técnicos, código, marcas e siglas sem traduzir.</p>
-      </div>
-    </div>
-    <p class="ai-note">Sem LLM configurado, apenas a legenda original (língua do áudio) é exibida.</p>
-    <p class="ai-note"><strong>A correção por LLM é opcional. A transcrição original é preservada.</strong> O guarda-raio aceita apenas a melhoria de pontuação e legibilidade: nunca altera o conteúdo falado, não traduz, não resume, não inventa e não mexe nos timestamps.</p>
-  ` : `
-    <h4 class="ai-block-title">Correção por LLM <span class="ai-block-tag">opcional</span></h4>
-    <p class="ai-empty">Nenhum provedor de LLM configurado.</p>
-    <p class="ai-note">As legendas ainda são geradas usando somente a transcrição local. Para habilitar a correção opcional, configure um provedor na aba <strong>Provedores LLM</strong>.</p>
-    <div class="settings-actions">
-      <button class="btn btn--secondary" id="ai-co-goto-providers" type="button">Ir para Provedores LLM</button>
-    </div>`;
-  return `
-    <h4 class="ai-block-title">Pós-processamento determinístico <span class="ai-block-tag">sempre ativo</span></h4>
-    <p class="ai-note">Aplicado localmente a toda legenda gerada, sem rede. A transcrição bruta do ASR é sempre preservada em disco.</p>
-    ${ppSwitch("ai-pp-capitalize", "Capitalização de frases", pp.capitalize, "Inicia cada bloco com maiúscula e normaliza pontuação.")}
-    ${ppSwitch("ai-pp-segment", "Segmentação", pp.segment, "Divide blocos longos e evita cortes no meio de palavras.")}
-    ${ppSwitch("ai-pp-dict", "Dicionário técnico", pp.technicalDictionary, "Preserva termos técnicos (PostgreSQL, APIs, frameworks…).")}
-    <hr class="ai-sep">
-    ${llmBlock}
-    <div class="settings-actions">
-      <button class="btn btn--primary" id="ai-co-save" type="button">Salvar</button>
-    </div>
-    <p class="ai-inline-msg ok" id="ai-co-msg" hidden></p>`;
-}
-function bindAiCorrection(panel) {
-  const cfg = aiState.config;
-  const gotoBtn = document.getElementById("ai-co-goto-providers");
-  if (gotoBtn) gotoBtn.addEventListener("click", () => aiGoToTab("providers"));
-  const sw = document.getElementById("ai-co-enabled");
-  if (sw) {
-    sw.addEventListener("click", () => {
-      cfg.correction.enabled = !cfg.correction.enabled;
-      sw.classList.toggle("on", cfg.correction.enabled);
-      sw.setAttribute("aria-checked", String(cfg.correction.enabled));
-    });
-  }
-  const provEl = document.getElementById("ai-co-provider");
-  if (provEl) provEl.addEventListener("change", () => { cfg.correction.providerId = provEl.value; });
-  const modelEl = document.getElementById("ai-co-model");
-  if (modelEl) modelEl.addEventListener("input", () => { cfg.correction.model = modelEl.value; });
-  // Tradução de legendas (mesmo LLM da correção).
-  const trEnabled = document.getElementById("ai-tr-tr-enabled");
-  if (trEnabled) {
-    trEnabled.addEventListener("click", () => {
-      cfg.translation.enabled = !cfg.translation.enabled;
-      trEnabled.classList.toggle("on", cfg.translation.enabled);
-      trEnabled.setAttribute("aria-checked", String(cfg.translation.enabled));
-    });
-  }
-  const trLang = document.getElementById("ai-tr-tr-lang");
-  if (trLang) trLang.addEventListener("change", () => { cfg.translation.targetLanguage = trLang.value; });
-  const trTerms = document.getElementById("ai-tr-tr-terms");
-  if (trTerms) {
-    trTerms.addEventListener("click", () => {
-      cfg.translation.keepTerms = !cfg.translation.keepTerms;
-      trTerms.classList.toggle("on", cfg.translation.keepTerms);
-      trTerms.setAttribute("aria-checked", String(cfg.translation.keepTerms));
-    });
-  }
-  // Switches de pós-processamento determinístico.
-  const ppBind = (id, key) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.addEventListener("click", () => {
-        cfg.postprocessing[key] = !cfg.postprocessing[key];
-        el.classList.toggle("on", cfg.postprocessing[key]);
-        el.setAttribute("aria-checked", String(cfg.postprocessing[key]));
-      });
-    }
-  };
-  ppBind("ai-pp-capitalize", "capitalize");
-  ppBind("ai-pp-segment", "segment");
-  ppBind("ai-pp-dict", "technicalDictionary");
-  const save = document.getElementById("ai-co-save");
-  if (save) {
-    save.addEventListener("click", async () => {
-      try {
-        await saveAiPatch({
-          correction: cfg.correction,
-          translation: cfg.translation,
-          postprocessing: cfg.postprocessing,
-        });
-        aiMsg("ai-co-msg", "ok", "Configurações de correção salvas.");
-      } catch (err) {
-        aiMsg("ai-co-msg", "error", err.message);
-      }
-    });
-  }
 }
 
 function renderAiTutor() {
@@ -2177,10 +1996,6 @@ function bindAiProviders(panel) {
           danger: true,
           onConfirm: async () => {
             const patch = { llm: { removeProviderId: p.id } };
-            if (cfg.correction.providerId === p.id) {
-              cfg.correction.providerId = "";
-              patch.correction = { providerId: "" };
-            }
             try {
               await saveAiPatch(patch);
               if (aiState.editingProviderId === p.id) aiState.editingProviderId = null;

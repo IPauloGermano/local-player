@@ -89,13 +89,9 @@ const {
   sanitizeFlashcardsResult,
   transcodeCacheName,
   subtitleCacheName,
-  translationCacheName,
-  translationDocPath,
   courseSubtitlePath,
   getOptimalTranscriptionThreads,
   parseSubtitleSegments,
-  subtitleTranslatePrompt,
-  applyLlmTranslationGuardrail,
 } = require("./server/index.js");
 
 const ROOT = path.resolve(__dirname, ".."); // pasta-pai do app (raiz da biblioteca)
@@ -2237,7 +2233,6 @@ async function getAiStatus() {
       hasApiKey: !!p.apiKey,
       configured: !!p.baseUrl,
     })),
-    correction: cfg.correction,
   };
   // Workspace de processamento: diretório resolvido + espaço livre real.
   // Se o custom estiver quebrado (removido), reporta auto — nunca o pendrive.
@@ -2257,9 +2252,9 @@ async function getAiStatus() {
 // --------------------------------------------------------------------------
 // Vídeo → extração de áudio (ffmpeg WAV16k mono) → ASR local (whisper) →
 // transcrição bruta SEMPRE preservada (raw/) → pós-processamento determinístico
-// → correção LLM OPCIONAL (nunca bloqueia a legenda) → WebVTT em cache por
+// → WebVTT em cache por
 // hash do caminho relativo. Geração é um recurso ADICIONAL: o player nunca
-// depende dela. Offline-first; LLM é uma camada separada e opcional.
+// depende dela. Offline-first.
 // ==========================================================================
 const SUBTITLE_DIR = path.join(DATA_DIR, "subtitles");
 const SUBTITLE_RAW_DIR = path.join(SUBTITLE_DIR, "raw");
@@ -2269,10 +2264,6 @@ const SUBTITLE_WORK_DIR = path.join(SUBTITLE_DIR, "work");
 // raw (ASR, nunca sobrescrito) e do processed (gerado por IA). O VTT é
 // DERIVADO deste JSON na gravação (espelho + .courseplayer/subtitles).
 const SUBTITLE_EDITED_DIR = path.join(SUBTITLE_DIR, "edited");
-// Tradução de legendas: artefato DERIVADO por idioma (`<hash>-<lang>.json`).
-// O processado (língua-fonte) nunca é tocado; a tradução é gerada sob demanda
-// via LLM e reusa o mesmo provider+modelo da correção.
-const SUBTITLE_TRANSLATION_DIR = path.join(SUBTITLE_DIR, "translations");
 // Backup de versões editadas antes de um "Regenerar" (nunca perder trabalho
 // manual — ver §29/§30 do editor de legendas).
 const SUBTITLE_BACKUP_DIR = path.join(SUBTITLE_DIR, "backup");
@@ -2389,7 +2380,7 @@ async function ensureWorkspaceSpace(dir, durationSeconds) {
 function subtitleJobKeepSet() {
   const keep = new Set();
   const active = new Set([
-    "queued", "extracting", "transcribing", "processing", "correcting", "formatting",
+    "queued", "extracting", "transcribing", "processing", "formatting",
   ]);
   for (const job of subtitleJobs.values()) {
     if (active.has(job.status)) keep.add(job.hash);
@@ -2484,7 +2475,7 @@ const MAX_CONCURRENT_TRANSCRIPTIONS = Math.max(
   parseInt(process.env.MAX_CONCURRENT_TRANSCRIPTIONS || "1", 10),
 );
 
-// (subtitleCacheName, translationCacheName, translationDocPath, courseSubtitlePath modularizados em server/ai/subtitles-helpers.js)
+// (subtitleCacheName, courseSubtitlePath modularizados em server/ai/subtitles-helpers.js)
 
 
 // Escreve o artefato FINAL dentro da pasta do curso. Se a pasta do curso for
@@ -2637,7 +2628,7 @@ async function maybePregenBackground(tree) {
   const avail = await transcriptionAvailability(cfg);
   if (!avail.available) return;
   await loadSubtitleJobs();
-  const active = ["queued", "extracting", "transcribing", "processing", "correcting", "formatting"];
+  const active = ["queued", "extracting", "transcribing", "processing", "formatting"];
   const pendingHigher = [...subtitleJobs.values()].some(
     (j) => active.includes(j.status) && j.priority < PRIORITY_BG,
   );
@@ -2682,7 +2673,6 @@ async function ensureSubtitleDirs() {
     fs.mkdir(SUBTITLE_PROCESSED_DIR, { recursive: true }),
     fs.mkdir(SUBTITLE_WORK_DIR, { recursive: true }),
     fs.mkdir(SUBTITLE_EDITED_DIR, { recursive: true }),
-    fs.mkdir(SUBTITLE_TRANSLATION_DIR, { recursive: true }),
     fs.mkdir(SUBTITLE_BACKUP_DIR, { recursive: true }),
   ]);
 }
@@ -2724,9 +2714,6 @@ function subtitleJobPersistShape(job) {
     language: job.language,
     provider: job.provider,
     model: job.model,
-    kind: job.kind || null, // "translation" para jobs de tradução (hash = baseHash-lang)
-    lang: job.lang || null, // idioma-alvo do job de tradução
-    baseHash: job.baseHash || null, // hash-base da legenda original
   };
 }
 
@@ -2781,9 +2768,6 @@ async function loadSubtitleJobs() {
       language: rec.language || null,
       provider: rec.provider || null,
       model: rec.model || null,
-      kind: rec.kind === "translation" ? "translation" : null,
-      lang: rec.kind === "translation" ? (rec.lang || null) : null,
-      baseHash: rec.kind === "translation" ? (rec.baseHash || null) : null,
       proc: null,
       progress: "",
       percent: null,
@@ -2801,26 +2785,18 @@ async function loadSubtitleJobs() {
       waitingSourceHashes.add(job.hash);
     }
     const active = new Set([
-      "queued", "extracting", "transcribing", "processing", "correcting", "formatting",
-      "translating",
+      "queued", "extracting", "transcribing", "processing", "formatting",
     ]);
     if (active.has(job.status)) {
-      if (job.kind === "translation") {
-        // Job de tradução: idempotente (regenera do processed) — nunca retoma
-        // de raw; só volta para a fila.
+      const rawPath = path.join(SUBTITLE_RAW_DIR, job.hash + ".json");
+      if (await fileExists(rawPath)) {
+        // raw existe → retoma do pós-processamento (nunca re-roda whisper).
+        job.status = "processing";
+        job.progress = "Retomando do pós-processamento";
+      } else {
+        // Sem artefato válido → o job VOLTA para a fila e recomeça do zero.
         job.status = "queued";
         job.progress = "";
-      } else {
-        const rawPath = path.join(SUBTITLE_RAW_DIR, job.hash + ".json");
-        if (await fileExists(rawPath)) {
-          // raw existe → retoma do pós-processamento (nunca re-roda whisper).
-          job.status = "processing";
-          job.progress = "Retomando do pós-processamento";
-        } else {
-          // Sem artefato válido → o job VOLTA para a fila e recomeça do zero.
-          job.status = "queued";
-          job.progress = "";
-        }
       }
       // Ambos (queued e processing) vão para a fila — o scheduler executa
       // qualquer um; sem isso um job retomado ficava travado em "processing".
@@ -2850,20 +2826,15 @@ function updateSubtitleJob(hash, patch, persist = true) {
 // nova requisição é MAIS prioritária, o job ativo é PROMOVIDO (mesma execução,
 // prioridade elevada) — nunca cria um segundo job para o mesmo vídeo.
 function startSubtitleJob(lib, rel, abs, opts = {}) {
-  // `opts.lang` presente = job de TRADUÇÃO: chave derivada `baseHash-lang`,
-  // independe da transcrição (a própria pode coexistir na fila) e NUNCA colide
-  // com a legenda original. O scheduler despacha pelo `kind`.
-  const isTranslation = typeof opts.lang === "string" && opts.lang.length > 0;
   const baseHash = subtitleCacheName(lib.id, rel);
-  const hash = isTranslation ? translationCacheName(baseHash, opts.lang) : baseHash;
+  const hash = baseHash;
   const priority = Number.isInteger(opts.priority)
     ? Math.min(3, Math.max(0, opts.priority))
     : PRIORITY_DEMAND;
   const force = opts.force === true;
   const existing = subtitleJobs.get(hash);
   const active = new Set([
-    "queued", "extracting", "transcribing", "processing", "correcting", "formatting",
-    "translating",
+    "queued", "extracting", "transcribing", "processing", "formatting",
   ]);
   if (existing && active.has(existing.status)) {
     if (force) {
@@ -2874,7 +2845,7 @@ function startSubtitleJob(lib, rel, abs, opts = {}) {
       const promoted = priority < existing.priority;
       if (promoted) {
         updateSubtitleJob(hash, { priority });
-        console.log(`[SUBTITLE] promovido P${priority}: ${rel}${isTranslation ? " → " + opts.lang : ""}`);
+        console.log(`[SUBTITLE] promovido P${priority}: ${rel}`);
       }
       return { job: existing, alreadyRunning: true, promoted };
     }
@@ -2898,9 +2869,6 @@ function startSubtitleJob(lib, rel, abs, opts = {}) {
     provider: null,
     model: null,
     proc: null,
-    kind: isTranslation ? "translation" : null,
-    lang: isTranslation ? opts.lang : null,
-    baseHash: isTranslation ? baseHash : null,
   };
   subtitleJobs.set(hash, job);
   subtitleQueue.push(hash);
@@ -2943,8 +2911,7 @@ function cancelSubtitleJob(hash, opts = {}) {
     return true;
   }
   const active = new Set([
-    "extracting", "transcribing", "processing", "correcting", "formatting",
-    "translating",
+    "extracting", "transcribing", "processing", "formatting",
   ]);
   if (active.has(job.status)) {
     updateSubtitleJob(hash, {
@@ -2997,8 +2964,6 @@ async function subtitleJobPublic(hash) {
     language: job.language,
     provider: job.provider,
     model: job.model,
-    kind: job.kind || null,
-    lang: job.lang || null,
     hasVtt: await hasFinalVtt(lib, job.rel, job.hash),
   };
 }
@@ -3065,10 +3030,7 @@ function scheduleNextSubtitleJob() {
     // Aceita "queued" (novo/recomeço) e "processing" (retomado do raw).
     if (!job || (job.status !== "queued" && job.status !== "processing")) continue;
     activeSubtitleHashes.add(hash);
-    // Tradução (LLM, não consome slot pesado) usa pipeline próprio; transcrição
-    // mantém o fluxo original (ffmpeg+whisper com heavySlots).
-    if (job.kind === "translation") runTranslationPipeline(job).catch(() => {});
-    else runSubtitlePipeline(job).catch(() => {});
+    runSubtitlePipeline(job).catch(() => {});
   }
 }
 
@@ -3161,9 +3123,9 @@ async function loadValidProcessed(processedPath, abs, sourceStat) {
 }
 
 // Pipeline principal: estados queued → extracting → transcribing → processing
-// → correcting (opcional) → formatting → completed/failed/cancelled. Nunca roda
-// ffmpeg + whisper simultaneamente (slot pesado compartilhado). LLM não
-// consome slot e nunca bloqueia a legenda. Cancelamento é checado entre etapas.
+// → formatting → completed/failed/cancelled. Nunca roda
+// ffmpeg + whisper simultaneamente (slot pesado compartilhado).
+// Cancelamento é checado entre etapas.
 async function runSubtitlePipeline(job) {
   const hash = job.hash;
   const rel = job.rel;
@@ -3399,36 +3361,10 @@ async function runSubtitlePipeline(job) {
       provider: rawDoc.provider,
       model: rawDoc.model,
       createdAt: new Date().toISOString(),
-      correctedByLlm: false,
       segments: processedSegments,
     };
 
-    // 6) Correção LLM opcional (rede; não consome slot pesado; nunca bloqueia).
-    if (cfg.correction.enabled && cfg.correction.providerId && cfg.correction.model) {
-      if (job.status !== "cancelled") {
-        updateSubtitleJob(hash, { status: "correcting", progress: "Corrigindo com IA…" });
-        console.log(`[SUBTITLE][PROCESS] corrigindo (LLM): ${rel}`);
-        const corrected = await runLlmCorrection({
-          providerId: cfg.correction.providerId,
-          model: cfg.correction.model,
-          segments: processedSegments,
-          timeoutMs: cfg.advanced.llmTimeoutMs,
-        });
-        if (corrected) {
-          processedSegments = corrected;
-          processedDoc.correctedByLlm = true;
-        } else {
-          // LLM indisponível/timeout/saída inválida: a legenda segue com a
-          // versão anterior (nunca é bloqueada).
-          console.log(
-            `[SUBTITLE] LLM não aplicado (indisponível, timeout ou saída inválida): ${rel}`,
-          );
-        }
-      }
-      if (job.status === "cancelled") return;
-    }
-
-    // 7) Formatação → WebVTT (com timestamps controlados pelo app).
+    // 6) Formatação → WebVTT (com timestamps controlados pelo app).
     updateSubtitleJob(hash, { status: "formatting", progress: "Formatando legendas…" });
     console.log(`[SUBTITLE][PROCESS] formatando VTT: ${rel}`);
     processedDoc.segments = processedSegments;
@@ -3502,134 +3438,6 @@ async function runSubtitlePipeline(job) {
   }
 }
 
-// --------------------------------------------------------------------------
-// Pipeline de TRADUÇÃO (LLM, sob demanda). Consome a legenda processada
-// (língua-fonte) e gera o artefato derivado `baseHash-lang`. Não roda
-// ffmpeg/whisper (não consome heavySlots); o LLM é rede e não bloqueia a
-// legenda original. Reusa o provider+modelo da correção. Idempotente: se
-// falhar/cancelar, basta re-enfileirar e regenerar do processed.
-// --------------------------------------------------------------------------
-async function runTranslationPipeline(job) {
-  const hash = job.hash; // `baseHash-lang`
-  const rel = job.rel;
-  const lib = getLibraryById(job.libraryId) || getDefaultLibrary();
-  const baseHash = job.baseHash || hash.split("-")[0];
-  const lang = job.lang;
-  try {
-    const cfg = await loadAiConfig();
-    // Pré-condição honesta: tradução habilitada + LLM da correção configurado.
-    const llmOk =
-      cfg.translation.enabled === true &&
-      cfg.correction.enabled === true &&
-      cfg.correction.providerId &&
-      cfg.correction.model;
-    if (!llmOk) {
-      updateSubtitleJob(hash, {
-        status: "failed",
-        progress: "",
-        error: "Tradução indisponível: habilite a tradução e configure o LLM da correção.",
-      });
-      console.log(`[SUBTITLE][TRANSLATE] falhou (sem LLM habilitado): ${rel} → ${lang}`);
-      return;
-    }
-    const sourceStat = await fs.stat(job.abs).catch(() => null);
-    if (!sourceStat) {
-      updateSubtitleJob(hash, {
-        status: "failed",
-        progress: "",
-        error: "Arquivo de vídeo não encontrado.",
-      });
-      return;
-    }
-    const processedPath = path.join(SUBTITLE_PROCESSED_DIR, baseHash + ".json");
-    const processed = await loadValidProcessed(processedPath, job.abs, sourceStat);
-    if (!processed || !Array.isArray(processed.segments) || !processed.segments.length) {
-      // A legenda original não existe/está obsoleta → nada a traduzir. O
-      // frontend encadeia: gera a transcrição primeiro e re-solicita.
-      updateSubtitleJob(hash, {
-        status: "failed",
-        progress: "",
-        error: "Legenda original indisponível — gere a transcrição primeiro.",
-      });
-      console.log(`[SUBTITLE][TRANSLATE] falhou (sem processed válido): ${rel} → ${lang}`);
-      return;
-    }
-
-    updateSubtitleJob(hash, { status: "translating", progress: "Traduzindo…" });
-    console.log(`[SUBTITLE][TRANSLATE] traduzindo: ${rel} → ${lang}`);
-    const translated = await runLlmTranslation({
-      providerId: cfg.correction.providerId,
-      model: cfg.correction.model,
-      segments: processed.segments,
-      targetLanguage: lang,
-      keepTerms: cfg.translation.keepTerms === true,
-      timeoutMs: cfg.advanced.llmTimeoutMs,
-    });
-    if (job.status === "cancelled") {
-      if (job.requeueOnCancel) {
-        updateSubtitleJob(hash, {
-          status: "queued",
-          priority: PREEMPT_RETRY_PRIORITY,
-          requeueOnCancel: false,
-          progress: "Na fila",
-          error: null,
-          stageStartedAt: null,
-          proc: null,
-          percent: null,
-        }, false);
-        subtitleQueue.push(hash);
-      }
-      return;
-    }
-    if (!translated) {
-      // LLM falhou/timeout/saída inválida: legenda original continua valendo.
-      updateSubtitleJob(hash, {
-        status: "failed",
-        progress: "",
-        error: "Falha na tradução (LLM indisponível ou saída inválida).",
-      });
-      console.log(`[SUBTITLE][TRANSLATE] LLM não aplicado: ${rel} → ${lang}`);
-      return;
-    }
-
-    updateSubtitleJob(hash, { status: "formatting", progress: "Formatando…" });
-    const doc = {
-      version: SUBTITLE_VERSION,
-      source: processed.source,
-      language: processed.language,
-      targetLanguage: lang,
-      provider: cfg.correction.providerId,
-      model: cfg.correction.model,
-      createdAt: new Date().toISOString(),
-      correctedByLlm: false,
-      segments: translated,
-    };
-    await writeFileAtomic(translationDocPath(baseHash, lang), JSON.stringify(doc, null, 2));
-    const vttText = renderVtt(translated);
-    const vttName = translationCacheName(baseHash, lang);
-    await writeFileAtomic(path.join(SUBTITLE_DIR, vttName + ".vtt"), vttText);
-    await writeCourseSubtitle(lib, rel, vttName, vttText);
-
-    updateSubtitleJob(hash, { status: "completed", progress: "", error: null, percent: null });
-    console.log(
-      `[SUBTITLE][TRANSLATE] concluído: ${rel} → ${lang} (${translated.length} segmentos)`,
-    );
-  } catch (err) {
-    if (job.status !== "cancelled") {
-      updateSubtitleJob(hash, {
-        status: "failed",
-        progress: "",
-        error: sanitizeTestError(err.message || "erro"),
-      });
-      console.error(
-        `[SUBTITLE][TRANSLATE] falhou: ${rel} → ${lang} (${sanitizeTestError(err.message || "erro")})`,
-      );
-    }
-  } finally {
-    activeSubtitleHashes.delete(hash);
-    scheduleNextSubtitleJob();
-  }
-}
 // getOptimalTranscriptionThreads imported from ./server
 
 function extractAudioToWav(srcAbs, wavPath, opts = {}) {
@@ -4219,7 +4027,6 @@ async function loadEditableDoc(lib, rel, hash, abs, sourceStat) {
       updatedAt: doc.updatedAt || null,
       edited: true,
       staleSource: !!staleSource,
-      correctedByLlm: !!doc.correctedByLlm,
       language: doc.language || null,
       provider: doc.provider || null,
       model: doc.model || null,
@@ -4239,7 +4046,6 @@ async function loadEditableDoc(lib, rel, hash, abs, sourceStat) {
         updatedAt: proc.createdAt || null,
         edited: false,
         staleSource: false,
-        correctedByLlm: !!proc.correctedByLlm,
         language: proc.language || null,
         provider: proc.provider || null,
         model: proc.model || null,
@@ -4262,7 +4068,6 @@ async function loadEditableDoc(lib, rel, hash, abs, sourceStat) {
           updatedAt: null,
           edited: false,
           staleSource: false,
-          correctedByLlm: null,
           language: null,
           provider: null,
           model: null,
@@ -4326,7 +4131,6 @@ async function saveEditedSubtitle(lib, rel, hash, abs, segments, expectedVersion
     version,
     updatedAt: now,
     editedAt: now,
-    correctedByLlm: false,
   };
   await fs.mkdir(SUBTITLE_EDITED_DIR, { recursive: true });
   await writeFileAtomic(editedPath, JSON.stringify(doc, null, 2));
@@ -4385,183 +4189,6 @@ function formatSrt(segments) {
     lines.push("");
   }
   return lines.join("\n");
-}
-
-// --------------------------------------------------------------------------
-// Correção LLM (opcional) — camada GENÉRICA OpenAI-compatible. O provider é
-// resolvido pelo registry (nunca if(provider===X) no fluxo). O LLM recebe
-// APENAS [{id,text}] e retorna APENAS [{id,text}]; os timestamps são sempre
-// controlados pelo app. Guardrail rejeita saída inválida (ids faltando/
-// duplicados/inventados) e mudança indevida de conteúdo → usa a versão
-// anterior. Falha/timeout NUNCA bloqueia a legenda. Chave só no backend.
-// --------------------------------------------------------------------------
-const SUBTITLE_LLM_SYSTEM_PROMPT =
-  "Você é um corretor de legendas de vídeos em português. Recebe um JSON array de " +
-  "objetos {\"id\", \"text\"} com transcrições de áudio. Para cada item devolva o texto " +
-  "CORRIGIDO apenas em pontuação, capitalização e pequenos erros de reconhecimento óbvios.\n" +
-  "Regras obrigatórias:\n" +
-  "- NÃO mude o significado, o conteúdo, nomes técnicos, números, marcas, siglas, " +
-  "linguagens de programação ou termos de negócio.\n" +
-  "- NÃO resuma, explique, adicione, remova, reordene nem traduza.\n" +
-  "- NÃO altere os \"id\" e devolva exatamente o mesmo conjunto de ids, um por item, na " +
-  "mesma ordem.\n" +
-  "- NÃO inclua timestamps (você não os recebe e não deve retorná-los).\n" +
-  "- Devolva SOMENTE um JSON array: [{\"id\": \"...\", \"text\": \"...\"}, ...] sem " +
-  "texto antes ou depois.";
-
-// A conversa com o LLM (OpenAI-compatible) é idêntica para correção e tradução:
-// envia só [{id,text}], aplica timeout/abort, nunca loga chave/prompt. Devolve o
-// array PARSEADO ou null (falha/timeout/forma inválida) — o guardrail fica com
-// quem chama (correção ≠ tradução).
-async function llmSegmentsChat({ providerId, model, systemPrompt, segments, timeoutMs }) {
-  try {
-    const cfg = await loadAiConfig();
-    const provider = cfg.llm.providers.find((p) => p.id === providerId);
-    if (!provider || !provider.baseUrl) return null;
-    const type =
-      AI_LLM_PROVIDER_TYPES.find((t) => t.id === provider.type) ||
-      AI_LLM_PROVIDER_TYPES[0];
-    const url = provider.baseUrl.replace(/\/+$/, "") + type.chatEndpoint;
-
-    const payload = segments.map((s) => ({ id: s.id, text: s.text }));
-    const body = {
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: JSON.stringify(payload) },
-      ],
-      temperature: 0,
-      max_tokens: Math.min(16000, Math.max(512, payload.length * 40)),
-    };
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs || 15000);
-    let resp;
-    try {
-      resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(provider.apiKey ? { Authorization: "Bearer " + provider.apiKey } : {}),
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-    if (!resp.ok) return null;
-
-    const j = await resp.json();
-    const content =
-      j &&
-      j.choices &&
-      j.choices[0] &&
-      j.choices[0].message &&
-      typeof j.choices[0].message.content === "string"
-        ? j.choices[0].message.content
-        : null;
-    if (!content) return null;
-
-    try {
-      return JSON.parse(content);
-    } catch {
-      // Alguns providers embrulham em {"segments": [...]} — tenta extrair.
-      const m = /"segments"\s*:\s*(\[[\s\S]*\])/.exec(content);
-      if (!m) return null;
-      try {
-        return JSON.parse(m[1]);
-      } catch {
-        return null;
-      }
-    }
-  } catch (err) {
-    const why = err && err.name === "AbortError" ? "timeout" : "erro";
-    console.log(
-      `[SUBTITLE] LLM ignorado (${why}): ${sanitizeTestError(
-        (err && err.message) || "",
-      )}`,
-    );
-    return null; // usa o resultado anterior; legenda nunca é bloqueada
-  }
-}
-
-async function runLlmCorrection({ providerId, model, segments, timeoutMs }) {
-  const parsed = await llmSegmentsChat({
-    providerId,
-    model,
-    systemPrompt: SUBTITLE_LLM_SYSTEM_PROMPT,
-    segments,
-    timeoutMs,
-  });
-  if (!parsed) return null;
-  return applyLlmGuardrail(segments, parsed);
-}
-
-function applyLlmGuardrail(original, corrected) {
-  const arr = Array.isArray(corrected)
-    ? corrected
-    : corrected && Array.isArray(corrected.segments)
-      ? corrected.segments
-      : null;
-  if (!arr || !Array.isArray(arr)) return null;
-
-  const expected = new Set(original.map((s) => s.id));
-  const byId = new Map(original.map((s) => [s.id, s]));
-  const seen = new Set();
-  const out = [];
-
-  for (const item of arr) {
-    if (!item || typeof item.id === "undefined") return null;
-    const id = String(item.id);
-    if (!expected.has(id)) return null; // id inventado → rejeita tudo
-    if (seen.has(id)) return null; // duplicado → rejeita tudo
-    seen.add(id);
-    if (typeof item.text !== "string") return null;
-    out.push({
-      id,
-      text: item.text.trim(),
-      start: byId.get(id).start,
-      end: byId.get(id).end,
-    });
-  }
-  if (seen.size !== expected.size) return null; // faltando → rejeita
-
-  // Ordem controlada pelo app (o LLM pode ter reordenado — não aceitamos).
-  out.sort(
-    (a, b) => original.findIndex((s) => s.id === a.id) - original.findIndex((s) => s.id === b.id),
-  );
-
-  // Proteção contra resumo/reescrita exagerada: tamanho não pode encolher
-  // além de 40% nem explodir além de 4x (heurística determinística).
-  for (let i = 0; i < out.length; i++) {
-    const oLen = original[i].text.replace(/\s+/g, "").length;
-    const cLen = out[i].text.replace(/\s+/g, "").length;
-    if (oLen > 0 && (cLen < oLen * 0.4 || cLen > oLen * 4)) return null;
-  }
-  return out;
-}
-
-// --------------------------------------------------------------------------
-// Tradução de legendas (LLM, sob demanda). A tradução é um artefato DERIVADO
-// da legenda processada (língua-fonte) — nunca toca raw/processed/original.
-// Reusa o MESMO provider+modelo da correção (`cfg.correction`). O LLM recebe
-// APENAS [{id,text}] (timestamps nunca saem do app). Guardrail próprio:
-// transição de idioma exige limites de tamanho mais folgados que a correção
-// (EN→PT costuma alongar), mas a rejeição de ids faltando/duplicado/inventado
-// e o reordenamento continuam idênticos. Falha/timeout ⇒ legenda original.
-// subtitleTranslatePrompt and applyLlmTranslationGuardrail imported from ./server
-
-async function runLlmTranslation({ providerId, model, segments, targetLanguage, keepTerms = true, timeoutMs }) {
-  const parsed = await llmSegmentsChat({
-    providerId,
-    model,
-    systemPrompt: subtitleTranslatePrompt(targetLanguage, keepTerms),
-    segments,
-    timeoutMs,
-  });
-  if (!parsed) return null;
-  return applyLlmTranslationGuardrail(segments, parsed);
 }
 
 // --------------------------------------------------------------------------
@@ -5067,47 +4694,6 @@ app.get("/api/subtitles/editor", async (req, res) => {
     await loadSubtitleJobs();
     const sourceStat = await fs.stat(safe.abs).catch(() => null);
     const hash = subtitleCacheName(lib.id, safe.rel);
-    const lang = /^[a-z]{2,10}$/.test(req.query.lang || "") ? req.query.lang : "";
-    // Tradução: serve o doc derivado `hash-lang` (nunca edited/raw).
-    if (lang) {
-      const processed = sourceStat
-        ? await loadValidProcessed(
-            path.join(SUBTITLE_PROCESSED_DIR, hash + ".json"),
-            safe.abs,
-            sourceStat,
-          )
-        : null;
-      if (processed && processed.language === lang) {
-        // `lang` == língua-fonte: o usuário quer a ORIGINAL.
-        const doc = await loadEditableDoc(lib, safe.rel, hash, safe.abs, sourceStat);
-        const ready = !!(sourceStat && (await hasFinalVtt(lib, safe.rel, hash)));
-        const cfg = await loadAiConfig();
-        const avail = await transcriptionAvailability(cfg);
-        return res.json({
-          ...doc,
-          ready,
-          canRegenerate: !!avail.available,
-          canGenerate: !!avail.available,
-        });
-      }
-      const tKey = translationCacheName(hash, lang);
-      const tRead = await readJsonFile(translationDocPath(hash, lang));
-      const tDoc = tRead.ok && tRead.parsed ? tRead.parsed : null;
-      const ready = !!(tDoc && Array.isArray(tDoc.segments) && (await hasFinalVtt(lib, safe.rel, tKey)));
-      return res.json({
-        hash: tKey,
-        rel: safe.rel,
-        source: ready ? "translated" : null,
-        segments: ready && Array.isArray(tDoc.segments) ? tDoc.segments : [],
-        version: tDoc && tDoc.version ? tDoc.version : 0,
-        edited: false,
-        language: tDoc && tDoc.language ? tDoc.language : null,
-        targetLanguage: lang,
-        ready,
-        canRegenerate: false,
-        canGenerate: false,
-      });
-    }
     const doc = await loadEditableDoc(lib, safe.rel, hash, safe.abs, sourceStat);
     if (!doc) {
       return res.json({
@@ -5206,52 +4792,6 @@ app.get("/api/subtitles/export", async (req, res) => {
   }
 });
 
-// POST /api/subtitles/ai-corrections?path=<rel> — "Corrigir com IA" no editor.
-// Reusa o MESMO runLlmCorrection + guardrail do pipeline. O LLM recebe apenas
-// {id,text} e retorna {id,text}; timestamps NUNCA são enviados nem alterados.
-// As correções voltam como mapas id→text para o editor aplicar na versão de
-// trabalho (o usuário revisa e salva; nada é gravado automaticamente).
-app.post("/api/subtitles/ai-corrections", async (req, res) => {
-  const rel = typeof req.query.path === "string" ? req.query.path : "";
-  const lib = requestLibrary(req);
-  if (!lib) return res.status(400).json({ error: "unknown library" });
-  const safe = resolveLibraryRel(lib, rel);
-  if (!safe) return res.status(400).json({ error: "invalid path" });
-  const raw = req.body && req.body.segments;
-  if (!Array.isArray(raw) || raw.length === 0) {
-    return res.status(400).json({ error: "segments obrigatórios" });
-  }
-  const segments = raw
-    .map((s) => ({
-      id: String(s && s.id),
-      text: typeof s.text === "string" ? s.text : "",
-    }))
-    .filter((s) => s.id && s.text);
-  if (!segments.length) return res.status(400).json({ error: "segments vazios" });
-  try {
-    const cfg = await loadAiConfig();
-    if (!cfg.correction.enabled || !cfg.correction.providerId || !cfg.correction.model) {
-      return res
-        .status(400)
-        .json({ error: "correção por IA desabilitada nas configurações" });
-    }
-    const corrected = await runLlmCorrection({
-      providerId: cfg.correction.providerId,
-      model: cfg.correction.model,
-      segments,
-      timeoutMs: cfg.advanced.llmTimeoutMs,
-    });
-    if (!corrected) return res.json({ ok: false, applied: false });
-    res.json({ ok: true, applied: true, corrections: corrected });
-  } catch (err) {
-    res
-      .status(500)
-      .json({ error: sanitizeTestError(err.message || "ai-corrections error") });
-  }
-});
-
-
-
 app.get("/api/tree", async (req, res) => {
   const force = req.query.rescan === "1";
   const tree = await getTree(force);
@@ -5281,7 +4821,7 @@ app.post("/api/rescan", async (req, res) => {
 
 // Jobs ativos que bloqueiam a remoção de uma biblioteca: transcode `processing`
 // (ffmpeg rodando), legenda em fase pesada do pipeline (extracting/transcribing/
-// processing/correcting/formatting) e scan em andamento. Jobs APENAS enfileirados
+// processing/formatting) e scan em andamento. Jobs APENAS enfileirados
 // NÃO bloqueiam — são descartados na remoção (nunca deixam job apontando para
 // biblioteca inexistente).
 function libraryHasActiveJobs(id) {
@@ -5289,7 +4829,7 @@ function libraryHasActiveJobs(id) {
     if (job.libraryId === id && job.status === "processing") return true;
   }
   const activeSub = new Set([
-    "extracting", "transcribing", "processing", "correcting", "formatting",
+    "extracting", "transcribing", "processing", "formatting",
   ]);
   for (const job of subtitleJobs.values()) {
     if (job.libraryId === id && activeSub.has(job.status)) return true;
@@ -6386,10 +5926,8 @@ app.post("/api/study/flashcards", async (req, res) => {
 // nome de arquivo do usuário. Geração é não-bloqueante para o player.
 
 // Estado combinado (legenda pronta? job ativo? pode gerar?) para o player e a
-// Central de IA. `lang` opcional: quando presente e ≠ língua-fonte, o estado
-// reporta a TRADUÇÃO para aquele idioma (job de tradução, pronto, encadeamento
-// com a transcrição). Sem `lang` (ou == fonte) o estado é o da legenda original.
-async function subtitleStatusFor(lib, rel, abs, lang) {
+// Central de IA — sempre da legenda original.
+async function subtitleStatusFor(lib, rel, abs) {
   const hash = subtitleCacheName(lib.id, rel);
   const cfg = await loadAiConfig();
   const sourceStat = await fs.stat(abs).catch(() => null);
@@ -6404,53 +5942,25 @@ async function subtitleStatusFor(lib, rel, abs, lang) {
     }
   }
   const avail = await transcriptionAvailability(cfg);
-  const canTranslate =
-    cfg.translation.enabled === true &&
-    cfg.correction.enabled === true &&
-    !!cfg.correction.providerId &&
-    !!cfg.correction.model;
-
-  // `lang` pede tradução? Só quando difere da língua-fonte real.
-  const wantTranslation =
-    typeof lang === "string" && lang.length > 0 && lang !== sourceLanguage;
-  const transKey = wantTranslation ? translationCacheName(hash, lang) : null;
-  const transJob = transKey ? subtitleJobs.get(transKey) : null;
 
   const activeStatus = new Set([
-    "queued", "extracting", "transcribing", "processing", "correcting", "formatting",
-    "translating", SUBTITLE_STATUS_WAITING_SOURCE,
+    "queued", "extracting", "transcribing", "processing", "formatting",
+    SUBTITLE_STATUS_WAITING_SOURCE,
   ]);
 
   let ready = false;
-  let translationReady = false;
   if (sourceStat) {
-    if (!wantTranslation) {
-      const processedPath = path.join(SUBTITLE_PROCESSED_DIR, hash + ".json");
-      const doc = await loadValidProcessed(processedPath, abs, sourceStat);
-      if (doc && (await hasFinalVtt(lib, rel, hash))) ready = true;
-    } else if (transKey) {
-      const tDoc = await readJsonFile(translationDocPath(hash, lang));
-      if (
-        tDoc.ok &&
-        tDoc.parsed &&
-        tDoc.parsed.version === SUBTITLE_VERSION &&
-        Array.isArray(tDoc.parsed.segments) &&
-        (await hasFinalVtt(lib, rel, transKey))
-      ) {
-        ready = true;
-        translationReady = true;
-      }
-    }
+    const processedPath = path.join(SUBTITLE_PROCESSED_DIR, hash + ".json");
+    const doc = await loadValidProcessed(processedPath, abs, sourceStat);
+    if (doc && (await hasFinalVtt(lib, rel, hash))) ready = true;
   }
-  const sourceStatus = subtitleJobs.get(hash);
-  const job = wantTranslation ? transJob : sourceStatus;
-  // Existe versão editada manualmente? Só faz sentido para a legenda original.
+  const job = subtitleJobs.get(hash);
   const editedDoc = await readJsonFile(path.join(SUBTITLE_EDITED_DIR, hash + ".json"));
   const edited = !!(editedDoc.ok && editedDoc.parsed && Array.isArray(editedDoc.parsed.segments));
   return {
     hash,
     ready,
-    edited: wantTranslation ? false : edited,
+    edited,
     status:
       job && activeStatus.has(job.status)
         ? job.status
@@ -6463,21 +5973,11 @@ async function subtitleStatusFor(lib, rel, abs, lang) {
       job && (job.status === "failed" || job.status === SUBTITLE_STATUS_WAITING_SOURCE)
         ? job.error
         : null,
-    canGenerate: wantTranslation ? (canTranslate && sourceReady) : !!avail.available,
-    // Disponibilidade do Whisper (gerar a legenda ORIGINAL) — o frontend usa
-    // para encadear a transcrição quando uma tradução foi pedida sem original.
+    canGenerate: !!avail.available,
     canGenerateSource: !!avail.available,
     generateMode: cfg.transcription.generateMode,
     language: sourceLanguage,
     sourceReady,
-    needTranscription: wantTranslation && !sourceReady,
-    canTranslate,
-    translation: {
-      enabled: cfg.translation.enabled === true,
-      targetLanguage: cfg.translation.targetLanguage,
-      keepTerms: cfg.translation.keepTerms === true,
-      ready: translationReady,
-    },
     pregenNextLesson: cfg.transcription.pregenNextLesson === true,
     pregenFirstLesson: cfg.transcription.pregenFirstLesson === true,
     background: cfg.transcription.background === true,
@@ -6503,63 +6003,13 @@ app.post("/api/subtitles/generate", async (req, res) => {
     : null;
   const force = req.query.force === "1" || req.query.force === "true";
   const skipIfReady = req.query.skipIfReady === "1" || req.query.skipIfReady === "true";
-  // `lang` presente e ≠ fonte = geração de TRADUÇÃO (job derivado `hash-lang`).
-  const lang = /^[a-z]{2,10}$/.test(req.query.lang || "") ? req.query.lang : "";
   try {
     await loadSubtitleJobs(); // reconcilia antes do dedup
-    if (skipIfReady && !force && !lang) {
+    if (skipIfReady && !force) {
       // Skip-if-ready (usado por P1/P2/P3): legenda já válida ⇒ não enfileira.
       if (await hasValidSubtitle(lib, safe.rel, safe.abs)) {
         return res.json({ ok: true, skipped: true, alreadyRunning: false, status: "completed" });
       }
-    }
-    if (lang) {
-      const hash = subtitleCacheName(lib.id, safe.rel);
-      const sourceStat = await fs.stat(safe.abs).catch(() => null);
-      const processed = sourceStat
-        ? await loadValidProcessed(
-            path.join(SUBTITLE_PROCESSED_DIR, hash + ".json"),
-            safe.abs,
-            sourceStat,
-          )
-        : null;
-      if (!processed || !Array.isArray(processed.segments) || !processed.segments.length) {
-        // Sem legenda original válida: a tradução não tem o que traduzir. O
-        // frontend encadeia — enfileira a transcrição (P0) e re-solicita a
-        // tradução quando a original estiver pronta.
-        if (skipIfReady && !force) {
-          const { job, alreadyRunning, promoted } = startSubtitleJob(lib, safe.rel, safe.abs, {
-            priority: priority ?? PRIORITY_DEMAND,
-            force,
-          });
-          return res.json({
-            ok: true,
-            needTranscription: true,
-            hash: job.hash,
-            status: job.status,
-            alreadyRunning,
-            promoted,
-          });
-        }
-        return res.json({ ok: false, needTranscription: true, error: "Legenda original indisponível — gere a transcrição primeiro." });
-      }
-      const transKey = translationCacheName(hash, lang);
-      if (!force && (await hasFinalVtt(lib, safe.rel, transKey))) {
-        return res.json({ ok: true, skipped: true, alreadyRunning: false, status: "completed" });
-      }
-      const { job, alreadyRunning, promoted } = startSubtitleJob(lib, safe.rel, safe.abs, {
-        priority: priority ?? PRIORITY_DEMAND,
-        force,
-        lang,
-      });
-      return res.json({
-        ok: true,
-        hash: job.hash,
-        status: job.status,
-        alreadyRunning,
-        promoted,
-        translation: true,
-      });
     }
     const { job, alreadyRunning, promoted } = startSubtitleJob(lib, safe.rel, safe.abs, {
       priority: priority ?? PRIORITY_DEMAND,
@@ -6629,8 +6079,7 @@ app.get("/api/subtitles/status", async (req, res) => {
   if (!safe) return res.status(400).json({ error: "invalid path" });
   try {
     await loadSubtitleJobs();
-    const lang = /^[a-z]{2,10}$/.test(req.query.lang || "") ? req.query.lang : "";
-    res.json(await subtitleStatusFor(lib, safe.rel, safe.abs, lang));
+    res.json(await subtitleStatusFor(lib, safe.rel, safe.abs));
   } catch (err) {
     res.status(500).json({ error: sanitizeTestError(err.message || "status error") });
   }
@@ -6656,7 +6105,6 @@ app.get("/api/subtitles/list", async (req, res) => {
         provider: doc.provider,
         model: doc.model,
         segments: (doc.segments || []).length,
-        correctedByLlm: !!doc.correctedByLlm,
         hasVtt: !!(vttStat && vttStat.size > 0),
         createdAt: doc.createdAt || null,
       });
@@ -6665,7 +6113,7 @@ app.get("/api/subtitles/list", async (req, res) => {
       [...subtitleJobs.values()].map((j) => subtitleJobPublic(j.hash)),
     );
     const running = jobs.filter((j) =>
-      ["extracting", "transcribing", "processing", "correcting", "formatting", "translating"].includes(j.status),
+      ["extracting", "transcribing", "processing", "formatting"].includes(j.status),
     );
     res.json({
       summary: {
@@ -6721,23 +6169,7 @@ app.post("/api/subtitles/clear", requireAdminOrLocal, async (req, res) => {
     if (rel) {
       const hash = subtitleCacheName(lib.id, rel);
       cancelSubtitleJob(hash);
-      // Traduções derivadas do mesmo vídeo: cancela jobs (`hash-lang`), apaga
-      // docs (`translations/<hash>-*.json`), espelhos e canônicos `hash-lang.vtt`.
-      const prefix = hash + "-";
-      const transDocs = await fs.readdir(SUBTITLE_TRANSLATION_DIR).catch(() => []);
       await Promise.all([
-        ...[...subtitleJobs.keys()]
-          .filter((k) => k.startsWith(prefix))
-          .map((k) => cancelSubtitleJob(k)),
-        ...transDocs
-          .filter((f) => f.startsWith(prefix) && f.endsWith(".json"))
-          .map((f) => fs.rm(path.join(SUBTITLE_TRANSLATION_DIR, f), { force: true })),
-        ...transDocs
-          .filter((f) => f.startsWith(prefix) && f.endsWith(".vtt"))
-          .map((f) => fs.rm(path.join(SUBTITLE_DIR, f), { force: true })),
-        ...transDocs
-          .filter((f) => f.startsWith(prefix) && f.endsWith(".vtt"))
-          .map((f) => removeCourseSubtitle(lib, rel, f.replace(/\.vtt$/, ""))),
         fs.rm(path.join(SUBTITLE_RAW_DIR, hash + ".json"), { force: true }),
         fs.rm(path.join(SUBTITLE_PROCESSED_DIR, hash + ".json"), { force: true }),
         fs.rm(path.join(SUBTITLE_DIR, hash + ".vtt"), { force: true }),
@@ -6745,9 +6177,6 @@ app.post("/api/subtitles/clear", requireAdminOrLocal, async (req, res) => {
         removeCourseSubtitle(lib, rel, hash),
       ]);
       subtitleJobs.delete(hash);
-      for (const k of [...subtitleJobs.keys()]) {
-        if (k.startsWith(prefix)) subtitleJobs.delete(k);
-      }
       console.log(`[SUBTITLE] legenda excluída: ${rel} (${lib.id})`);
     } else {
       for (const hash of [...subtitleJobs.keys()]) cancelSubtitleJob(hash);
@@ -6756,7 +6185,6 @@ app.post("/api/subtitles/clear", requireAdminOrLocal, async (req, res) => {
         fs.rm(SUBTITLE_PROCESSED_DIR, { recursive: true, force: true }),
         fs.rm(SUBTITLE_WORK_DIR, { recursive: true, force: true }),
         fs.rm(SUBTITLE_EDITED_DIR, { recursive: true, force: true }),
-        fs.rm(SUBTITLE_TRANSLATION_DIR, { recursive: true, force: true }),
         fs.rm(SUBTITLE_BACKUP_DIR, { recursive: true, force: true }),
       ]);
       const allFiles = await fs.readdir(SUBTITLE_DIR).catch(() => []);
@@ -7339,7 +6767,7 @@ function isSystemBusy() {
     for (const job of subtitleJobs.values()) {
       if (
         job.status === "queued" ||
-        ["extracting", "transcribing", "processing", "correcting", "formatting"].includes(job.status)
+        ["extracting", "transcribing", "processing", "formatting"].includes(job.status)
       ) {
         return true;
       }
@@ -7463,8 +6891,6 @@ if (require.main === module) {
     migrateProgressKeys,
     transcodeCacheName,
     subtitleCacheName,
-    translationCacheName,
-    translationDocPath,
     courseSubtitlePath,
     startSubtitleJob,
     cancelSubtitleJob,
@@ -7475,7 +6901,6 @@ if (require.main === module) {
     sanitizeAiConfig,
     applyAiPatch,
     maskAiConfig,
-    applyLlmTranslationGuardrail,
     extractTextFromPdfBuffer,
     extractPdfTextWithBinary,
     inspectPdfBuffer,

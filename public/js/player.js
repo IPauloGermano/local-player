@@ -1168,10 +1168,7 @@ function wirePlayerUI(videoEl) {
       setSubtitleEnabled(false);
       closePopovers();
     } else if (cc.dataset.cc === "lang-source") {
-      setSubtitleLang(null);
-      closePopovers();
-    } else if (cc.dataset.cc && cc.dataset.cc.indexOf("lang-") === 0) {
-      setSubtitleLang(cc.dataset.cc.slice(5));
+      setSubtitleEnabled(true);
       closePopovers();
     }
   });

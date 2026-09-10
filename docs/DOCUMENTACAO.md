@@ -68,8 +68,8 @@ na montagem → setupPlayerSubtitles → status → overlay+badge+botão; nunca 
   `/transcoded/*`); não há socket/SSE.
 - Roteamento do frontend por hash (`#/`, `#/settings`, `#/course/...`,
   `#/topic/...`).
-- Tudo local; os únicos acessos externos possíveis são o teste de conexão do
-  LLM e a correção opcional de legendas (quando configurados).
+- Tudo local; o único acesso externo possível é o teste de conexão do
+  LLM (quando configurado).
 
 ## 3. Estrutura de diretórios e dados de runtime
 
@@ -338,10 +338,10 @@ aac/mp3/opus/vorbis/flac ou sem áudio).
 ## 12. Legendas por IA
 
 Pipeline: extração de áudio (ffmpeg → WAV 16kHz mono PCM16) → whisper.cpp →
-transcrição bruta → pós-processamento determinístico → correção LLM opcional +
-guardrail → WebVTT → cache. **Adicional**: sem binário/modelo/LLM/chave/
+transcrição bruta → pós-processamento determinístico →
+WebVTT → cache. **Adicional**: sem binário/modelo/
 internet o player funciona normal. Detalhe completo (registry, fila P0–P3,
-preempção, estado/retomada, raw-sourced gate, cache/artefato, correção LLM,
+preempção, estado/retomada, raw-sourced gate, cache/artefato,
 concorrência, player, segurança, env vars, editor desativado): **`docs/SUBTITLES.md`**.
 Instalação do whisper: **`docs/whisper.md`**.
 

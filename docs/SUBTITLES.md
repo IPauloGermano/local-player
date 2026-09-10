@@ -1,6 +1,6 @@
 # Legendas por IA — pipeline completo
 
-> Referência aprofundada do subsistema de legendas do Local Player. O `CLAUDE.md` mantém o resumo + invariantes; este arquivo é a fonte do detalhe. Pipeline: `Vídeo → extração de áudio (ffmpeg → WAV 16kHz mono PCM16) → ASR local (whisper.cpp) → transcrição bruta → pós-processamento determinístico → correção LLM opcional + guardrail → segmentação → WebVTT → cache → <track> no player`. Geração é **adicional**: sem binário/modelo/LLM/chave/internet o player funciona normal.
+> Referência aprofundada do subsistema de legendas do Local Player. O `CLAUDE.md` mantém o resumo + invariantes; este arquivo é a fonte do detalhe. Pipeline: `Vídeo → extração de áudio (ffmpeg → WAV 16kHz mono PCM16) → ASR local (whisper.cpp) → transcrição bruta → pós-processamento determinístico → segmentação → WebVTT → cache → overlay no player`. Geração é **adicional**: sem binário/modelo/internet o player funciona normal.
 
 ## Registry data-driven
 
@@ -8,7 +8,7 @@ Fonte de verdade; zero `if (provider === X)` no fluxo): `AI_TRANSCRIPTION_PROVID
 
 ## Config
 
-Em `data/ai-config.json` (escrita atômica + fila serializada, padrão de `updateProgress`): `{ transcription:{provider,model,language,enabled,generateMode,pregenFirstLesson,pregenNextLesson,background,vad}, correction:{...}, postprocessing:{...}, llm:{providers:[...]}, advanced:{maxConcurrentAiJobs,llmTimeoutMs,transcriptionThreads} }`. `maskAiConfig()` serializa respostas (só `hasApiKey`, nunca a chave); `applyAiPatch()` faz o merge parcial do `POST /api/ai/config`; `sanitizeAiConfig()` valida contra o registry. **Ao adicionar campo novo, aplique-o em `applyAiPatch` E `maskAiConfig`** (bugs de persistência passados nasceram de esquecer um dos dois).
+Em `data/ai-config.json` (escrita atômica + fila serializada, padrão de `updateProgress`): `{ transcription:{provider,model,language,enabled,generateMode,pregenFirstLesson,pregenNextLesson,background,vad}, postprocessing:{...}, llm:{providers:[...]}, advanced:{maxConcurrentAiJobs,llmTimeoutMs,transcriptionThreads} }`. `maskAiConfig()` serializa respostas (só `hasApiKey`, nunca a chave); `applyAiPatch()` faz o merge parcial do `POST /api/ai/config`; `sanitizeAiConfig()` valida contra o registry. **Ao adicionar campo novo, aplique-o em `applyAiPatch` E `maskAiConfig`** (bugs de persistência passados nasceram de esquecer um dos dois).
 
 **Workspace temporário**: WAV de extração e saída do whisper vivem em `os.tmpdir()/local-player-workspace` (modo "auto" — configurável pela Central de IA) — não na pasta do app, para não martelar o pendrive com arquivos grandes. Mínimo de `300 MB` livres para iniciar extração; subpastas `audio/` (descartável) e `work/` (saída do Whisper). O que é pequeno/necessário para retomada (raw/processed JSON) fica em `data/subtitles/`. Workspace custom inválido vira erro imediato (`safeMkdir`, sem `recursive:true` — trava em paths patológicos).
 
@@ -22,7 +22,7 @@ Em `data/ai-config.json` (escrita atômica + fila serializada, padrão de `updat
 
 ## Estado & retomada
 
-Jobs com `status` em `queued|extracting|transcribing|processing|correcting|formatting`; em `data/subtitles/jobs.json` (persistido) + `subtitleQueue` + `activeSubtitleHashes` (Set). No boot, `loadSubtitleJobs` reconstrói `abs` do `rel`, e todo job ativo vai para a fila: com **raw válido** → `processing` (retoma do pós-processamento, sem re-roda whisper); sem artefato → `queued` (recomeça). O scheduler aceita `queued` e `processing`.
+Jobs com `status` em `queued|extracting|transcribing|processing|formatting`; em `data/subtitles/jobs.json` (persistido) + `subtitleQueue` + `activeSubtitleHashes` (Set). No boot, `loadSubtitleJobs` reconstrói `abs` do `rel`, e todo job ativo vai para a fila: com **raw válido** → `processing` (retoma do pós-processamento, sem re-roda whisper); sem artefato → `queued` (recomeça). O scheduler aceita `queued` e `processing`.
 
 ## Raw-sourced gate
 
@@ -39,21 +39,6 @@ Chave `sha1(rel).slice(0,24)` (nunca nome de vídeo/curso); invalidação por `m
 ## Detecção real
 
 `getAiStatus`/`detectTranscriptionProvider`: whisper instalado se `WHISPER_BIN` (env) existe ou há `whisper-cli*` em `bin/`; modelo se `models/ggml-<model>.bin` existe (ou `WHISPER_MODEL_DIR`); expõe `capabilities.vad/threads`. Nada é baixado; sem binário/modelo o status é honesto `available:false, modelInstalled:false`.
-
-## Correção LLM
-
-`runLlmCorrection`, genérica via registry): recebe só `{id,text}`, devolve só `{id,text}`; config+chave resolvidas no backend. Guardrail (`applyLlmGuardrail`) rejeita ids faltando/duplicados/inventados e conteúdo <40% ou >4x do original → usa a versão anterior. Falha/timeout/saída inválida ⇒ LLM ignorado, legenda **nunca** bloqueada.
-
-## Tradução de legendas (LLM, sob demanda)
-
-Aula em outro idioma (ex. inglês) ganha legenda traduzida via LLM, **somente quando o usuário seleciona o idioma** no menu CC do player (P0). Whisper **não traduz para PT** (o `-tr` dele traduz apenas para inglês) — a tradução é sempre LLM.
-
-- **Config** (`defaultAiConfig`): `translation: { enabled, targetLanguage: "pt", keepTerms: true }`, aplicado em `sanitizeAiConfig`/`applyAiPatch`/`maskAiConfig` (campo novo exige os três). Reusa **o mesmo provider+modelo da correção** (`cfg.correction`) — uma única config de LLM.
-- **Artefato derivado**: `translationCacheName(hash, lang)` = `baseHash-lang` (espelho `data/subtitles/<hash>-lang.vtt` + canônico `.courseplayer/subtitles/<hash>-lang.vtt` + doc `data/subtitles/translations/<hash>-lang.json`). **Nunca** toca raw/processed/original; cache validado por `mtime+size` do vídeo (mesma regra de processed).
-- **Job**: chave `hash-lang` em `subtitleJobs` (`kind:"translation"`, `lang`, `baseHash`); estados `queued → translating → formatting → completed`. Não passa por extração/whisper (consome o processed) e **não** consome `heavySlots` (LLM é rede). No boot, job de tradução retoma como `queued` (regenera do processed; idempotente).
-- **Prompt/guardrail**: `runLlmTranslation` envia só `{id,text}` (timestamps nunca saem) com prompt de tradução fiel + regra `keepTerms` (preservar termos técnicos/código/marcas/siglas). `applyLlmTranslationGuardrail` exige ids exatos e ordem controlada pelo app, com limites de tamanho mais folgados que a correção (0.25×–6×) por ser transição de idioma. Falha/timeout ⇒ legenda original, nunca bloqueia.
-- **Rotas**: `GET /api/subtitles/status?lang=`, `POST /api/subtitles/generate?lang=` (sem processed válido → `needTranscription` e enfileira a transcrição; frontend encadeia), `GET /api/subtitles/editor?lang=` (serve o doc traduzido; `lang` == fonte → original), `GET /subtitles/<hash>-lang.vtt` (regex `^[0-9a-f]{24}(?:-[a-z]{2,10})?\.vtt$`), `POST /api/subtitles/clear` apaga `hash-*`.
-- **UI**: menu CC monta `Original (<língua>)` / `<Idioma>` / `Desativado`; sem LLM, selecionar tradução mostra "Tradução indisponível — configure um LLM" (sem job morto). Mobile: seletor só no grupo "Legendas" do menu ⋮.
 
 ## Concorrência
 
@@ -75,15 +60,15 @@ Chaves só no backend; logs `[SUBTITLE]`/`[AI]` nunca imprimem chave/token/promp
 
 # Editor de legendas (estilo YouTube)
 
-> **Desativado no frontend** (a pedido do usuário): o botão **"✎ Legendas"** foi removido do player e a rota `?editSubtitles=1` é ignorada (`subtitleEditorMode` é forçado a `false` em `renderCourse`) — o editor nunca abre na UI. O código do editor e as rotas de backend (`editor`/`save`/`export`/`ai-corrections`) permanecem no repositório, mas são inalcançáveis. Para reativar, devolva o botão e deixe `renderCourse` honrar `editMode`. A seção abaixo documenta o comportamento do editor caso seja reativado.
+> **Desativado no frontend** (a pedido do usuário): o botão **"✎ Legendas"** foi removido do player e a rota `?editSubtitles=1` é ignorada (`subtitleEditorMode` é forçado a `false` em `renderCourse`) — o editor nunca abre na UI. O código do editor e as rotas de backend (`editor`/`save`/`export`) permanecem no repositório, mas são inalcançáveis. Para reativar, devolva o botão e deixe `renderCourse` honrar `editMode`. A seção abaixo documenta o comportamento do editor caso seja reativado.
 
 Camada opcional sobre o pipeline: edita o VTT/processed sem nunca tocar a transcrição bruta. Entrada pela rota `#/course/<curso>?lesson=<aula>&editSubtitles=1` (botão **"✎ Legendas"** nos controles do player) ou pelo `<track>`/badge.
 
 - **Overlay de exibição** (substitui `<track>`): camada única `.subtitle-overlay` posicionada pela geometria REAL do vídeo renderizado (`object-fit: contain` → letterbox, `ResizeObserver` + `MutationObserver` com debounce `pc-idle` + `fullscreenchange` + resize). Fonte ≈ 5,5% da altura do frame, clamp `[12px,52px]`; `pointer-events:none`; o texto é atualizado por `textContent` (sem re-render). O WebVTT vira só fonte de dados. **Nunca bloqueia `video.play()`**.
 - **Editor** (`#subtitle-editor`): lista de segmentos (`.se-row`, id estável `sN`), textarea por segmento, tempos editáveis por inputs `m:ss.mmm` + botões **"Definir início/fim"** (marca o `currentTime` do vídeo) + nudge **±0,5s/±1s**; ações **adicionar após / dividir no cursor / mesclar com o próximo / excluir**; click na linha navega o vídeo; o segmento atual é destacado por troca de classe em `timeupdate` (sem re-render da lista) com auto-scroll que pausa 3s quando o usuário rola; **undo/redo** via pilha limitada de snapshots (60) capturados no `focusin`; **dirty guard** restaura o hash do editor e pede confirmação ao sair com alterações; **preview ao vivo** no overlay (mesma referência de `editor.segments`).
-- **Persistência**: edição salva em `data/subtitles/edited/<hash>.json` — JSON estruturado com `segments:[{id,start,end,text}]` (ids estáveis, NUNCA índice de array), `version` inteiro, `source{mtimeMs,size}`, `correctedByLlm`; o VTT derivado é sempre re-gerado a partir desse JSON (`renderVtt`) para o espelho E o canônico `.courseplayer`. `loadEditableDoc` serve **edited > processed (mtime+size válido) > vtt**; o raw nunca é servido nem sobrescrito. `backupEditedSubtitle` copia a edição para `data/subtitles/backup/` **antes** de um `force`/regeneração e remove a edição ativa (a legenda volta ao estado de geração).
+- **Persistência**: edição salva em `data/subtitles/edited/<hash>.json` — JSON estruturado com `segments:[{id,start,end,text}]` (ids estáveis, NUNCA índice de array), `version` inteiro, `source{mtimeMs,size}`; o VTT derivado é sempre re-gerado a partir desse JSON (`renderVtt`) para o espelho E o canônico `.courseplayer`. `loadEditableDoc` serve **edited > processed (mtime+size válido) > vtt**; o raw nunca é servido nem sobrescrito. `backupEditedSubtitle` copia a edição para `data/subtitles/backup/` **antes** de um `force`/regeneração e remove a edição ativa (a legenda volta ao estado de geração).
 - **Concorrência entre abas**: o save envia `version`; o servidor compara com o `version` persistido — divergente = **409** e o editor mostra o diálogo "Conflito de edição" ("Esta legenda foi alterada em outra aba…") com **Recarregar editor** (recarrega do servidor) ou **Manter minhas edições** (continua; o próximo save tenta de novo). Nunca sobrescreve silenciosamente.
-- **IA no editor**: "Corrigir com IA" → `POST /api/subtitles/ai-corrections` reusa `runLlmCorrection` + guardrail; o LLM recebe apenas `{id,text}` (timestamps nunca enviados) e devolve `{id,text}`; as correções voltam como mapa id→text aplicado na cópia de trabalho (o usuário revisa e salva). **Exportar** VTT/SRT usa o mesmo doc editável. **Regenerar** força nova geração (backup da edição antes).
+- **Exportar** VTT/SRT usa o mesmo doc editável. **Regenerar** força nova geração (backup da edição antes).
 - **Segurança**: todas as rotas do editor passam por `resolveSafeRelPath()`; validação de segmentos no servidor (`validateEditorSegments`: limites de quantidade/texto/duração mínima); chaves só no backend.
 
 ## API do subsistema
@@ -98,7 +83,6 @@ Camada opcional sobre o pipeline: edita o VTT/processed sem nunca tocar a transc
 | `POST /api/subtitles/editor?path=<rel>` | Documento editável para o editor: **edited > processed (mtime+size válido) > vtt** (nunca raw); `ready`, `staleSource`, `canGenerate`/`canRegenerate` |
 | `POST /api/subtitles/save?path=<rel>` | Grava edição manual (JSON estruturado com ids estáveis + VTT derivado → espelho + canônico `.courseplayer`); concorrência por `version` inteiro → divergente = **409** "alterada em outra aba" |
 | `POST /api/subtitles/export?path=<rel>&format=vtt\|srt` | Exporta do MESMO doc editável (edited > processed > vtt); nunca raw |
-| `POST /api/subtitles/ai-corrections?path=<rel>` | "Corrigir com IA" no editor: reusa `runLlmCorrection` + guardrail; LLM recebe só `{id,text}` e devolve `{id,text}` (timestamps nunca enviados); retorna mapa id→text para revisão — nada é gravado automaticamente |
 | `POST /api/subtitles/clear` | Limpa jobs e legendas (body `{path}` = 1 vídeo; vazio = global; **nunca toca progresso**) |
 | `GET /subtitles/<24-hex>.vtt?rel=<path>` | Serve o WebVTT: **primeiro** o canônico `ROOT/<curso>/.courseplayer/subtitles/<hash>.vtt` (quando `rel` bate com o hash), fallback para o espelho `data/subtitles/`; regex estrita de hash |
 

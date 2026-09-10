@@ -11,7 +11,7 @@ git diff --check
 node --test test/progress.test.js test/topics.test.js test/libraries.test.js \
   test/scope.test.js test/sidebar.test.js test/sidebar-runtime-smoke.js \
   test/progress-invariance.test.js test/progress-persistence.test.js \
-  test/progress-forensic.test.js test/translation.test.js
+  test/progress-forensic.test.js
 ```
 
 `progress`, `sidebar-runtime-smoke`, `progress-invariance`,
@@ -68,20 +68,8 @@ Use um `.mkv`/`.avi` (ou formato que o navegador não reproduza):
   regenera; `touch` no vídeo invalida o raw antigo.
 - **Fila P0–P3**: abrir aula enfileira P0; próxima em P1; após scan, 1ª aula de
   cada curso em P2; background em P3. Não gera a biblioteca inteira.
-- **LLM**: off → sem chamadas; on válido → correção aplicada; falha/timeout →
-  original preservado; saída que inventa/omite id ou encurta → guardrail
-  rejeita. Nenhum log imprime chave/token.
 - **Concorrência**: transcode e whisper compartilham slots (não rodam juntos
-  por padrão); LLM não consome slot.
-- **Tradução de legendas** (LLM, sob demanda): aula EN com `translation.enabled`
-  e LLM da correção configurado → menu CC mostra **Original (en)** e
-  **Português**; selecionar PT enfileira P0 (`hash-lang`), vira
-  `.courseplayer/subtitles/<hash>-pt.vtt` + espelho `data/subtitles/<hash>-pt.vtt`;
-  a original **nunca** é tocada (raw/processed intactos). Sem LLM → só Original
-  (status "Tradução indisponível", sem job morto). Falha/timeout do LLM →
-  original preservado. Clear por vídeo/global apaga traduções (`hash-*`);
-  `?lang=` em status/generate/editor; `/subtitles/<hash>-pt.vtt` servido com
-  regex `^[0-9a-f]{24}(?:-[a-z]{2,10})?\.vtt$`.
+  por padrão).
 
 ## 7. Tópicos e escopo
 

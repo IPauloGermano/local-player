@@ -11,7 +11,6 @@ var editor = {
   hash: null,
   version: 0,
   source: null,
-  correctedByLlm: false,
   segments: [],
   duration: 0,
   dirty: false,
@@ -95,7 +94,6 @@ function renderSubtitleEditor(videoEl, video) {
           <button class="secondary-btn" id="se-redo" hidden title="Refazer (Ctrl+Y)">↪ Refazer</button>
           <button class="secondary-btn" id="se-export-vtt" hidden>Exportar VTT</button>
           <button class="secondary-btn" id="se-export-srt" hidden>Exportar SRT</button>
-          <button class="secondary-btn" id="se-ai" hidden>✨ Corrigir com IA</button>
           <button class="secondary-btn" id="se-regen" hidden>Regenerar</button>
           <button class="secondary-btn" id="se-close">✕ Fechar editor</button>
         </div>
@@ -117,7 +115,6 @@ function renderSubtitleEditor(videoEl, video) {
   document.getElementById("se-redo")?.addEventListener("click", editorRedo);
   document.getElementById("se-export-vtt")?.addEventListener("click", () => editorExport("vtt"));
   document.getElementById("se-export-srt")?.addEventListener("click", () => editorExport("srt"));
-  document.getElementById("se-ai")?.addEventListener("click", editorAiCorrect);
   document.getElementById("se-regen")?.addEventListener("click", editorRegenerate);
   editorLoadDoc();
 }
@@ -154,7 +151,6 @@ async function editorLoadDoc() {
   editor.hash = doc.hash;
   editor.version = doc.version;
   editor.source = doc.source;
-  editor.correctedByLlm = doc.correctedByLlm === true;
   editor.segments = doc.segments.map((s) => ({
     id: s.id,
     start: s.start,
@@ -186,7 +182,7 @@ function editorShowUnavailable(doc) {
   if (!body) return;
   let msg = "Este vídeo ainda não possui legenda.";
   if (doc.status === "failed" || doc.error) msg = "Erro ao gerar a legenda.";
-  else if (["queued", "extracting", "transcribing", "processing", "correcting", "formatting"].includes(doc.status)) {
+  else if (["queued", "extracting", "transcribing", "processing", "formatting"].includes(doc.status)) {
     msg = "Legenda em geração…";
   }
   body.innerHTML = `
@@ -213,7 +209,7 @@ function editorShowUnavailable(doc) {
         .catch(() => (gen.textContent = "Falhou"));
     });
   }
-  if (doc.canGenerate || ["queued", "extracting", "transcribing", "processing", "correcting", "formatting"].includes(doc.status)) {
+  if (doc.canGenerate || ["queued", "extracting", "transcribing", "processing", "formatting"].includes(doc.status)) {
     editorStartPoll();
   }
 }
@@ -256,8 +252,6 @@ function editorBuildReadyUI(doc) {
   setVisible("se-export-vtt", true);
   setVisible("se-export-srt", true);
   setVisible("se-regen", true);
-  // Botão de IA: mostra sempre; o backend recusa educadamente se desabilitado.
-  setVisible("se-ai", true);
 
   const body = document.getElementById("se-body");
   body.innerHTML = `
@@ -332,7 +326,7 @@ function editorUpdateMeta(doc) {
   if (!holder) {
     // statusbar é criada no render; inserimos ao lado do dirty
     const dirty = document.getElementById("se-dirty");
-    if (dirty) dirty.title = `Fonte: ${doc.source || "?"} · versão ${editor.version}${editor.correctedByLlm ? " · corrigido por IA" : ""}${doc.edited ? " · editado manualmente" : ""}`;
+    if (dirty) dirty.title = `Fonte: ${doc.source || "?"} · versão ${editor.version}${doc.edited ? " · editado manualmente" : ""}`;
   }
 }
 
@@ -709,55 +703,6 @@ function editorExport(format) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-}
-
-async function editorAiCorrect() {
-  if (!editor.segments.length) return;
-  const aiBtn = document.getElementById("se-ai");
-  const original = aiBtn ? aiBtn.textContent : "";
-  if (aiBtn) {
-    aiBtn.disabled = true;
-    aiBtn.textContent = "Corrigindo…";
-  }
-  try {
-    const res = await fetch(
-      "/api/subtitles/ai-corrections?path=" + encodeURIComponent(editor.rel),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          segments: editor.segments.map((s) => ({ id: s.id, text: s.text })),
-        }),
-      },
-    );
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      editorShowMessage("IA: " + escapeHtml(data.error || "erro desconhecido"));
-      return;
-    }
-    if (!data.applied || !Array.isArray(data.corrections) || !data.corrections.length) {
-      editorShowToast("IA: nada a corrigir.");
-      return;
-    }
-    editorSnapshot();
-    const byId = new Map();
-    for (const c of data.corrections) byId.set(c.id, c.text);
-    let n = 0;
-    for (const s of editor.segments) {
-      if (byId.has(s.id) && typeof byId.get(s.id) === "string" && byId.get(s.id) !== s.text) {
-        s.text = byId.get(s.id);
-        n++;
-      }
-    }
-    editorMarkDirty(true);
-    renderEditorList();
-    editorShowToast("IA: " + n + " segmento(s) corrigido(s).");
-  } finally {
-    if (aiBtn) {
-      aiBtn.disabled = false;
-      aiBtn.textContent = original;
-    }
-  }
 }
 
 function editorRegenerate() {

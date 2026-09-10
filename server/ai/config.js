@@ -81,8 +81,6 @@ function defaultAiConfig() {
       background: false,
       vad: true,
     },
-    correction: { enabled: false, providerId: "", model: "" },
-    translation: { enabled: false, targetLanguage: "pt", keepTerms: true },
     tutor: {
       enabled: true,
       providerId: "",
@@ -164,19 +162,6 @@ function sanitizeAiConfig(raw) {
   out.postprocessing.capitalize = pp.capitalize !== false;
   out.postprocessing.segment = pp.segment !== false;
   out.postprocessing.technicalDictionary = pp.technicalDictionary === true;
-
-  const co = objOr(raw.correction, {});
-  out.correction.enabled = co.enabled === true;
-  out.correction.providerId = clampStr(co.providerId, 80);
-  out.correction.model = clampStr(co.model, AI_STR_LIMITS.model);
-
-  const tl = objOr(raw.translation, {});
-  const whisperProv = findTranscriptionProvider("whisper");
-  const trLangs = whisperProv ? whisperProv.languages : [];
-  out.translation.enabled = tl.enabled === true;
-  const tgt = clampStr(tl.targetLanguage, 10);
-  out.translation.targetLanguage = trLangs.some(l => l.id === tgt) ? tgt : "pt";
-  out.translation.keepTerms = tl.keepTerms !== false;
 
   const tu = objOr(raw.tutor, {});
   out.tutor.enabled = tu.enabled !== false;
@@ -298,31 +283,6 @@ function applyAiPatch(config, patch) {
     }
   }
   if (removeId) out.llm.providers = out.llm.providers.filter(x => x.id !== removeId);
-
-  const co = objOr(src.correction, {});
-  if (Object.keys(co).length) {
-    if (co.enabled !== undefined) out.correction.enabled = co.enabled === true;
-    if (co.providerId !== undefined) {
-      const has = out.llm.providers.some(x => x.id === co.providerId);
-      if (co.providerId !== "" && !has) throw new Error("Provedor de correção inválido.");
-      out.correction.providerId = clampStr(co.providerId, 80);
-    }
-    if (co.model !== undefined) out.correction.model = clampStr(co.model, AI_STR_LIMITS.model);
-  }
-
-  const tl = objOr(src.translation, {});
-  if (Object.keys(tl).length) {
-    if (tl.enabled !== undefined) out.translation.enabled = tl.enabled === true;
-    if (tl.targetLanguage !== undefined) {
-      const whisperProv = findTranscriptionProvider("whisper");
-      const trLangs = whisperProv ? whisperProv.languages : [];
-      if (!trLangs.some(l => l.id === tl.targetLanguage)) {
-        throw new Error("Idioma-alvo de tradução inválido.");
-      }
-      out.translation.targetLanguage = clampStr(tl.targetLanguage, 10);
-    }
-    if (tl.keepTerms !== undefined) out.translation.keepTerms = tl.keepTerms === true;
-  }
 
   const tu = objOr(src.tutor, {});
   if (Object.keys(tu).length) {
@@ -457,8 +417,6 @@ function applyAiPatch(config, patch) {
 function maskAiConfig(config) {
   return {
     transcription: { ...config.transcription },
-    correction: { ...config.correction },
-    translation: { ...config.translation },
     tutor: { ...config.tutor },
     postprocessing: { ...config.postprocessing },
     skills: config.skills ? JSON.parse(JSON.stringify(config.skills)) : defaultAiConfig().skills,

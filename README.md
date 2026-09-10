@@ -41,9 +41,9 @@ sem envio para a internet.
 - **Multi-biblioteca configurável**: registre bibliotecas extras em pastas ou
   discos externos (Configurações → Bibliotecas) com isolamento total de chaves
   (`libId\0rel`), backups dedicados e suporte a bibliotecas desativadas.
-- **Legendas automáticas por IA e Tradução**: transcrição offline com
-  **whisper.cpp**, fila de prioridades (P0 a P3), correção opcional via LLM
-  guardrail, tradução de legendas sob demanda e recuperação robusta contra erros.
+- **Legendas automáticas por IA**: transcrição offline com
+  **whisper.cpp**, fila de prioridades (P0 a P3), pós-processamento
+  determinístico e recuperação robusta contra erros.
 - **Tutor IA integrado com Web Search**: assistente de estudos em tempo real via
   chat streaming (SSE), com contexto automático da aula (transcrição, timestamps
   clicáveis e leitura inteligente de PDFs, Office e códigos), pesquisa web
@@ -188,14 +188,13 @@ caminho absoluto (HDs externos, pendrives ou outras pastas locais).
 - Bibliotecas desativadas permanecem visíveis para reativação ou remoção, sem bloquear caminhos.
 - A remoção de bibliotecas é estritamente **config-only**: nenhum arquivo é excluído do disco.
 
-## Legendas por IA e Tradução
+## Legendas por IA
 
 O player transcreve áudio com **whisper.cpp** local de forma não-bloqueante:
 1. Extração de áudio mono PCM16 com FFmpeg.
 2. Transcrição com threads calculadas dinamicamente.
-3. Pós-processamento determinístico e correção opcional via LLM (com guardrail contra alucinações).
-4. **Tradução por IA**: traduz legendas transcritas para idiomas configurados (sob demanda no menu CC).
-5. **Resiliência**: botão de ação com reinício forçado (`force=1`), cancelamento de jobs órfãos e mensagens explicativas em caso de ausência de binários ou modelos.
+3. Pós-processamento determinístico.
+4. **Resiliência**: botão de ação com reinício forçado (`force=1`), cancelamento de jobs órfãos e mensagens explicativas em caso de ausência de binários ou modelos.
 
 *Consulte o guia detalhado em `docs/whisper.md` e `docs/SUBTITLES.md`.*
 

@@ -11,7 +11,7 @@ submódulos desacoplados em `server/`, SPA em `public/` em JS puro, ambos **sem 
 para organizar/reproduzir mídia em disco: scan da árvore, serve originais com Range,
 progresso por aula, busca, favoritos, atalhos, **transcoding de fallback** (ffmpeg,
 só para formatos que o navegador não reproduz) e **legendas automáticas por IA** (Whisper
-local + correção LLM opcional — adicional, nunca dependência). Texto de UI/README/
+local — adicional, nunca dependência). Texto de UI/README/
 comentários em **pt-BR**.
 
 **Tópicos vs cursos (explícito, sem inferência estrutural)**: pasta é **tópico**
@@ -148,8 +148,8 @@ direto — **decisão nunca pela extensão**.
 ### Legendas por IA (resumo — detalhe em `docs/SUBTITLES.md`)
 
 Pipeline: extração de áudio (ffmpeg → WAV 16kHz mono PCM16) → whisper.cpp →
-transcrição bruta → pós-processamento → correção LLM opcional (guardrail) →
-WebVTT → cache. **Adicional — sem binário/modelo/LLM/chave/internet o player
+transcrição bruta → pós-processamento →
+WebVTT → cache. **Adicional — sem binário/modelo/internet o player
 funciona normal.**
 
 - **Registry data-driven** é a fonte de verdade (nada de `if (provider === X)`).
@@ -160,10 +160,8 @@ funciona normal.**
   `force=1` regenera do zero.
 - VTT canônico em `<lib>/.courseplayer/subtitles/<hash>.vtt` (ignorado pelo
   scan) + espelho `data/subtitles/`; chave `sha1(libId\0rel)[0:24]`.
-- Raw **nunca sobrescrito**; correção LLM guardada (ids + conteúdo <40%/>4x
-  rejeitados; falha/timeout ⇒ original, legenda nunca bloqueada).
-- Concorrência: transcode e whisper compartilham `heavySlots`; LLM não consome
-  slot. Envs: `WHISPER_BIN`/`WHISPER_MODEL_DIR` (→ `docs/whisper.md`),
+- Raw **nunca sobrescrito**.
+- Concorrência: transcode e whisper compartilham `heavySlots`. Envs: `WHISPER_BIN`/`WHISPER_MODEL_DIR` (→ `docs/whisper.md`),
   `MAX_CONCURRENT_TRANSCRIPTIONS` (default 1), `MAX_CONCURRENT_AI_JOBS`
   (default 1), `BACKGROUND_SUBTITLE_GENERATION`.
 - Player: overlay `.subtitle-overlay` (nunca `<track>`), badge
@@ -241,14 +239,8 @@ funciona normal.**
 - **Legenda nunca é dependência do player**; **Registry = fonte de verdade**
   dos providers ASR/LLM; **chaves só no backend**; logs nunca imprimem
   chave/token/prompt.
-- **LLM guardada** (ids + <40%/>4x rejeitados; falha ⇒ original). **Raw nunca
-  sobrescrito**. **VTT canônico em `.courseplayer/subtitles/`**; clear apaga
-  canônico + espelho.
-- **Tradução de legendas** (`translation` na config): LLM reusa o provider da
-  correção; artefato derivado `baseHash-<lang>` (chave em `subtitleJobs`
-  `hash-lang`, `kind:"translation"`); **nunca toca raw/processed/original**;
-  só sob demanda (P0, no player); sem LLM → "Tradução indisponível". Whisper
-  **não** traduz para PT (o `-tr` dele é EN-only).
+- **Raw nunca sobrescrito**. **VTT canônico em `.courseplayer/subtitles/`**;
+  clear apaga canônico + espelho.
 - **Nunca gerar a biblioteca inteira** (P0–P3); preempção só de jobs baratos.
   Transcode + whisper compartilham `heavySlots`; LLM não.
 - **Editor**: edição nunca sobrescreve raw/processed; save com `version`
