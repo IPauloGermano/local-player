@@ -6039,10 +6039,21 @@ app.post("/api/subtitles/generate-course", async (req, res) => {
     await loadSubtitleJobs();
     const tree = await getTree(false);
     const libEntry = (tree.libraries || []).find((l) => l.id === lib.id);
-    const course = (libEntry && libEntry.tree
-      ? libEntry.tree.children || []
-      : []
-    ).find((c) => c.type === "folder" && c.path === safe.rel);
+    // Busca recursiva: o curso pode estar aninhado dentro de tópicos, não
+    // apenas no topo da biblioteca.
+    const findCourse = (nodes) => {
+      for (const c of nodes || []) {
+        if (c.type === "folder" && c.path === safe.rel) return c;
+        if (c.children) {
+          const found = findCourse(c.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    const course = libEntry && libEntry.tree
+      ? findCourse(libEntry.tree.children)
+      : null;
     if (!course) return res.status(404).json({ error: "course not found" });
     const videos = [];
     const walk = (node) => {
@@ -6991,10 +7002,14 @@ async function shutdownNow(code = 0) {
   for (const hash of [...subtitleJobs.keys()]) {
     const job = subtitleJobs.get(hash);
     if (!job) continue;
+    // Sem persist por job (persist=false): o passo 2 abaixo grava o estado
+    // final UMA vez, síncrono. Persistir aqui dispararia N stringifies +
+    // escritas concorrentes do arquivo inteiro — com fila grande (milhares
+    // de jobs) isso estoura o heap e mata o shutdown com OOM.
     if (job.status === "queued") {
-      updateSubtitleJob(hash, { status: "cancelled", progress: "Cancelado", error: null });
-    } else if (["extracting", "transcribing", "processing", "correcting", "formatting"].includes(job.status)) {
-      updateSubtitleJob(hash, { status: "cancelled", progress: "Cancelando…", error: null });
+      updateSubtitleJob(hash, { status: "cancelled", progress: "Cancelado", error: null }, false);
+    } else if (["extracting", "transcribing", "processing", "formatting"].includes(job.status)) {
+      updateSubtitleJob(hash, { status: "cancelled", progress: "Cancelando…", error: null }, false);
       if (job.proc) {
         subtitleProcs.push(job.proc);
         job.proc = null;
