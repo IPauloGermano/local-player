@@ -179,7 +179,7 @@ funciona normal.**
   favoritos ao topo (só cursos), busca accent-insensitive. **Escopo
   contextual**: "Seu progresso" = cursos diretos da raiz e, sem curso direto,
   cai para o global (bloco nunca some); "Continuar assistindo" = **global**
-  (até 8, um por curso). Dentro de um tópico, ambos consideram **só a
+  (até 8 no PC e 4 no mobile, um por curso). Dentro de um tópico, ambos consideram **só a
   subárvore** (`collectCoursesInScope`).
 - **Curso**: toolbar (favoritar, limpar progresso, gerar legendas), player,
   cabeçalho da aula (breadcrumb + Anterior/Próxima), sidebar de navegação +

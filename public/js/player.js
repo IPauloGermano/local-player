@@ -146,6 +146,7 @@ function svgIcon(paths, size = 18) {
 const ICON_PLAY = svgIcon('<path d="M8 5v14l11-7z"/>');
 const ICON_PAUSE = svgIcon('<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>');
 const ICON_PLAY_CENTER = svgIcon('<path d="M8 5v14l11-7z"/>', 30);
+const ICON_PAUSE_CENTER = svgIcon('<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>', 30);
 const ICON_VOLUME_UP = svgIcon('<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.47 4.47 0 0 0 16.5 12zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>');
 const ICON_VOLUME_DOWN = svgIcon('<path d="M18.5 12A4.5 4.5 0 0 0 16 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM9 4.27L5.27 8H1v8h4l5 5V4.27z"/>');
 const ICON_VOLUME_MUTED = svgIcon('<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>');
@@ -484,6 +485,7 @@ function renderPlayerAndLesson() {
     </div>
     <div class="player-ui" id="player-ui">
       <button class="pc-center hidden" id="pc-play-center" type="button" aria-label="Reproduzir">${ICON_PLAY_CENTER}</button>
+      <div class="pc-skip-flash" id="pc-skip-flash" hidden></div>
       <div class="pc-bottom" id="pc-bottom">
         <div class="pc-progress">
           <input type="range" class="pc-seek" id="pc-seek" min="0" max="1000" step="1" value="0"
@@ -541,7 +543,6 @@ function renderPlayerAndLesson() {
             <div class="pc-group pc-group-more">
               <button class="pc-btn pc-more-btn" id="pc-more-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Mais opções" title="Mais opções">${ICON_MORE}</button>
               <div class="pc-pop pc-more-menu" id="pc-more-menu" hidden>
-                <button type="button" class="pc-menu-item" data-more="tutor">✨ Tutor IA</button>
                 <button type="button" class="pc-menu-item" data-more="theater">Modo teatro</button>
                 <button type="button" class="pc-menu-item" data-more="summary">Resumo da aula</button>
                 <button type="button" class="pc-menu-item pc-more-narrow" data-more="subtitle-style">Aparência da legenda</button>
@@ -798,6 +799,10 @@ function wirePlayerUI(videoEl) {
     playBtn.innerHTML = paused ? ICON_PLAY : ICON_PAUSE;
     playBtn.setAttribute("aria-label", label);
     centerBtn.setAttribute("aria-label", label);
+    // Pausado: botão central sempre com ícone de play. Tocando: não mexe no
+    // ícone — o tap no centro pode ter exibido o pause temporário (some no
+    // próximo pause/idle).
+    if (paused) centerBtn.innerHTML = ICON_PLAY_CENTER;
     centerBtn.classList.toggle("hidden", !paused);
     if (paused) showControls();
   };
@@ -865,7 +870,173 @@ function wirePlayerUI(videoEl) {
   // --- eventos ---
   if (playBtn) playBtn.addEventListener("click", () => togglePlay(videoEl));
   if (centerBtn) centerBtn.addEventListener("click", () => togglePlay(videoEl));
-  // Clique em área vazia do vídeo também alterna play/pause.
+  // Toques no vídeo (touch): tap NUNCA alterna play/pause — só mostra os
+  // controles. TOQUE DUPLO nas laterais avança/volta 10s (mesmo passo dos
+  // atalhos j/l); duplo no centro só mantém a barra visível. O play/pause no
+  // touch acontece SÓ nos botões (pc-play / pc-center). Clique com mouse
+  // mantém o toggle clássico.
+  const TAP_SLOP_PX = 12;
+  const TAP_MAX_MS = 500;
+  const DOUBLE_TAP_MS = 350;
+  const SIDE_ZONE = 0.35;
+  const TOUCH_SEEK_SECONDS = 10;
+  let touchTapAt = 0;
+  let tapTrack = null;
+  let lastSideTap = null;
+  let skipFlashTimer = null;
+  const skipFlashEl = document.getElementById("pc-skip-flash");
+  const showSkipFlash = (dir) => {
+    if (!skipFlashEl) return;
+    skipFlashEl.textContent = dir < 0 ? "−10 s" : "+10 s";
+    skipFlashEl.dataset.side = dir < 0 ? "left" : "right";
+    skipFlashEl.hidden = false;
+    skipFlashEl.classList.remove("show");
+    void skipFlashEl.offsetWidth;
+    skipFlashEl.classList.add("show");
+    if (skipFlashTimer) clearTimeout(skipFlashTimer);
+    skipFlashTimer = setTimeout(() => {
+      skipFlashEl.hidden = true;
+    }, 700);
+  };
+  const seekTouch = (dir) => {
+    if (dir < 0) {
+      videoEl.currentTime = Math.max(0, videoEl.currentTime - TOUCH_SEEK_SECONDS);
+    } else {
+      const maxTime = Number.isFinite(videoEl.duration)
+        ? videoEl.duration
+        : videoEl.currentTime + TOUCH_SEEK_SECONDS;
+      videoEl.currentTime = Math.min(maxTime, videoEl.currentTime + TOUCH_SEEK_SECONDS);
+    }
+    showSkipFlash(dir);
+  };
+  // --- toque LONGO (hold): 2× temporário; soltar volta à velocidade anterior.
+  // Vale só com o vídeo tocando e fora de botões/menus, legenda arrastável e
+  // overlay de erro. Não persiste preferência (só o menu de velocidade salva).
+  const HOLD_MS = 400;
+  const HOLD_SLOP_PX = 12;
+  let holdTimer = null;
+  let holdPointerId = null;
+  let holdPrevRate = null;
+  const holdEligible = (target) =>
+    !target.closest(".player-ui") &&
+    !target.closest(".subtitle-overlay-text") &&
+    !target.closest(".player-status");
+  const cancelHold = () => {
+    if (holdTimer) {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+    }
+    holdPointerId = null;
+  };
+  const endHoldSpeed = () => {
+    cancelHold();
+    if (holdPrevRate === null) return;
+    videoEl.playbackRate = holdPrevRate;
+    updateSpeedLabel(videoEl);
+    holdPrevRate = null;
+    if (skipFlashEl) {
+      skipFlashEl.classList.remove("held");
+      skipFlashEl.hidden = true;
+    }
+    wakeControls();
+  };
+  const engageHoldSpeed = () => {
+    holdTimer = null;
+    if (videoEl.paused || holdPrevRate !== null) return;
+    holdPrevRate = videoEl.playbackRate || 1;
+    videoEl.playbackRate = 2;
+    updateSpeedLabel(videoEl);
+    if (skipFlashEl) {
+      if (skipFlashTimer) clearTimeout(skipFlashTimer);
+      skipFlashEl.textContent = "2×";
+      skipFlashEl.dataset.side = "center";
+      skipFlashEl.hidden = false;
+      skipFlashEl.classList.remove("show");
+      skipFlashEl.classList.add("held");
+    }
+    wakeControls();
+  };
+  wrap.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "touch" || !e.isPrimary) return;
+    tapTrack = { x: e.clientX, y: e.clientY, t: Date.now() };
+    // Toque LONGO: segurando no vídeo (fora de botões/legenda/erro) com o
+    // vídeo tocando, arma o 2× temporário — soltar volta à velocidade
+    // anterior. Não perturba um hold já engatado (multitoque).
+    if (!videoEl.paused && holdPrevRate === null && holdEligible(e.target)) {
+      cancelHold();
+      holdPointerId = e.pointerId;
+      holdTimer = setTimeout(engageHoldSpeed, HOLD_MS);
+    }
+  }, { passive: true });
+  wrap.addEventListener("pointercancel", () => {
+    tapTrack = null;
+    endHoldSpeed();
+  });
+  // Rolagem/arraste antes de engatar cancela o hold (depois de engatado, só
+  // soltar restaura — o gesto já virou 2×).
+  wrap.addEventListener("pointermove", (e) => {
+    if (holdPointerId === null || e.pointerId !== holdPointerId) return;
+    if (holdPrevRate !== null || !tapTrack) return;
+    const moved = Math.hypot(e.clientX - tapTrack.x, e.clientY - tapTrack.y);
+    if (moved > HOLD_SLOP_PX) cancelHold();
+  }, { passive: true });
+  wrap.addEventListener("pointerup", (e) => {
+    if (e.pointerType !== "touch" || !e.isPrimary) return;
+    // Soltura do dedo do hold: restaura a velocidade (sem tap/seek/toggle).
+    if (holdPointerId !== null && e.pointerId === holdPointerId) {
+      const wasHeld = holdPrevRate !== null;
+      endHoldSpeed();
+      if (wasHeld) {
+        touchTapAt = Date.now(); // suprime o click sintético
+        return;
+      }
+      // Solto antes de engatar: segue o fluxo normal de tap abaixo.
+    }
+    const tr = tapTrack;
+    tapTrack = null;
+    if (!tr) return;
+    if (e.target.closest(".player-ui")) return; // botões/menus: fluxo próprio
+    if (e.target.closest(".subtitle-overlay-text")) {
+      wakeControls(); // legenda arrastável: tap só acorda, sem seek
+      return;
+    }
+    if (e.target.closest(".player-status")) return; // overlay de erro: fluxo próprio
+    const moved = Math.hypot(e.clientX - tr.x, e.clientY - tr.y);
+    if (moved > TAP_SLOP_PX || Date.now() - tr.t > TAP_MAX_MS) return; // arraste/scroll
+    touchTapAt = Date.now();
+    const r = wrap.getBoundingClientRect();
+    const fx = r.width > 0 ? (e.clientX - r.left) / r.width : 0.5;
+    const zone = fx < SIDE_ZONE ? -1 : fx > 1 - SIDE_ZONE ? 1 : 0;
+    // Toque duplo no MESMO lado dentro da janela = seek; qualquer outro caso
+    // (simples, centro, lados alternados) só mostra os controles.
+    const now = Date.now();
+    if (
+      zone !== 0 &&
+      lastSideTap &&
+      lastSideTap.zone === zone &&
+      now - lastSideTap.t < DOUBLE_TAP_MS
+    ) {
+      lastSideTap = null;
+      seekTouch(zone);
+    } else {
+      lastSideTap = zone !== 0 ? { zone, t: now } : null;
+    }
+    wakeControls();
+    // Tap no centro tocando: revela o botão central de PAUSE (funcional —
+    // o clique dele pausa via handler próprio). Some no próximo pause/idle.
+    if (zone === 0 && !videoEl.paused && centerBtn) {
+      centerBtn.innerHTML = ICON_PAUSE_CENTER;
+      centerBtn.classList.remove("hidden");
+      centerBtn.setAttribute("aria-label", "Pausar");
+    }
+  });
+  // Pressão longa no touch abre o menu nativo do navegador sobre o <video>
+  // (copiar link/compartilhar/salvar) — o player tem gestos próprios (tap,
+  // duplo-tap, hold 2×), então o menu nativo é suprimido aqui (vale também
+  // para o botão direito no desktop sobre o player).
+  wrap.addEventListener("contextmenu", (e) => e.preventDefault());
+  // Clique em área vazia do vídeo com MOUSE alterna play/pause. Toques touch
+  // caem aqui como click sintético: já tratados acima, sem toggle.
   wrap.addEventListener("click", (e) => {
     // Soltar a legenda arrastada dispara um `click` sintético que não pode
     // virar play/pause (o arraste é uma ação do usuário sobre a legenda).
@@ -874,6 +1045,7 @@ function wirePlayerUI(videoEl) {
       return;
     }
     if (e.target.closest(".player-ui")) return;
+    if (Date.now() - touchTapAt < 600) return;
     togglePlay(videoEl);
   });
 
@@ -980,8 +1152,7 @@ function wirePlayerUI(videoEl) {
     const more = e.target.closest("[data-more]");
     if (more) {
       e.stopPropagation();
-      if (more.dataset.more === "tutor") toggleTutorDrawer(state.currentVideoNode);
-      else if (more.dataset.more === "theater") toggleTheaterMode();
+      if (more.dataset.more === "theater") toggleTheaterMode();
       else if (more.dataset.more === "summary") toggleSummaryPanel();
       else if (more.dataset.more === "subtitle-style") toggleSubtitleStylePanel();
       closePopovers();

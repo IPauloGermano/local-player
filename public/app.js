@@ -33,7 +33,19 @@ const {
   buildContinueItems,
   getNodeProgressStats,
   getLibraryProgressSummary,
+  collectOrphanRecords,
 } = window.LocalPlayerScope;
+
+// Limite de cards de "Continuar assistindo": 4 no mobile (coluna única,
+// pouco espaço vertical), 8 no PC. Avaliado a cada render (sem listeners de
+// resize — a troca de rota re-renderiza e reaplica).
+function continueLimit() {
+  try {
+    return window.matchMedia("(max-width: 640px)").matches ? 4 : 8;
+  } catch {
+    return 8;
+  }
+}
 
 // Marca cada nó de uma árvore com o id da biblioteca a que pertence — o rel
 // path de uma aula é idêntico em duas bibliotecas, então todo acesso a
@@ -845,6 +857,14 @@ function renderProgressSection(summary, totalCourses) {
   const progressMode = getProgressMode();
   const progressExpanded = progressMode === "expanded";
   const watchedLabel = formatDuration(summary.watchedSeconds);
+  // Histórico de arquivos movidos/renomeados/removidos entra na conta (nunca
+  // some); o sufixo deixa explícito de onde vem a diferença.
+  const orphanSuffix = summary.orphanLessons
+    ? ` · ${summary.orphanLessons} de arquivo${summary.orphanLessons === 1 ? "" : "s"} movido${summary.orphanLessons === 1 ? "" : "s"}`
+    : "";
+  const lessonsSub = summary.orphanLessons
+    ? `de ${summary.totalLessons} aulas (inclui movidas/renomeadas)`
+    : `de ${summary.totalLessons} na biblioteca`;
   return `
     <section class="home-section progress-section" id="progress-section" data-progress-mode="${progressMode}">
       <div class="section-head">
@@ -860,7 +880,7 @@ function renderProgressSection(summary, totalCourses) {
         <div class="progress-summary-inner">
           <div class="progress-summary-pct">${summary.pct}%</div>
           <div class="progress-summary-bar"><div class="progress-summary-bar-fill" style="width:${summary.pct}%"></div></div>
-          <div class="progress-summary-meta">${summary.doneLessons} aulas concluídas · ${summary.startedCourses} cursos ativos · ${watchedLabel} estudadas</div>
+          <div class="progress-summary-meta">${summary.doneLessons} aulas concluídas · ${summary.startedCourses} cursos ativos · ${watchedLabel} estudadas${orphanSuffix}</div>
         </div>
       </div>
       <div class="progress-panel-wrap">
@@ -874,7 +894,7 @@ function renderProgressSection(summary, totalCourses) {
           <div class="progress-stat">
             <div class="progress-stat-value">${summary.doneLessons}</div>
             <div class="progress-stat-label">aulas concluídas</div>
-            <div class="progress-stat-sub">de ${summary.totalLessons} na biblioteca</div>
+            <div class="progress-stat-sub">${lessonsSub}</div>
           </div>
           <div class="progress-stat">
             <div class="progress-stat-value">${watchedLabel}</div>
@@ -945,9 +965,21 @@ function renderHome(app) {
   // direto (ex.: biblioteca toda organizada em tópicos), cai para o GLOBAL,
   // para o progresso existente não ficar invisível na Home (persistência é a
   // fonte de verdade; o bloco nunca some por organização em tópicos).
-  const continueSummary = getLibraryProgressSummary(allCourses, progFor);
+  // Órfãos (histórico de arquivos movidos/renomeados/removidos, sem nó na
+  // árvore — ex.: pasta renomeada) entram nos dois resumos: nada estudado
+  // fica invisível.
+  const videoKeys = new Set();
+  for (const c of allCourses) {
+    for (const v of flattenVideos(c)) videoKeys.add(progKey(v.path, v.libId));
+  }
+  const orphans = collectOrphanRecords(
+    state.progress,
+    videoKeys,
+    libs.map((l) => l.id),
+  );
+  const continueSummary = getLibraryProgressSummary(allCourses, progFor, orphans);
   const progressScope = directCourses.length ? directCourses : allCourses;
-  const librarySummary = getLibraryProgressSummary(progressScope, progFor);
+  const librarySummary = getLibraryProgressSummary(progressScope, progFor, orphans);
   state.lastSearchResults = results;
   // Tópicos têm path (sem coursePath); cursos/aulas/materiais têm coursePath.
   const matchedPaths = new Set(
@@ -964,7 +996,7 @@ function renderHome(app) {
   // bibliotecas, incluindo os aninhados em tópicos). Uma aula por curso — a
   // elegível com updatedAt mais recente. Regras preservadas: concluídas e
   // <=5s ficam fora.
-  const topContinue = buildContinueItems(allCourses, progFor);
+  const topContinue = buildContinueItems(allCourses, progFor, continueLimit());
 
   let html = "";
 
@@ -1605,8 +1637,20 @@ function renderTopic(app, topicPath, libId) {
   // "Continuar assistindo" e "Seu progresso" só enxergam cursos DENTRO deste
   // tópico — tópicos irmãos, cursos da Home e outras bibliotecas ficam de fora.
   const scopeCourses = collectCoursesInScope(node);
-  const scopeSummary = getLibraryProgressSummary(scopeCourses, progFor);
-  const topContinue = buildContinueItems(scopeCourses, progFor);
+  // Órfãos do próprio tópico (arquivo renomeado/movido dentro dele): contam
+  // no resumo como histórico, com o mesmo conjunto de vídeos do escopo.
+  const scopeKeys = new Set();
+  for (const c of scopeCourses) {
+    for (const v of flattenVideos(c)) scopeKeys.add(progKey(v.path, v.libId));
+  }
+  const scopeOrphans = collectOrphanRecords(
+    state.progress,
+    scopeKeys,
+    [getLibById(libId) ? libId : DEFAULT_LIB_ID],
+    topicPath,
+  );
+  const scopeSummary = getLibraryProgressSummary(scopeCourses, progFor, scopeOrphans);
+  const topContinue = buildContinueItems(scopeCourses, progFor, continueLimit());
   let html = `
     <div class="topic-view">
       <div class="topic-breadcrumb">${topicBreadcrumb(topicPath, libId)}</div>

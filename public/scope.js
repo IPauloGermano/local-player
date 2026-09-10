@@ -78,9 +78,10 @@
   // "Continuar assistindo": no máximo uma aula por curso — a aula elegível com
   // updatedAt mais recente (agrupamento, não limite visual). Regras existentes
   // preservadas: aulas concluídas e com <=5s de progresso ficam fora. Ordenado
-  // por updatedAt desc, limitado a 8. `progressOf` é injetado (progFor no app;
-  // mapa fixo nos testes) para manter a função pura.
-  function buildContinueItems(courses, progressOf) {
+  // por updatedAt desc, limitado a `limit` (padrão 8 no PC; o app passa 4 no
+  // mobile). `progressOf` é injetado (progFor no app; mapa fixo nos testes)
+  // para manter a função pura.
+  function buildContinueItems(courses, progressOf, limit = 8) {
     const items = [];
     for (const course of courses) {
       let best = null;
@@ -94,7 +95,8 @@
       if (best) items.push(best);
     }
     items.sort((a, b) => (b.progress.updatedAt || 0) - (a.progress.updatedAt || 0));
-    return items.slice(0, 8);
+    const n = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 8;
+    return items.slice(0, n);
   }
 
   // Tempo efetivamente estudado de uma aula a partir do registro de progresso.
@@ -138,8 +140,12 @@
   }
 
   // Resumo agregado de "Seu progresso" sobre um conjunto de cursos (escopo
-  // direto da Home, global, ou subárvore de um tópico).
-  function getLibraryProgressSummary(courses, progressOf) {
+  // direto da Home, global, ou subárvore de um tópico). `orphans` (opcional)
+  // são registros de progresso de arquivos movidos/renomeados/removidos — sem
+  // nó na árvore, mas com histórico real de estudo: entram em totais,
+  // concluídas, tempo e pct (nunca em "cursos ativos", sem curso atribuível).
+  // Registros zerados sem evidência de estudo ficam de fora.
+  function getLibraryProgressSummary(courses, progressOf, orphans) {
     let totalLessons = 0;
     let doneLessons = 0;
     let inProgressLessons = 0;
@@ -155,6 +161,18 @@
       if (s.done > 0 || s.inProgress > 0) startedCourses += 1;
     }
 
+    let orphanLessons = 0;
+    for (const p of orphans || []) {
+      if (!p || typeof p !== "object") continue;
+      const played = watchedSecondsOf(p);
+      if (!p.completed && played <= 0) continue;
+      orphanLessons += 1;
+      totalLessons += 1;
+      watchedSeconds += played;
+      if (p.completed) doneLessons += 1;
+      else if (played > 5) inProgressLessons += 1;
+    }
+
     const pct = totalLessons ? Math.round((doneLessons / totalLessons) * 100) : 0;
     return {
       totalLessons,
@@ -162,8 +180,34 @@
       inProgressLessons,
       watchedSeconds,
       startedCourses,
+      orphanLessons,
       pct,
     };
+  }
+
+  // Registros de progresso "órfãos": com chave de biblioteca do escopo, mas
+  // sem vídeo correspondente na árvore (pasta/arquivo renomeado, movido ou
+  // removido). `videoKeys` tem as
+  // chaves `<libId>\0<rel>` dos vídeos do escopo; `basePath` opcional restringe
+  // aos órfãos de um tópico (comparação por segmentos, nunca prefixo cru).
+  function collectOrphanRecords(progress, videoKeys, libIds, basePath) {
+    const out = [];
+    if (!progress || typeof progress !== "object") return out;
+    const libs = new Set(Array.isArray(libIds) ? libIds : []);
+    const keys = videoKeys instanceof Set ? videoKeys : new Set();
+    const scope = typeof basePath === "string" ? basePath : "";
+    for (const key of Object.keys(progress)) {
+      const p = progress[key];
+      if (!p || typeof p !== "object") continue;
+      const sep = key.indexOf("\0");
+      const libId = sep === -1 ? "default" : key.slice(0, sep);
+      const rel = sep === -1 ? key : key.slice(sep + 1);
+      if (!libs.has(libId)) continue;
+      if (keys.has(key)) continue;
+      if (scope && !(rel === scope || isDescendantPath(rel, scope))) continue;
+      out.push(p);
+    }
+    return out;
   }
 
   // Busca um nó na árvore pelo seu caminho relativo.
@@ -662,6 +706,7 @@
     buildContinueItems,
     getNodeProgressStats,
     getLibraryProgressSummary,
+    collectOrphanRecords,
     findNodeByPath,
     findParentFolder,
     sanitizeLinkUrl,

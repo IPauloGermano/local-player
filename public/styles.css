@@ -1668,6 +1668,8 @@ body {
      (pan-y mantém a rolagem vertical da página; o arraste horizontal da
      timeline/sliders e da legenda é liberado nas regras próprias abaixo). */
   touch-action: pan-y;
+  /* Sem menu nativo de long-press (copiar/compartilhar/salvar) sobre o player. */
+  -webkit-touch-callout: none;
   /* Limite vertical fluido: mantem o player confortavel e proporcional sem estourar a tela. */
   max-height: min(72vh, calc(100vh - 230px), 780px);
   max-height: min(72svh, calc(100svh - 230px), 780px);
@@ -1685,6 +1687,11 @@ body {
   object-fit: contain;
   background: #000;
   display: block;
+  /* Sem callout/mira de seleção no long-press (iOS mostra "salvar/copiar"
+     sobre mídia): o player tem gestos próprios de toque. */
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .player-wrap:fullscreen {
   width: 100vw;
@@ -1982,6 +1989,30 @@ body {
 }
 .pc-menu-item[hidden] {
   display: none;
+}
+/* Menu ⋮ do player: ritmo e alvos de toque. Mesmos tokens do tema; só
+   espaçamento, estados e foco — IDs/classes/data-* intactos. */
+.pc-more-menu {
+  padding: 8px;
+}
+.pc-menu-group:first-child .pc-menu-label {
+  padding-top: 2px;
+}
+.pc-menu-item {
+  min-height: 40px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.pc-menu-item:active {
+  background: rgba(255, 255, 255, 0.14);
+}
+.pc-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.pc-menu-sep {
+  margin: 6px 4px;
 }
 .pc-cc-status {
   display: block;
@@ -2297,6 +2328,62 @@ body {
 }
 .pc-center.hidden {
   display: none;
+}
+
+/* Feedback do seek por toque duplo lateral (±10s): badge transitório que indica lado
+   e direção, sem bloquear (some sozinho em 700ms). */
+.pc-skip-flash {
+  position: absolute;
+  top: 50%;
+  z-index: 4;
+  transform: translateY(-50%);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(8, 11, 18, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+}
+.pc-skip-flash[data-side="left"] {
+  left: 12%;
+}
+.pc-skip-flash[data-side="right"] {
+  right: 12%;
+}
+/* Variante do hold 2×: fixa no topo do player (sem animação; o JS esconde
+   ao soltar). */
+.pc-skip-flash[data-side="center"] {
+  left: 50%;
+  right: auto;
+  top: 12px;
+  transform: translateX(-50%);
+}
+.pc-skip-flash.held {
+  opacity: 1;
+}
+.pc-skip-flash.show {
+  animation: pc-skip-fade 0.7s ease forwards;
+}
+@keyframes pc-skip-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.9);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 .pc-bottom {
@@ -3958,6 +4045,12 @@ body {
   .pc-group-cc {
     display: none;
   }
+  /* Teatro e Resumo não têm efeito no mobile (sumário vira drawer): fora do
+     menu ⋮ — no desktop continuam visíveis. */
+  .pc-more-menu [data-more="theater"],
+  .pc-more-menu [data-more="summary"] {
+    display: none;
+  }
   .pc-more-narrow {
     display: flex;
   }
@@ -4180,6 +4273,12 @@ body {
   .pc-seek::-moz-range-thumb,
   .course-view {
     transition: none;
+  }
+  /* Sem movimento: o badge aparece estático e some no timeout do JS. */
+  .pc-skip-flash.show {
+    animation: none;
+    opacity: 1;
+    transform: translateY(-50%);
   }
   .shortcut-row.capturing .shortcut-key {
     animation: none;
@@ -6665,6 +6764,21 @@ body {
   .course-view .sidebar-close-btn {
     display: none;
   }
+  /* Teatro e Resumo também não têm efeito aqui (layout fixo de 2 colunas):
+     fora do menu ⋮ — no desktop continuam visíveis. */
+  .pc-more-menu [data-more="theater"],
+  .pc-more-menu [data-more="summary"] {
+    display: none;
+  }
+
+/* Landscape largo: sem itens sobrando no ⋮ (teatro/sumário ocultos acima e
+   grupos estreitos só até 640px), o botão some junto — sem popover vazio. */
+@media (orientation: landscape) and (max-height: 550px) and (min-width: 641px) {
+  .pc-group-more {
+    display: none;
+  }
+}
+
   /* Título/breadcrumb e Anterior/Concluir/Próxima/Tutor ficam no fluxo de
      rolagem ABAIXO do player (nunca competem pelo viewport inicial); a
      barra inferior não é fixa — acessível via scroll suave. */

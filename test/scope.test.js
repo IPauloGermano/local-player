@@ -17,6 +17,7 @@ const {
   buildContinueItems,
   getNodeProgressStats,
   getLibraryProgressSummary,
+  collectOrphanRecords,
 } = require("../public/scope.js");
 
 // ---- Fixtures ---------------------------------------------------------------
@@ -271,6 +272,81 @@ test("continue: limite de 8 itens e um por curso", () => {
   assert.strictEqual(items.length, 8);
   // Ordenado por updatedAt desc (último curso = updatedAt mais alto vem primeiro).
   assert.strictEqual(items[0].course.path, "Curso 9");
+});
+
+test("continue: limite customizável (mobile usa 4)", () => {
+  const progressMap = {};
+  const children = [];
+  for (let i = 0; i < 10; i++) {
+    const coursePath = `Curso ${i}`;
+    children.push(folder(coursePath, [video(`${coursePath}/Aula 01.mp4`)]));
+    progressMap[`${coursePath}/Aula 01.mp4`] = { position: 10 + i, duration: 100, completed: false, updatedAt: i };
+  }
+  const tree = { path: "", children };
+  const courses = collectCoursesInScope(tree);
+  const mobile = buildContinueItems(courses, progressFor(progressMap), 4);
+  assert.strictEqual(mobile.length, 4);
+  assert.strictEqual(mobile[0].course.path, "Curso 9");
+  // Limite inválido/ausente cai no padrão 8.
+  assert.strictEqual(buildContinueItems(courses, progressFor(progressMap)).length, 8);
+  assert.strictEqual(buildContinueItems(courses, progressFor(progressMap), NaN).length, 8);
+});
+
+// ---- Órfãos: histórico de arquivos movidos/renomeados/removidos ----------
+// entram no resumo para nada estudado ficar invisível.
+
+test("progresso: órfãos contam em totais/concluídas/tempo/pct, sem curso ativo", () => {
+  const tree = { path: "", children: [folder("C1", [video("C1/A1.mp4")])] };
+  const courses = collectCoursesInScope(tree);
+  const keys = new Set(["lib1\0C1/A1.mp4"]);
+  const progress = {
+    "lib1\0C1/A1.mp4": { position: 100, duration: 100, completed: true, updatedAt: 1 },
+    // Renomeados: fora da árvore, com histórico real.
+    "lib1\0Topico-Antigo/Curso/Aula.mp4": { position: 200, duration: 200, completed: true, updatedAt: 2 },
+    "lib1\0Topico-Antigo/Curso/Aula2.mp4": { position: 50, duration: 300, completed: false, updatedAt: 3 },
+    // Stub sem evidência de estudo: ignorado.
+    "lib1\0Topico-Antigo/Curso/Aula3.mp4": { position: 0, duration: 0, completed: false, updatedAt: 4 },
+    // Outra biblioteca: fora do escopo.
+    "lib2\0Topico-Antigo/Curso/Aula.mp4": { position: 200, duration: 200, completed: true, updatedAt: 5 },
+  };
+  // Helper do arquivo resolve por path puro (fixture sem libId).
+  const byPath = { "C1/A1.mp4": progress["lib1\0C1/A1.mp4"] };
+  const lookup = (v) => byPath[v.path] || null;
+  const orphans = collectOrphanRecords(progress, keys, ["lib1"]);
+  assert.strictEqual(orphans.length, 3); // Aula3 (stub) entra na coleta; cai no folding
+  const s = getLibraryProgressSummary(courses, lookup, orphans);
+  // Árvore: 1 total/1 done/100s; órfãos válidos: +2 total/+1 done/+250s.
+  assert.strictEqual(s.totalLessons, 3);
+  assert.strictEqual(s.doneLessons, 2);
+  assert.strictEqual(s.watchedSeconds, 350);
+  assert.strictEqual(s.orphanLessons, 2);
+  assert.strictEqual(s.inProgressLessons, 1);
+  assert.strictEqual(s.startedCourses, 1); // órfãos não criam "curso ativo"
+  assert.strictEqual(s.pct, 67); // 2/3
+  // Sem órfãos: comportamento antigo intacto.
+  const plain = getLibraryProgressSummary(courses, lookup);
+  assert.strictEqual(plain.totalLessons, 1);
+  assert.strictEqual(plain.orphanLessons, 0);
+});
+
+test("progresso: coleta de órfãos filtra lib, tópico e chaves legadas", () => {
+  const keys = new Set(["lib1\0TI/Curso/A.mp4"]);
+  const progress = {
+    "lib1\0TI/Curso/A.mp4": { position: 10, duration: 100, completed: false }, // na árvore → fora
+    "lib1\0TI/Curso/B.mp4": { position: 10, duration: 100, completed: false }, // órfão do tópico
+    "lib1\0TI2/Curso/C.mp4": { position: 10, duration: 100, completed: false }, // segmento ≠ tópico
+    "lib1\0Outro/D.mp4": { position: 10, duration: 100, completed: false }, // outro tópico
+    "Legada/E.mp4": { position: 10, duration: 100, completed: false }, // sem \0 → default
+  };
+  assert.deepStrictEqual(
+    collectOrphanRecords(progress, keys, ["lib1"], "TI").map((p) => p),
+    [progress["lib1\0TI/Curso/B.mp4"]],
+  );
+  assert.deepStrictEqual(
+    collectOrphanRecords(progress, keys, ["default"]).map((p) => p),
+    [progress["Legada/E.mp4"]],
+  );
+  assert.deepStrictEqual(collectOrphanRecords(null, keys, ["lib1"]), []);
 });
 
 // ---- "Seu progresso" filtrado (conjunto de cursos escopado) ------------------

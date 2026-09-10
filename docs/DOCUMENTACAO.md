@@ -300,6 +300,12 @@ Garantias (implementadas em `server.js`):
 - `POST /api/transcode/clear` e scans/rescan **nunca** tocam `progress.json`.
 - Sem escritor inesperado: `{}` só é gravado por clear explícito; não há
   filtragem contra a árvore nem pruning de órfãos.
+- **Órfãos no resumo**: registros de arquivos movidos/renomeados/removidos
+  (ex.: pasta de módulo renomeada) não têm nó na árvore, mas entram no
+  "Seu progresso" (totais, concluídas, tempo e % via `collectOrphanRecords` +
+  `getLibraryProgressSummary(courses, progFor, orphans)`; nunca em "cursos
+  ativos", sem curso atribuível; UI indica "de arquivos movidos"). Nada
+  estudado fica invisível; renomear nunca apaga histórico.
 
 Regras finas do frontend (`setupVideoTracking`): `timeupdate` (throttle 5s),
 `pause`, `ended` (conclui + avança, só com `wasPlaying`), `beforeunload`/hidden
@@ -374,7 +380,7 @@ Resumo:
   (`collectDirectCourses`); sem curso direto na raiz (biblioteca toda em
   tópicos), cai para o **global** (`collectCoursesInScope`) — o bloco nunca
   some por estrutura. "Continuar assistindo" = **global** (todas as
-  bibliotecas, até 8 itens, um por curso; `position > 5 && !completed`).
+  bibliotecas, até 8 itens no PC e 4 no mobile, um por curso; `position > 5 && !completed`).
   Dentro de um tópico, ambos consideram **só a subárvore**
   (`collectCoursesInScope(topicNode)`), recursivo em tópicos aninhados;
   comparação por segmentos (`isDescendantPath`): `TI` não alcança `TI2`.
