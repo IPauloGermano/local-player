@@ -5242,12 +5242,21 @@ app.get("/api/tree", async (req, res) => {
   const force = req.query.rescan === "1";
   const tree = await getTree(force);
   if (force) scheduleSubtitlePregen(tree); // P2/P3 pós-scan (fire-and-forget)
+  // Anti-cache explícito: a árvore muda a cada rescan e o frontend precisa
+  // da versão fresca SEMPRE (sem isso o navegador pode servir a árvore velha
+  // do cache e a UI só atualiza no F5).
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
   res.json(tree);
 });
 
 app.post("/api/rescan", async (req, res) => {
   const tree = await getTree(true);
   scheduleSubtitlePregen(tree); // P2/P3 pós-scan (fire-and-forget)
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
   res.json(tree);
 });
 

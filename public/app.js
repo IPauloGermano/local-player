@@ -358,7 +358,8 @@ function initials(name) {
 
 async function loadAll() {
   const [treeRes, progRes, aiRes] = await Promise.all([
-    fetch("/api/tree"),
+    // no-store: a árvore muda a cada rescan e nunca pode vir do cache.
+    fetch("/api/tree", { cache: "no-store" }),
     fetch("/api/progress"),
     fetch("/api/ai/status"),
   ]);
@@ -1903,6 +1904,43 @@ function route() {
   }
 }
 
+// Pós-rescan na página do curso: atualiza estado global + sidebar/progresso
+// no lugar, SEM destruir o <video> em reprodução. Retorna false quando não
+// há player montado ou o curso/aula sumiu do disco (o chamador faz route()
+// total nesses casos).
+function refreshCourseViewInPlace() {
+  const videoEl = document.getElementById("video-el");
+  const course = state.currentCourseNode;
+  const video = state.currentVideoNode;
+  if (!videoEl || !course || !video) return false;
+  const newCourse = findNodeByPath(libTree(video.libId), course.path);
+  if (!newCourse || newCourse.type !== "folder") return false;
+  const newFlat = flattenVideos(newCourse);
+  const newVideo = newFlat.find((v) => v.path === video.path);
+  if (!newVideo) return false; // aula removida do disco: route() reseleciona
+  // Mesmos path/libId em objetos frescos: <video>, src e closures de
+  // tracking seguem válidos — nada é recriado, a reprodução continua.
+  state.currentCourseNode = newCourse;
+  state.flatVideos = newFlat;
+  state.currentVideoNode = newVideo;
+  const titleEl = document.querySelector(".course-toolbar-title");
+  if (titleEl) titleEl.textContent = courseTitle(newCourse);
+  renderTree(newCourse, false);
+  updateProgressUI();
+  return true;
+}
+
+// Toast transitório não-bloqueante para erros do rescan. Auto-remove.
+function showRescanToast(message) {
+  document.querySelector(".rescan-toast")?.remove();
+  const el = document.createElement("div");
+  el.className = "rescan-toast";
+  el.setAttribute("role", "status");
+  el.textContent = message;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
 function initHeartbeat() {
   const ping = () => {
     fetch("/api/system/heartbeat", {
@@ -2017,14 +2055,38 @@ async function init() {
       location.hash = courseRoute({ path: first.coursePath, libId: first.libId });
     }
   });
+  // Botão "⟳ Atualizar": rescan real no disco + re-render reativo SEM F5.
+  // Usa currentTarget (o botão) — e.target pode ser o <span> interno do
+  // ícone/rótulo, e mutar o span corrompia a estrutura do botão. Na página
+  // do curso a sidebar é atualizada no lugar para não resetar o <video> em
+  // reprodução; só há re-render total se o curso/aula sumiu do disco.
+  let rescanning = false;
   document.getElementById("rescan-btn").addEventListener("click", async (e) => {
-    e.target.disabled = true;
-    e.target.textContent = "⟳ Atualizando...";
-    await fetch("/api/rescan", { method: "POST" });
-    await loadAll();
-    route();
-    e.target.disabled = false;
-    e.target.textContent = "⟳ Atualizar";
+    const btn = e.currentTarget;
+    if (rescanning) return;
+    rescanning = true;
+    btn.disabled = true;
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = `<span class="rescan-icon" aria-hidden="true">⟳</span> <span class="rescan-label">Atualizando...</span>`;
+    try {
+      const res = await fetch("/api/rescan", {
+        method: "POST",
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await loadAll();
+      if (!refreshCourseViewInPlace()) route();
+      // Feedback transitório de sucesso (2s), sem bloquear a interface.
+      btn.innerHTML = `<span class="rescan-icon" aria-hidden="true">✓</span> <span class="rescan-label">Atualizado!</span>`;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    } catch (err) {
+      console.error("[rescan] falha ao atualizar:", err);
+      showRescanToast("Falha ao atualizar a biblioteca. Tente novamente.");
+    } finally {
+      btn.innerHTML = originalHTML;
+      btn.disabled = false;
+      rescanning = false;
+    }
   });
 }
 
