@@ -802,8 +802,8 @@ function wirePlayerUI(videoEl) {
     if (paused) showControls();
   };
 
-  // --- autohide (somente desktop com mouse; nunca com popover aberto) ---
-  const canAutoHide = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  // --- autohide (desktop e mobile durante a reprodução; nunca com popover
+  // aberto nem pausado) ---
   let hideTimer = null;
   const isPopoverOpen = () =>
     (volPop && !volPop.hidden) ||
@@ -816,7 +816,7 @@ function wirePlayerUI(videoEl) {
     hideTimer = null;
   };
   const scheduleHide = () => {
-    if (!canAutoHide || videoEl.paused || isPopoverOpen()) return;
+    if (videoEl.paused || isPopoverOpen()) return;
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
       if (!videoEl.paused && !isPopoverOpen()) wrap.classList.add("pc-idle");
@@ -829,7 +829,12 @@ function wirePlayerUI(videoEl) {
     scheduleHide();
   };
   wrap.addEventListener("mousemove", wakeControls);
+  // Toque: touchstart acorda; touchmove mantém aceso durante o arraste (ex.:
+  // seek — sem isso a barra sumiria no meio do gesto e o polegar perderia o
+  // pointer); touchend reinicia os 2,5s após soltar o dedo.
   wrap.addEventListener("touchstart", wakeControls, { passive: true });
+  wrap.addEventListener("touchmove", wakeControls, { passive: true });
+  wrap.addEventListener("touchend", wakeControls, { passive: true });
   wrap.addEventListener("mouseleave", scheduleHide);
   wrap.addEventListener("focusin", wakeControls);
   // --- fim autohide ---
