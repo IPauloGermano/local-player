@@ -117,6 +117,31 @@ case "$1" in
 esac
 
 # ------------------------------------------------------------------------------
+# Montagem automática de unidades de armazenamento externas (pendrives/HDs USB)
+# ------------------------------------------------------------------------------
+# No Linux, pendrives conectados antes do boot ou da sessão do usuário não são
+# automontados pelo ambiente gráfico até que haja inserção física ou clique no
+# gerenciador de arquivos. Esta função monta qualquer partição removível/USB com
+# filesystem válido sem exigir sudo/root.
+mount_removable_drives() {
+  if [ "$(uname -s)" = "Linux" ]; then
+    if command -v udisksctl >/dev/null 2>&1 && command -v lsblk >/dev/null 2>&1; then
+      lsblk -r -n -o NAME,TRAN,RM,TYPE,FSTYPE,MOUNTPOINT 2>/dev/null | while read -r dev_name dev_tran dev_rm dev_type dev_fs dev_mount; do
+        if { [ "$dev_rm" = "1" ] || [ "$dev_tran" = "usb" ]; } && { [ "$dev_type" = "part" ] || [ "$dev_type" = "disk" ]; } && [ -n "$dev_fs" ] && [ "$dev_fs" != "[SWAP]" ] && [ -z "$dev_mount" ]; then
+          udisksctl mount -b "/dev/$dev_name" --no-user-interaction >/dev/null 2>&1 || true
+        fi
+      done
+    elif command -v gio >/dev/null 2>&1; then
+      gio mount -l 2>/dev/null | grep -o '/dev/[a-zA-Z0-9_-]*' | while read -r dev_node; do
+        gio mount -d "$dev_node" >/dev/null 2>&1 || true
+      done
+    fi
+  fi
+}
+
+mount_removable_drives
+
+# ------------------------------------------------------------------------------
 # Execução normal do Player (NÃO cria atalhos automaticamente)
 # ------------------------------------------------------------------------------
 PORT="${PORT:-4173}"

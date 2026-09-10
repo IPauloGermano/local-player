@@ -3,6 +3,7 @@ module.exports = {
   ...require("./core/titles"),
   ...require("./core/fs-atomic"),
   ...require("./core/security"),
+  ...require("./core/device"),
   ...require("./services/document-extractors"),
   ...require("./services/web-search"),
   ...require("./ai/config"),

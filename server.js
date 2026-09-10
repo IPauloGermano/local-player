@@ -36,6 +36,7 @@ const {
   isLocalRequest,
   verifyCsrfAndSafeOrigin,
   requireAdminOrLocal,
+  ensureRemovableDrivesMounted,
   detectPdfToText,
   extractPdfTextWithBinary,
   inspectPdfBuffer,
@@ -630,6 +631,18 @@ async function getTree(force) {
         treeCaches.set(lib.id, cached);
       }
     }
+    // Se a biblioteca estava marcada como indisponível (ex.: pendrive conectado após o boot),
+    // tenta verificar se o caminho já está acessível ou se pode ser montado agora.
+    if (cached && cached.status === "unavailable" && !force) {
+      let st = await fs.stat(lib.path).catch(() => null);
+      if (!st || !st.isDirectory()) {
+        await ensureRemovableDrivesMounted().catch(() => false);
+        st = await fs.stat(lib.path).catch(() => null);
+      }
+      if (st && st.isDirectory()) {
+        cached = null; // Caminho da biblioteca disponível: descarta o cache indisponível e força scan
+      }
+    }
     if (!cached || force) {
       results.push(await rescanLibrary(lib));
     } else {
@@ -1157,6 +1170,7 @@ async function saveSystemConfig() {
 }
 
 async function initPersistence() {
+  await ensureRemovableDrivesMounted().catch(() => {});
   await loadSystemConfig();
   // Multi-biblioteca: carrega o registry ANTES de reconciliar jobs de legenda
   // (que resolvem `rel` → `abs` pelo libraryId persistido no job).
@@ -5614,17 +5628,35 @@ async function getSystemStatus() {
     return Promise.race([
       check,
       new Promise((r) => {
-        const t = setTimeout(() => r({ state: "timeout", code: null }), 750);
+        const t = setTimeout(() => r({ state: "timeout", code: null }), 4000);
         if (t && t.unref) t.unref();
       }),
     ]);
   };
 
-  const [lib, self, spa] = await Promise.all([
+  let [lib, self, spa] = await Promise.all([
     probe(ROOT),
     probe(__dirname),
     probe(SPA_INDEX_PATH),
   ]);
+
+  // Se alguma sonda indicar indisponibilidade ou timeout (ex.: pendrive conectado no boot
+  // mas ainda não montado pelo SO), tenta montar partições removíveis e re-sonda.
+  if (lib.state !== "ok" || self.state !== "ok" || spa.state !== "ok") {
+    const mounted = await ensureRemovableDrivesMounted().catch(() => false);
+    if (mounted) {
+      [lib, self, spa] = await Promise.all([
+        probe(ROOT),
+        probe(__dirname),
+        probe(SPA_INDEX_PATH),
+      ]);
+    }
+  }
+
+  const defaultLib = typeof getDefaultLibrary === "function" ? getDefaultLibrary() : null;
+  const defaultEnabled = !defaultLib || defaultLib.enabled !== false;
+  const spaReady = spa.state === "ok" && self.state === "ok";
+
   const states = [lib.state, self.state, spa.state];
   const codes = [lib.code, self.code, spa.code].filter(Boolean);
 
@@ -5634,18 +5666,20 @@ async function getSystemStatus() {
     if (states.includes("unexpected")) reason = "unexpected"; // EACCES/EPERM — não mascarar
     else if (states.includes("timeout")) reason = "device-unavailable"; // fs travado ≈ dispositivo inacessível
     else if (states.includes("device")) reason = "device-unavailable";
-    else if (lib.state === "missing" || self.state === "missing") reason = "library-missing"; // drive inteiro fora / biblioteca fora
+    else if (self.state === "missing" || (defaultEnabled && lib.state === "missing")) reason = "library-missing"; // drive inteiro fora / biblioteca fora
     else if (spa.state === "missing") reason = "spa-missing";
     else reason = "unexpected";
   }
+
+  const isReady = spaReady && (!defaultEnabled || lib.state === "ok");
 
   return {
     server: "online",
     library: lib.state === "ok" ? "available" : "unavailable",
     spa: spa.state === "ok" ? "available" : "unavailable",
-    ready: states.every((s) => s === "ok"),
-    reason,
-    code: codes[0] || null,
+    ready: isReady,
+    reason: isReady ? null : reason,
+    code: isReady ? null : (codes[0] || null),
     lastCheck: now,
   };
 }
@@ -7089,7 +7123,13 @@ const UNAVAILABLE_HTML = `<!doctype html>
     }
 
     document.getElementById('retry-btn').addEventListener('click', function () {
-      location.reload();
+      var btn = document.getElementById('retry-btn');
+      btn.disabled = true;
+      titleEl.textContent = 'Verificando…';
+      check().then(function (r) {
+        btn.disabled = false;
+        if (!r.reloaded) location.reload();
+      });
     });
     diagBtn.addEventListener('click', function () {
       if (diagEl.hasAttribute('hidden')) {
@@ -7101,10 +7141,9 @@ const UNAVAILABLE_HTML = `<!doctype html>
       }
     });
 
-    // Auto-retry limitado (5s→10s→15s→30s→60s) e apenas para estados
-    // recuperáveis. Nada de polling infinito: depois da cadeia, o usuário usa
-    // o botão "Tentar novamente".
-    var delays = [5000, 10000, 15000, 30000, 60000];
+    // Auto-retry progressivo (1s→2s→5s→10s→15s→30s→60s) e apenas para estados
+    // recuperáveis. Permite detecção imediata quando a unidade é montada no boot.
+    var delays = [1000, 2000, 5000, 10000, 15000, 30000, 60000];
     check().then(function (r) {
       if (r.reloaded || !r.retry) return;
       (function loop() {
