@@ -6567,12 +6567,15 @@ body {
   font-family: ui-monospace, monospace;
 }
 
-/* ---------- Landscape baixo: modo cinema automático (celular deitado) ----------
+/* ---------- Landscape baixo: layout estilo YouTube (celular deitado) ----------
    Telas horizontais com pouca altura (~360–420px): o chrome fixo (topbar,
-   voltar, utilitários do curso) roubaria todo o vertical e o player
-   encolheria. Aqui o vídeo ganha prioridade total e o resto rola abaixo.
-   Só layout/visibilidade — nenhuma cor, ID, seletor de evento ou data-*
-   muda; ao rotacionar de volta tudo reaparece (CSS puro, sem JS). */
+   voltar, utilitários do curso) some para dar lugar ao vídeo; o player fica
+   à esquerda dimensionado pelo aspecto 16:9 (o maior 16:9 que cabe na largura
+   livre e na altura do viewport — sem faixa preta para conteúdo 16:9) e o
+   sumário fica fixo à direita com scroll próprio. Título/botões da aula
+   rolam abaixo do player. Só layout/visibilidade — nenhuma cor, ID, seletor
+   de evento ou data-* muda; ao rotacionar de volta tudo reaparece (CSS puro,
+   sem JS). */
 @media (orientation: landscape) and (max-height: 550px) {
   /* Header principal oculto (busca/Atualizar/config): volta ao rotacionar. */
   .topbar {
@@ -6590,31 +6593,77 @@ body {
   .course-toolbar {
     display: none;
   }
-  /* Player imersivo: aproveita quase toda a altura do viewport. Sem
-     aspect-ratio fixo aqui — o <video> (object-fit: contain, 100%/100%)
-     preenche a maior área útil sem distorcer o 16:9. */
+  /* Duas colunas em qualquer modo (normal, teatro, drawer): player à
+     esquerda, sumário à direita. A var local estreita o sumário para o
+     player respirar em larguras pequenas. */
+  .course-view,
+  .course-view.theater,
+  .course-view.theater.summary-open {
+    grid-template-columns: minmax(0, 1fr) var(--sidebar-w);
+    --sidebar-w: clamp(200px, 30vw, 300px);
+  }
+  /* Player: maior 16:9 possível (largura livre × altura do viewport).
+     Com width travado nas duas dimensões e height derivado da razão, a
+     caixa casa com o vídeo 16:9 — sem letterbox. svh é ESTÁVEL (não
+     acompanha a barra de URL como o dvh, que encolhia o player ao rolar). */
   .player-wrap {
-    aspect-ratio: auto;
-    width: 100%;
-    /* svh (pequeno e ESTÁVEL): a altura não acompanha a barra de URL do
-       navegador — com dvh o player encolhia/crescia ao vivo durante a
-       rolagem. Quando o chrome some, sobra só um respiro rolável abaixo. */
-    height: calc(100vh - 20px);
-    height: calc(100svh - 20px);
+    aspect-ratio: 16/9;
+    width: min(100%, calc((100vh - 20px) * 16 / 9));
+    width: min(100%, calc((100svh - 20px) * 16 / 9));
+    height: auto;
     max-height: calc(100vh - 20px);
     max-height: calc(100svh - 20px);
     min-height: 0;
+    margin: 0;
   }
-  /* Teatro também rende-se ao cinema: sem teto de 73vh nem limite de
-     largura (seletor repetido de propósito — mesma especificidade das
-     regras do teatro, vencendo pela ordem no arquivo). */
-  .course-view.theater .player-wrap {
+  /* Teatro rende-se ao layout YouTube (seletores repetidos de propósito —
+     mesma especificidade das regras do teatro, vencendo pela ordem). */
+  .course-view.theater .player-wrap,
+  .course-view.theater:not(.summary-open) .player-wrap {
     max-height: calc(100vh - 20px);
     max-height: calc(100svh - 20px);
     max-width: 100%;
+    margin: 0;
   }
-  .course-view.theater:not(.summary-open) .player-wrap {
+  .course-view.theater:not(.summary-open) .lesson-header,
+  .course-view.theater:not(.summary-open) .materials {
     max-width: 100%;
+  }
+  .course-view.theater:not(.summary-open) .sidebar {
+    visibility: visible;
+  }
+  /* Sumário sempre visível à direita (inclusive onde seria drawer): sticky
+     com scroll interno, acompanhando a rolagem da coluna do player. */
+  .course-view .sidebar,
+  .course-view.drawer-host .sidebar,
+  .course-view.drawer-host:not(.drawer-open) .sidebar,
+  .course-view.drawer-host.drawer-open .sidebar {
+    position: sticky;
+    top: 10px;
+    align-self: start;
+    width: auto;
+    max-height: calc(100vh - 20px);
+    max-height: calc(100svh - 20px);
+    margin: 0;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius);
+    visibility: visible;
+    transform: none;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      0 12px 22px rgba(0, 0, 0, 0.2);
+    z-index: 1;
+    overscroll-behavior: auto;
+  }
+  .course-view.drawer-host.drawer-open .sidebar-backdrop,
+  .course-view .sidebar-backdrop {
+    display: none;
+  }
+  /* Sem drawer no landscape: sumário já está ao lado (botões redundantes). */
+  .course-view .lesson-sidebar-toggle,
+  .course-view .sidebar-close-btn {
+    display: none;
   }
   /* Título/breadcrumb e Anterior/Concluir/Próxima/Tutor ficam no fluxo de
      rolagem ABAIXO do player (nunca competem pelo viewport inicial); a
@@ -6622,9 +6671,9 @@ body {
   .lesson-header {
     margin-top: 10px;
   }
-  /* Barra de controles continua rente à base também no cinema, com padding
-     fixo (sem safe-area: o player inline nunca encosta na borda da tela;
-     só :fullscreen usa env()). */
+  /* Barra de controles continua rente à base, com padding fixo (sem
+     safe-area: o player inline nunca encosta na borda da tela; só
+     :fullscreen usa env()). */
   .pc-bottom {
     padding: 12px 12px 10px;
   }
