@@ -738,5 +738,4 @@ function editorShowToast(text) {
   }
 }
 window.editor = editor;
-window.openSubtitleEditor = openSubtitleEditor;
 window.editorToggleMode = editorToggleMode;

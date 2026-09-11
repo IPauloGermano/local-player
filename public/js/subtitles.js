@@ -1079,8 +1079,4 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
 
 window.subtitleState = subtitleState;
 window.setupPlayerSubtitles = setupPlayerSubtitles;
-window.teardownPlayerSubtitles = teardownPlayerSubtitles;
 window.applySubtitleGeometry = applySubtitleGeometry;
-window.loadSubtitleStyle = loadSubtitleStyle;
-window.saveSubtitleStyle = saveSubtitleStyle;
-window.applySubtitleStyle = applySubtitleStyle;

@@ -277,3 +277,7 @@ funciona normal.**
 7. IA sem nada: `GET /api/ai/status` → `available:false`; Central renderiza as
    6 abas.
 8. Geração/LLM/concorrência/editor: `docs/VALIDACAO.md` (checklist completo).
+9. Mudança de UI: valide com o Playwright MCP (servidor `playwright`):
+   suba o app (`npm start`, porta 4173), navegue até a tela, interaja
+   (cliques, drawer, menus) e confira screenshot + `browser_console_messages`
+   (zero erros). Nunca considere UI pronta só por `node --check`.
