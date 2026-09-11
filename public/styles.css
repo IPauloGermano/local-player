@@ -5704,6 +5704,58 @@ body {
   background: rgba(16, 185, 129, 0.1);
 }
 
+/* Ações da resposta do assistente: download .md / .txt (gerado no
+   navegador via Blob, sem backend). Discretas: aparecem no hover da
+   mensagem no desktop; sempre visíveis no touch. */
+.tutor-msg-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.tutor-msg-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+  justify-content: flex-end;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.tutor-msg-assistant:hover .tutor-msg-actions,
+.tutor-msg-actions:focus-within {
+  opacity: 1;
+}
+@media (hover: none) {
+  .tutor-msg-actions {
+    opacity: 1;
+  }
+}
+.tutor-dl-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+.tutor-dl-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.tutor-dl-btn:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .tutor-code-content {
   margin: 0;
   padding: 16px 18px;

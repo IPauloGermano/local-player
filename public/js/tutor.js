@@ -8,6 +8,69 @@ function renderMarkdownToHtml(markdown) {
   return escapeHtml(markdown || "");
 }
 
+// Baixa um texto como arquivo no navegador (sem backend): cria um Blob,
+// gera URL temporária e dispara um <a download>. Usado pelos botões
+// "⬇ .md / .txt" de cada resposta do assistente.
+function downloadTutorFile(filename, text, mime) {
+  try {
+    const blob = new Blob([text], { type: mime + ";charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch {}
+}
+
+// Detecta pedido explícito de bloco/arquivo md ou txt na mensagem do
+// usuário (ex.: "mande em bloco md", "exporta em txt", "me dá em markdown").
+// Só nesses casos a resposta seguinte exibe os botões ⬇ .md/.txt.
+function tutorExplicitDownloadRequest(userText) {
+  const t = String(userText || "").toLowerCase();
+  if (!/\b(md|markdown|txt|texto puro)\b/.test(t)) return false;
+  return /mande|manda|mandar|gere|gerar|exporte|exportar|baixe|baixar|download|salve|salvar|envi[ea]|enviar|coloque|coloca|trag[ao]|traz|quero|me d[áaàe]|bloco|arquivo|ficheiro|como md|como txt|em md|em txt|em markdown|em texto/i.test(t);
+}
+
+function tutorSlug(text) {
+  return (text || "tutor")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "").slice(0, 40) || "tutor";
+}
+
+// Conversão simples de markdown para texto puro (para o download .txt):
+// remove cercas, títulos, ênfases, links e tags, preservando o conteúdo.
+function tutorMarkdownToText(md) {
+  let t = String(md || "");
+  t = t.replace(/^```.*$/gm, "");
+  t = t.replace(/^#{1,6}\s+/gm, "");
+  t = t.replace(/^>\s?/gm, "");
+  t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1");
+  t = t.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  t = t.replace(/\*\*([^*]+)\*\*/g, "$1");
+  t = t.replace(/__([^_]+)__/g, "$1");
+  t = t.replace(/`([^`]*)`/g, "$1");
+  t = t.replace(/<[^>]+>/g, "");
+  t = t.replace(/\n{3,}/g, "\n\n");
+  return t.trim() + "\n";
+}
+
+function downloadTutorMessage(video, index, format) {
+  if (!video) return;
+  const history = getTutorHistory(video.path);
+  const msg = history && history[index];
+  if (!msg || msg.role !== "assistant" || !msg.content || !msg.content.trim()) return;
+  const base = tutorSlug(typeof lessonTitle === "function" ? lessonTitle(video) : "") + "-tutor-" + (index + 1);
+  if (format === "txt") {
+    downloadTutorFile(base + ".txt", tutorMarkdownToText(msg.content), "text/plain");
+  } else {
+    downloadTutorFile(base + ".md", msg.content.trim() + "\n", "text/markdown");
+  }
+}
+
 var tutorState = {
 
   open: false,
@@ -265,6 +328,14 @@ function wireTutorDrawerEvents(video) {
         return;
       }
 
+      // Botão de download da resposta (.md / .txt)
+      const dlBtn = e.target.closest("[data-tutor-dl]");
+      if (dlBtn && dlBtn.dataset.tutorMsg !== undefined) {
+        const vid = tutorState.currentVideo || video;
+        downloadTutorMessage(vid, parseInt(dlBtn.dataset.tutorMsg, 10), dlBtn.dataset.tutorDl);
+        return;
+      }
+
       // Pílula de sugestão rápida
       const pill = e.target.closest(".tutor-suggestion-pill");
       if (pill && pill.dataset.prompt) {
@@ -441,14 +512,19 @@ function renderTutorMessages(video) {
   }
 
   let html = "";
-  for (const msg of history) {
+  let lastUserText = "";
+  for (let i = 0; i < history.length; i++) {
+    const msg = history[i];
     if (msg.role === "user") {
+      lastUserText = msg.content || "";
       html += `
         <div class="tutor-msg tutor-msg-user">
           <div class="tutor-msg-bubble">${escapeHtml(msg.content)}</div>
         </div>`;
     } else {
       const formatted = renderMarkdownToHtml(msg.content);
+      const downloadable = !msg.error && msg.content && msg.content.trim()
+        && tutorExplicitDownloadRequest(lastUserText);
       html += `
         <div class="tutor-msg tutor-msg-assistant">
           <div class="tutor-avatar" aria-hidden="true">
@@ -456,8 +532,19 @@ function renderTutorMessages(video) {
               <path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2z"/>
             </svg>
           </div>
+          <div class="tutor-msg-main">
           <div class="tutor-msg-bubble ${msg.error ? "tutor-msg-error" : ""}">
             ${formatted}
+          </div>
+          ${downloadable ? `
+          <div class="tutor-msg-actions">
+            <button type="button" class="tutor-dl-btn" data-tutor-dl="md" data-tutor-msg="${i}" title="Baixar esta resposta em Markdown (.md)" aria-label="Baixar em Markdown">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>MD</span>
+            </button>
+            <button type="button" class="tutor-dl-btn" data-tutor-dl="txt" data-tutor-msg="${i}" title="Baixar esta resposta em texto puro (.txt)" aria-label="Baixar em texto puro">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>TXT</span>
+            </button>
+          </div>` : ""}
           </div>
         </div>`;
     }
@@ -585,9 +672,8 @@ async function sendTutorMessage(video, text) {
       }
     }
 
-    if (currentBubble) {
-      currentBubble.innerHTML = renderMarkdownToHtml(accumulatedText);
-    }
+    // Re-render completo (inclui os botões ⬇ .md/.txt da resposta).
+    renderTutorMessages(video);
   } catch (err) {
     if (err.name === "AbortError") {
       if (!assistantMsg.content) {
@@ -597,10 +683,7 @@ async function sendTutorMessage(video, text) {
       assistantMsg.content = `⚠️ **Não foi possível obter a resposta:** ${escapeHtml(err.message || "Erro de conexão")}`;
       assistantMsg.error = true;
     }
-    if (currentBubble) {
-      currentBubble.innerHTML = renderMarkdownToHtml(assistantMsg.content);
-      if (assistantMsg.error) currentBubble.classList.add("tutor-msg-error");
-    }
+    renderTutorMessages(video);
   } finally {
     tutorState.streaming = false;
     tutorState.abortController = null;
