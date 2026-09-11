@@ -1083,11 +1083,7 @@ async function togglePlayerFullscreen(videoEl) {
 }
 
 window.prepareTranscoded = prepareTranscoded;
-window.setupAudioGain = setupAudioGain;
-window.setAudioVolume = setAudioVolume;
-window.syncVolumeUI = syncVolumeUI;
 window.applyVolumePrefs = applyVolumePrefs;
-window.setupPlayerControls = setupPlayerControls;
 window.setupVideoTracking = setupVideoTracking;
 window.navigateToLesson = navigateToLesson;
 window.changePlaybackSpeed = changePlaybackSpeed;
