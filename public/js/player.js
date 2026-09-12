@@ -606,52 +606,7 @@ function renderPlayerAndLesson() {
       <button id="tutor-btn" class="secondary-btn tutor-btn" title="Tirar dúvidas com o Tutor IA">✨ Tutor IA</button>
       <button id="subtitle-style-btn" class="secondary-btn" title="Personalizar a aparência da legenda">Aa Aparência</button>
     </div>
-    <div class="subtitle-style-panel" id="subtitle-style-panel" hidden>
-      <h4>Aparência da legenda</h4>
-      <div class="ssp-row">
-        <label>Tamanho</label>
-        <span class="ssp-size">
-          <button type="button" data-size="sm">P</button>
-          <button type="button" data-size="md">M</button>
-          <button type="button" data-size="lg">G</button>
-        </span>
-      </div>
-      <div class="ssp-row">
-        <label>Cor do texto</label>
-        <input type="color" id="ssp-text" value="#ffffff">
-      </div>
-      <div class="ssp-row">
-        <label>Fundo</label>
-        <span style="display:flex;gap:6px;align-items:center">
-          <select id="ssp-bg">
-            <option value="none">Sem fundo</option>
-            <option value="black">Preto 60%</option>
-            <option value="white">Branco 65%</option>
-            <option value="custom">Personalizado…</option>
-          </select>
-          <input type="color" id="ssp-bg-custom" value="#000000" title="Cor personalizada do fundo" hidden>
-        </span>
-      </div>
-      <div class="ssp-row">
-        <label>Espaçamento</label>
-        <span style="display:flex;gap:8px;align-items:center">
-          <input type="range" id="ssp-spacing" min="1" max="1.8" step="0.05" value="1.3">
-          <span id="ssp-spacing-val" style="min-width:28px;text-align:right">1.3</span>
-        </span>
-      </div>
-      <div class="ssp-row">
-        <label>Contorno</label>
-        <input type="checkbox" id="ssp-shadow" checked>
-      </div>
-      <div class="ssp-row ssp-row-pos">
-        <label>Posição</label>
-        <button type="button" id="ssp-reset-pos">Restaurar posição padrão</button>
-      </div>
-      <p class="ssp-hint">Arraste a legenda dentro do vídeo para reposicionar (como no YouTube).</p>
-      <div class="ssp-actions">
-        <button type="button" id="ssp-reset">Restaurar padrão</button>
-      </div>
-    </div>`;
+    <div class="subtitle-style-panel" id="subtitle-style-panel" hidden></div>`;
 
   wireSubtitleStylePanel(wrap);
 
