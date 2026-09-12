@@ -1901,6 +1901,43 @@ body {
   transform: translateX(2px);
 }
 
+.search-more-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 8px 0 28px 0;
+}
+
+.load-more-lessons-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--bg-card, #131926);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text, #f8fafc);
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+.load-more-lessons-btn:hover {
+  background: var(--bg-card-hover, rgba(30, 41, 59, 0.7));
+  border-color: var(--accent, #ff8a3d);
+  color: var(--accent, #ff8a3d);
+  transform: translateY(-1px);
+}
+
+.load-more-lessons-btn svg {
+  transition: transform 0.15s ease;
+}
+
+.load-more-lessons-btn:hover svg {
+  transform: translateY(2px);
+}
+
 .search-materials-list {
   display: flex;
   flex-direction: column;

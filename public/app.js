@@ -376,6 +376,9 @@ async function loadAll() {
   const defaultLib = libraries.find((l) => l.isDefault) || libraries[0] || null;
   state.tree = (defaultLib && defaultLib.tree) || null;
   for (const lib of libraries) annotateLibId(lib.tree, lib.id);
+  for (const lib of libraries) {
+    if (lib && lib.tree) getSearchIndex(lib.tree);
+  }
   const progress = await progRes.json();
   // Whisper configurado ⇒ controles de legenda visíveis; caso contrário o
   // frontend oculta "Gerar legendas" e o botão CC. Falha/indisponibilidade ⇒
@@ -461,18 +464,163 @@ function getLessonModuleTitle(video, course) {
   return "";
 }
 
-function scoreSearchText(text, tokens, fullQuery) {
-  if (!tokens || !tokens.length) return 0;
-  const haystack = normalizeText(text);
-  if (!haystack) return 0;
-  const qNorm = normalizeText(fullQuery);
+const INITIAL_SEARCH_LESSONS_LIMIT = 24;
+const SEARCH_LESSONS_BATCH = 48;
+const INITIAL_SEARCH_MATERIALS_LIMIT = 24;
+const SEARCH_MATERIALS_BATCH = 48;
+
+function bindLoadMoreMaterials(container, materials) {
+  const loadMoreBtn = container.querySelector("#btn-load-more-materials");
+  if (!loadMoreBtn) return;
+  let renderedCount = INITIAL_SEARCH_MATERIALS_LIMIT;
+  loadMoreBtn.addEventListener("click", () => {
+    const nextBatch = materials.slice(renderedCount, renderedCount + SEARCH_MATERIALS_BATCH);
+    renderedCount += nextBatch.length;
+    const list = container.querySelector("#search-materials-list");
+    if (list) {
+      list.insertAdjacentHTML("beforeend", nextBatch.map(renderSearchMaterialCard).join(""));
+    }
+    const remaining = materials.length - renderedCount;
+    if (remaining <= 0) {
+      loadMoreBtn.parentElement?.remove();
+    } else {
+      const span = loadMoreBtn.querySelector("span");
+      if (span) span.textContent = `Mostrar mais materiais (+${remaining} restantes)`;
+    }
+  });
+}
+
+function bindLoadMoreLessons(container, lessons) {
+  const loadMoreBtn = container.querySelector("#btn-load-more-lessons");
+  if (!loadMoreBtn) return;
+  let renderedCount = INITIAL_SEARCH_LESSONS_LIMIT;
+  loadMoreBtn.addEventListener("click", () => {
+    const nextBatch = lessons.slice(renderedCount, renderedCount + SEARCH_LESSONS_BATCH);
+    renderedCount += nextBatch.length;
+    const grid = container.querySelector("#search-lessons-grid");
+    if (grid) {
+      grid.insertAdjacentHTML("beforeend", nextBatch.map(renderSearchLessonCard).join(""));
+    }
+    const remaining = lessons.length - renderedCount;
+    if (remaining <= 0) {
+      loadMoreBtn.parentElement?.remove();
+    } else {
+      const span = loadMoreBtn.querySelector("span");
+      if (span) span.textContent = `Mostrar mais aulas (+${remaining} restantes)`;
+    }
+  });
+}
+
+const searchIndexCache = new WeakMap();
+
+function getSearchIndex(tree) {
+  if (!tree) return { topics: [], courses: [], lessons: [], materials: [] };
+  let cached = searchIndexCache.get(tree);
+  if (cached) return cached;
+
+  const topics = typeof collectTopicsInScope === "function" ? collectTopicsInScope(tree) : [];
+
+  const indexedTopics = [];
+  const seenTopicPaths = new Set();
+  for (const t of topics) {
+    if (!t || !t.path || seenTopicPaths.has(t.path)) continue;
+    seenTopicPaths.add(t.path);
+    const label = topicTitle(t);
+    indexedTopics.push({
+      type: "topic",
+      libId: t.libId,
+      path: t.path,
+      label,
+      courseName: "Tópico",
+      node: t,
+      normTitle: normalizeText(label),
+    });
+  }
+
+  const courses = collectCoursesInScope(tree);
+  const indexedCourses = [];
+  const indexedLessons = [];
+  const indexedMaterials = [];
+  const seenCoursePaths = new Set();
+
+  for (const c of courses) {
+    if (!c || !c.path || seenCoursePaths.has(c.path)) continue;
+    seenCoursePaths.add(c.path);
+    const cTitle = courseTitle(c);
+    const cNorm = normalizeText(cTitle);
+
+    indexedCourses.push({
+      type: "course",
+      libId: c.libId,
+      path: c.path,
+      coursePath: c.path,
+      courseName: cTitle,
+      label: cTitle,
+      node: c,
+      normTitle: cNorm,
+    });
+
+    for (const v of flattenVideos(c)) {
+      if (!v || !v.path) continue;
+      const vTitle = lessonTitle(v);
+      const modTitle = getLessonModuleTitle(v, c);
+      const vNorm = normalizeText(vTitle);
+      const modNorm = normalizeText(modTitle);
+
+      indexedLessons.push({
+        type: "lesson",
+        libId: c.libId,
+        coursePath: c.path,
+        lessonPath: v.path,
+        courseName: cTitle,
+        moduleName: modTitle,
+        label: vTitle,
+        video: v,
+        normLabel: vNorm,
+        normModule: modNorm,
+        normCourse: cNorm,
+        normTarget: `${vNorm} ${modNorm} ${cNorm}`,
+        normLessonOrMod: `${vNorm} ${modNorm}`,
+      });
+    }
+
+    for (const m of flattenMaterials(c)) {
+      if (!m || !m.path) continue;
+      const mNorm = normalizeText(m.name);
+      indexedMaterials.push({
+        type: "material",
+        libId: c.libId,
+        coursePath: c.path,
+        filePath: m.path,
+        courseName: cTitle,
+        label: m.name,
+        file: m,
+        normLabel: mNorm,
+        normCourse: cNorm,
+        normTarget: `${mNorm} ${cNorm}`,
+      });
+    }
+  }
+
+  cached = {
+    topics: indexedTopics,
+    courses: indexedCourses,
+    lessons: indexedLessons,
+    materials: indexedMaterials,
+  };
+  searchIndexCache.set(tree, cached);
+  return cached;
+}
+
+function fastScore(haystack, tokens, qNorm) {
+  if (!tokens.length) return 0;
   let sc = 0;
   if (haystack === qNorm) sc += 160;
   else if (haystack.startsWith(qNorm)) sc += 90;
   else if (haystack.includes(qNorm)) sc += 50;
 
-  for (const token of tokens) {
-    const idx = haystack.indexOf(token);
+  for (let i = 0; i < tokens.length; i++) {
+    const idx = haystack.indexOf(tokens[i]);
     if (idx === -1) return 0;
     sc += Math.max(5, 25 - Math.min(20, idx));
   }
@@ -482,97 +630,101 @@ function scoreSearchText(text, tokens, fullQuery) {
 function buildSearchResults(roots, query) {
   const tokens = toSearchTokens(query);
   if (!tokens.length) return [];
+  const qNorm = normalizeText(query);
 
   const trees = (Array.isArray(roots) ? roots : [roots]).filter(Boolean);
   const results = [];
   const seenPaths = new Set();
 
   for (const tree of trees) {
+    const index = getSearchIndex(tree);
+
     // 1. Tópicos
-    const topics = (typeof collectTopicsInScope === "function" ? collectTopicsInScope(tree) : []).concat(
-      tree.type === "topic" && !seenPaths.has(tree.path) ? [tree] : []
-    );
-    for (const topic of topics) {
-      if (!topic || !topic.path || seenPaths.has(topic.path)) continue;
-      const tTitle = topicTitle(topic);
-      const sc = scoreSearchText(tTitle, tokens, query);
+    for (let i = 0; i < index.topics.length; i++) {
+      const doc = index.topics[i];
+      if (seenPaths.has(doc.path)) continue;
+      const sc = fastScore(doc.normTitle, tokens, qNorm);
       if (sc > 0) {
-        seenPaths.add(topic.path);
+        seenPaths.add(doc.path);
         results.push({
           type: "topic",
-          libId: topic.libId,
-          path: topic.path,
-          label: tTitle,
-          courseName: "Tópico",
+          libId: doc.libId,
+          path: doc.path,
+          label: doc.label,
+          courseName: doc.courseName,
           score: sc + 300,
-          node: topic,
+          node: doc.node,
         });
       }
     }
 
     // 2. Cursos
-    const courses = collectCoursesInScope(tree);
-    for (const course of courses) {
-      if (!course || !course.path) continue;
-      const cTitle = courseTitle(course);
-      const courseScore = scoreSearchText(cTitle, tokens, query);
-      if (courseScore > 0 && !seenPaths.has(course.path)) {
-        seenPaths.add(course.path);
+    const matchedCourses = new Map();
+    for (let i = 0; i < index.courses.length; i++) {
+      const doc = index.courses[i];
+      if (seenPaths.has(doc.path)) continue;
+      const sc = fastScore(doc.normTitle, tokens, qNorm);
+      if (sc > 0) {
+        seenPaths.add(doc.path);
+        matchedCourses.set(doc.coursePath, sc);
         results.push({
           type: "course",
-          libId: course.libId,
-          path: course.path,
-          coursePath: course.path,
-          courseName: cTitle,
-          label: cTitle,
-          score: courseScore + 200,
-          node: course,
+          libId: doc.libId,
+          path: doc.path,
+          coursePath: doc.coursePath,
+          courseName: doc.courseName,
+          label: doc.label,
+          score: sc + 200,
+          node: doc.node,
         });
       }
+    }
 
-      // 3. Aulas
-      for (const v of flattenVideos(course)) {
-        if (!v || !v.path) continue;
-        const vTitle = lessonTitle(v);
-        const modTitle = getLessonModuleTitle(v, course);
+    // 3. Aulas
+    for (let i = 0; i < index.lessons.length; i++) {
+      const doc = index.lessons[i];
+      const sc = fastScore(doc.normTarget, tokens, qNorm);
+      if (sc <= 0) continue;
 
-        const targetSearch = `${vTitle} ${modTitle} ${cTitle}`;
-        const vScore = scoreSearchText(targetSearch, tokens, query);
-
-        const lessonOrMod = `${normalizeText(vTitle)} ${normalizeText(modTitle)}`;
-        const matchesLessonDirectly = tokens.some((t) => lessonOrMod.includes(t));
-
-        if (vScore > 0 && (matchesLessonDirectly || courseScore === 0)) {
-          results.push({
-            type: "lesson",
-            libId: course.libId,
-            coursePath: course.path,
-            lessonPath: v.path,
-            courseName: cTitle,
-            moduleName: modTitle,
-            label: vTitle,
-            score: vScore + (matchesLessonDirectly ? 60 : 20),
-            video: v,
-          });
+      const courseScore = matchedCourses.get(doc.coursePath) || 0;
+      let matchesDirect = false;
+      for (let j = 0; j < tokens.length; j++) {
+        if (doc.normLessonOrMod.includes(tokens[j])) {
+          matchesDirect = true;
+          break;
         }
       }
 
-      // 4. Materiais
-      for (const m of flattenMaterials(course)) {
-        if (!m || !m.path) continue;
-        const mScore = scoreSearchText(`${m.name} ${cTitle}`, tokens, query);
-        if (mScore > 0) {
-          results.push({
-            type: "material",
-            libId: course.libId,
-            coursePath: course.path,
-            filePath: m.path,
-            courseName: cTitle,
-            label: m.name,
-            score: mScore,
-            file: m,
-          });
-        }
+      if (matchesDirect || courseScore === 0) {
+        results.push({
+          type: "lesson",
+          libId: doc.libId,
+          coursePath: doc.coursePath,
+          lessonPath: doc.lessonPath,
+          courseName: doc.courseName,
+          moduleName: doc.moduleName,
+          label: doc.label,
+          score: sc + (matchesDirect ? 60 : 20),
+          video: doc.video,
+        });
+      }
+    }
+
+    // 4. Materiais
+    for (let i = 0; i < index.materials.length; i++) {
+      const doc = index.materials[i];
+      const sc = fastScore(doc.normTarget, tokens, qNorm);
+      if (sc > 0) {
+        results.push({
+          type: "material",
+          libId: doc.libId,
+          coursePath: doc.coursePath,
+          filePath: doc.filePath,
+          courseName: doc.courseName,
+          label: doc.label,
+          score: sc,
+          file: doc.file,
+        });
       }
     }
   }
@@ -1110,21 +1262,47 @@ function renderHome(app) {
       }
 
       if (lessons.length) {
+        const initialLessons = lessons.slice(0, INITIAL_SEARCH_LESSONS_LIMIT);
         html += `<div class="section-title" style="margin-top: 24px;">Aulas <span class="count">(${lessons.length})</span></div>`;
-        html += `<div class="search-lessons-grid">`;
-        for (const item of lessons) {
+        html += `<div class="search-lessons-grid" id="search-lessons-grid">`;
+        for (const item of initialLessons) {
           html += renderSearchLessonCard(item);
         }
         html += `</div>`;
+        if (lessons.length > INITIAL_SEARCH_LESSONS_LIMIT) {
+          const remaining = lessons.length - INITIAL_SEARCH_LESSONS_LIMIT;
+          html += `
+            <div class="search-more-container">
+              <button type="button" class="load-more-lessons-btn btn btn--secondary" id="btn-load-more-lessons">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+                <span>Mostrar mais aulas (+${remaining} restantes)</span>
+              </button>
+            </div>`;
+        }
       }
 
       if (materials.length) {
+        const initialMaterials = materials.slice(0, INITIAL_SEARCH_MATERIALS_LIMIT);
         html += `<div class="section-title" style="margin-top: 24px;">Materiais de apoio <span class="count">(${materials.length})</span></div>`;
-        html += `<div class="search-materials-list">`;
-        for (const item of materials) {
+        html += `<div class="search-materials-list" id="search-materials-list">`;
+        for (const item of initialMaterials) {
           html += renderSearchMaterialCard(item);
         }
         html += `</div>`;
+        if (materials.length > INITIAL_SEARCH_MATERIALS_LIMIT) {
+          const remaining = materials.length - INITIAL_SEARCH_MATERIALS_LIMIT;
+          html += `
+            <div class="search-more-container">
+              <button type="button" class="load-more-lessons-btn btn btn--secondary" id="btn-load-more-materials">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+                <span>Mostrar mais materiais (+${remaining} restantes)</span>
+              </button>
+            </div>`;
+        }
       }
     }
     html += `</div>`;
@@ -1191,6 +1369,11 @@ function renderHome(app) {
       }
     });
   });
+
+  if (search) {
+    bindLoadMoreLessons(app, results.filter((r) => r.type === "lesson"));
+    bindLoadMoreMaterials(app, results.filter((r) => r.type === "material"));
+  }
 
   bindProgressToggle();
 }
@@ -1787,21 +1970,47 @@ function renderTopic(app, topicPath, libId) {
       }
 
       if (lessons.length) {
+        const initialLessons = lessons.slice(0, INITIAL_SEARCH_LESSONS_LIMIT);
         html += `<div class="section-title" style="margin-top: 24px;">Aulas <span class="count">(${lessons.length})</span></div>`;
-        html += `<div class="search-lessons-grid">`;
-        for (const item of lessons) {
+        html += `<div class="search-lessons-grid" id="search-lessons-grid">`;
+        for (const item of initialLessons) {
           html += renderSearchLessonCard(item);
         }
         html += `</div>`;
+        if (lessons.length > INITIAL_SEARCH_LESSONS_LIMIT) {
+          const remaining = lessons.length - INITIAL_SEARCH_LESSONS_LIMIT;
+          html += `
+            <div class="search-more-container">
+              <button type="button" class="load-more-lessons-btn btn btn--secondary" id="btn-load-more-lessons">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+                <span>Mostrar mais aulas (+${remaining} restantes)</span>
+              </button>
+            </div>`;
+        }
       }
 
       if (materials.length) {
+        const initialMaterials = materials.slice(0, INITIAL_SEARCH_MATERIALS_LIMIT);
         html += `<div class="section-title" style="margin-top: 24px;">Materiais de apoio <span class="count">(${materials.length})</span></div>`;
-        html += `<div class="search-materials-list">`;
-        for (const item of materials) {
+        html += `<div class="search-materials-list" id="search-materials-list">`;
+        for (const item of initialMaterials) {
           html += renderSearchMaterialCard(item);
         }
         html += `</div>`;
+        if (materials.length > INITIAL_SEARCH_MATERIALS_LIMIT) {
+          const remaining = materials.length - INITIAL_SEARCH_MATERIALS_LIMIT;
+          html += `
+            <div class="search-more-container">
+              <button type="button" class="load-more-lessons-btn btn btn--secondary" id="btn-load-more-materials">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+                <span>Mostrar mais materiais (+${remaining} restantes)</span>
+              </button>
+            </div>`;
+        }
       }
 
       html += `
@@ -1868,6 +2077,11 @@ function renderTopic(app, topicPath, libId) {
       location.hash = "/";
     });
   });
+  if (search) {
+    bindLoadMoreLessons(app, results.filter((r) => r.type === "lesson"));
+    bindLoadMoreMaterials(app, results.filter((r) => r.type === "material"));
+  }
+
   bindProgressToggle();
 }
 
@@ -2369,7 +2583,13 @@ async function init() {
   }
 
   const searchInput = document.getElementById("search-input");
-  searchInput.addEventListener("input", () => {
+  let searchDebounceTimer = null;
+
+  function executeSearch() {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
     const query = (searchInput.value || "").trim();
     const hash = (location.hash || "").replace(/^#/, "");
 
@@ -2399,6 +2619,11 @@ async function init() {
       state.lastSearchResults = results;
       renderSearchDropdown(results, query);
     }
+  }
+
+  searchInput.addEventListener("input", () => {
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(executeSearch, 120);
   });
 
   searchInput.addEventListener("focus", () => {
@@ -2439,6 +2664,10 @@ async function init() {
     }
 
     if (event.key === "Escape") {
+      if (searchDebounceTimer) {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = null;
+      }
       closeSearchDropdown();
       if (searchInput.value) {
         searchInput.value = "";
@@ -2466,6 +2695,10 @@ async function init() {
     }
 
     if (event.key !== "Enter") return;
+
+    if (searchDebounceTimer) {
+      executeSearch();
+    }
 
     event.preventDefault();
 
