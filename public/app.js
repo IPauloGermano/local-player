@@ -966,6 +966,7 @@ function applyViewModeToDOM() {
     const isMobile = isMobileDrawer();
     const open = isMobile ? !!(view && view.classList.contains("drawer-open")) : (theater && getSummaryOpen());
     lessonToggle.setAttribute("aria-expanded", String(open));
+    lessonToggle.classList.toggle("is-active", open);
     lessonToggle.title = open ? "Fechar lista de aulas" : "Abrir lista de aulas";
   }
 }
@@ -998,7 +999,11 @@ function setDrawerOpen(open) {
   if (!view) return;
   view.classList.toggle("drawer-open", open);
   const btn = document.getElementById("lesson-sidebar-toggle");
-  if (btn) btn.setAttribute("aria-expanded", String(open));
+  if (btn) {
+    btn.setAttribute("aria-expanded", String(open));
+    btn.classList.toggle("is-active", open);
+    btn.title = open ? "Fechar lista de aulas" : "Abrir lista de aulas";
+  }
   // Reflete o estado no item ⋮ > Resumo da aula (o mesmo controle no mobile).
   const summaryItem = document.querySelector('[data-more="summary"]');
   if (summaryItem) {
