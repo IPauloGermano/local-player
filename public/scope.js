@@ -352,19 +352,6 @@
 
     return (
       `<div class="tutor-video-card" data-video-id="${id}" data-video-url="${safeUrl}" data-topic="${cleanTopic}">` +
-        `<div class="tutor-video-header">` +
-          `<div class="tutor-video-badge">` +
-            `<svg class="tutor-yt-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">` +
-              `<path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>` +
-            `</svg>` +
-            `<span>Vídeo Recomendado</span>` +
-          `</div>` +
-          `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="tutor-video-external-btn" title="Abrir no YouTube">` +
-            `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>` +
-            `<span>Abrir</span>` +
-          `</a>` +
-        `</div>` +
-        (cleanTitle ? `<div class="tutor-video-title">${cleanTitle}</div>` : "") +
         `<div class="tutor-video-player-wrap">` +
           `<iframe class="tutor-video-iframe" ` +
             `src="https://www.youtube-nocookie.com/embed/${id}?enablejsapi=1&rel=0&modestbranding=1" ` +
@@ -377,10 +364,22 @@
           `></iframe>` +
         `</div>` +
         `<div class="tutor-video-footer">` +
-          `<button type="button" class="tutor-video-alt-btn" data-video-alt="${id}" title="Buscar outro vídeo sobre este tema">` +
-            `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>` +
-            `<span>Buscar outro vídeo</span>` +
-          `</button>` +
+          `<div class="tutor-video-meta">` +
+            `<svg class="tutor-yt-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">` +
+              `<path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>` +
+            `</svg>` +
+            `<span class="tutor-video-title" title="${cleanTitle}">${cleanTitle}</span>` +
+          `</div>` +
+          `<div class="tutor-video-actions">` +
+            `<button type="button" class="tutor-video-alt-btn" data-video-alt="${id}" title="Buscar outro vídeo sobre este tema">` +
+              `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>` +
+              `<span>Trocar</span>` +
+            `</button>` +
+            `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="tutor-video-external-btn" title="Abrir no YouTube">` +
+              `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>` +
+              `<span>YouTube</span>` +
+            `</a>` +
+          `</div>` +
         `</div>` +
       `</div>`
     );
@@ -618,6 +617,20 @@
 
     function flushPara() {
       if (currentPara.length) {
+        // Se o parágrafo for exclusivamente uma URL crua do YouTube em linha própria,
+        // renderiza diretamente o player embed sem duplicar o texto cru do link acima.
+        const singleLine = currentPara.length === 1 ? currentPara[0].trim() : "";
+        const standaloneYtMatch = singleLine.match(/^https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)\/[^\s<)]+$/i);
+        if (standaloneYtMatch) {
+          const ytId = extractYouTubeId(standaloneYtMatch[0]);
+          if (ytId && !embeddedVideoIds.has(ytId)) {
+            embeddedVideoIds.add(ytId);
+            blocks.push(buildVideoEmbedCardHtml({ id: ytId, url: standaloneYtMatch[0], title: "Vídeo Recomendado", topic: "Vídeo" }));
+            currentPara = [];
+            return;
+          }
+        }
+
         const text = currentPara.map(renderInlineMarkdown).join("<br>");
         blocks.push(`<p class="tutor-p">${text}</p>`);
         for (const rawLine of currentPara) {

@@ -469,13 +469,15 @@ function wireTutorDrawerEvents(video) {
 
 async function handleVideoCardAlternative(card, currentId, topic) {
   if (!card) return;
+  const actions = card.querySelector(".tutor-video-actions");
   const footer = card.querySelector(".tutor-video-footer");
+  const targetHost = actions || footer;
   const altBtn = card.querySelector(".tutor-video-alt-btn");
   if (altBtn) altBtn.disabled = true;
 
-  const prevFooterHtml = footer ? footer.innerHTML : "";
-  if (footer) {
-    footer.innerHTML = `<span class="tutor-video-loading"><span class="tutor-tool-spinner"></span> Buscando alternativa disponível...</span>`;
+  const prevActionsHtml = targetHost ? targetHost.innerHTML : "";
+  if (targetHost) {
+    targetHost.innerHTML = `<span class="tutor-video-loading"><span class="tutor-tool-spinner"></span> Buscando...</span>`;
   }
 
   try {
@@ -489,9 +491,9 @@ async function handleVideoCardAlternative(card, currentId, topic) {
     const nextVideo = alternatives.find((v) => v.id !== currentId) || alternatives[0];
 
     if (!nextVideo) {
-      if (footer) {
-        footer.innerHTML = `<span class="tutor-video-no-alt">Nenhum outro vídeo disponível no momento.</span>`;
-        setTimeout(() => { if (footer) footer.innerHTML = prevFooterHtml; }, 3000);
+      if (targetHost) {
+        targetHost.innerHTML = `<span class="tutor-video-no-alt">Sem alternativas no momento</span>`;
+        setTimeout(() => { if (targetHost) targetHost.innerHTML = prevActionsHtml; }, 3000);
       }
       return;
     }
@@ -503,6 +505,7 @@ async function handleVideoCardAlternative(card, currentId, topic) {
     const titleEl = card.querySelector(".tutor-video-title");
     if (titleEl) {
       titleEl.textContent = nextVideo.title;
+      titleEl.title = nextVideo.title;
     }
 
     const extBtn = card.querySelector(".tutor-video-external-btn");
@@ -516,12 +519,27 @@ async function handleVideoCardAlternative(card, currentId, topic) {
       iframe.title = nextVideo.title;
     }
 
-    if (footer) {
-      footer.innerHTML = `
-        <span class="tutor-video-replaced-badge">✓ Vídeo alternativo carregado</span>
-        <button type="button" class="tutor-video-alt-btn" data-video-alt="${nextVideo.id}" title="Buscar outro vídeo">
+    if (actions) {
+      actions.innerHTML = `
+        <span class="tutor-video-replaced-badge" title="Vídeo alternativo carregado">✓ Trocado</span>
+        <button type="button" class="tutor-video-alt-btn" data-video-alt="${nextVideo.id}" title="Buscar outro vídeo sobre este tema">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-          <span>Buscar outro vídeo</span>
+          <span>Trocar</span>
+        </button>
+        <a href="${nextVideo.url}" target="_blank" rel="noopener noreferrer" class="tutor-video-external-btn" title="Abrir no YouTube">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          <span>YouTube</span>
+        </a>`;
+      setTimeout(() => {
+        const badge = actions.querySelector(".tutor-video-replaced-badge");
+        if (badge) badge.remove();
+      }, 3500);
+    } else if (footer) {
+      footer.innerHTML = `
+        <span class="tutor-video-replaced-badge">✓ Trocado</span>
+        <button type="button" class="tutor-video-alt-btn" data-video-alt="${nextVideo.id}" title="Buscar outro vídeo sobre este tema">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          <span>Trocar</span>
         </button>`;
       setTimeout(() => {
         const badge = footer.querySelector(".tutor-video-replaced-badge");
@@ -529,9 +547,9 @@ async function handleVideoCardAlternative(card, currentId, topic) {
       }, 3500);
     }
   } catch (err) {
-    if (footer) {
-      footer.innerHTML = `<span class="tutor-video-error">${escapeHtml(err.message || "Erro ao buscar alternativa.")}</span>`;
-      setTimeout(() => { if (footer) footer.innerHTML = prevFooterHtml; }, 3000);
+    if (targetHost) {
+      targetHost.innerHTML = `<span class="tutor-video-error">${escapeHtml(err.message || "Erro")}</span>`;
+      setTimeout(() => { if (targetHost) targetHost.innerHTML = prevActionsHtml; }, 3000);
     }
   }
 }
