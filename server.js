@@ -2549,37 +2549,67 @@ async function writeCourseSubtitle(lib, rel, hash, vttText) {
   }
 }
 
+// Gera lista de hashes candidatos (compatibilidade retroativa com versões legadas,
+// sem libraryId, subcaminhos de tópicos ou biblioteca padrão)
+function getCandidateSubtitleHashes(lib, rel, primaryHash) {
+  const hashes = new Set();
+  if (primaryHash) hashes.add(primaryHash);
+  if (typeof rel !== "string" || !rel) return [...hashes];
+
+  // 1. Hash padrão da biblioteca atual
+  if (lib && lib.id) {
+    hashes.add(subtitleCacheName(lib.id, rel));
+  }
+
+  // 2. Hash sob a biblioteca default
+  if (lib && lib.id !== DEFAULT_LIBRARY_ID) {
+    hashes.add(subtitleCacheName(DEFAULT_LIBRARY_ID, rel));
+  }
+
+  // 3. Legado v1: hash direto do rel (sem libId)
+  hashes.add(crypto.createHash("sha1").update(rel).digest("hex").slice(0, 24));
+
+  // 4. Se o rel é aninhado em tópicos/módulos, testa também os subcaminhos
+  const parts = rel.split("/");
+  for (let i = 1; i < parts.length - 1; i++) {
+    const subRel = parts.slice(i).join("/");
+    hashes.add(crypto.createHash("sha1").update(subRel).digest("hex").slice(0, 24));
+    if (lib && lib.id) {
+      hashes.add(subtitleCacheName(lib.id, subRel));
+    }
+    hashes.add(subtitleCacheName(DEFAULT_LIBRARY_ID, subRel));
+  }
+  return [...hashes];
+}
+
 // Resolve o VTT final de um vídeo: canônico na pasta do curso primeiro,
 // busca recursiva em pastas-pai para cursos aninhados em tópicos, e cai para
-// o espelho em data/subtitles/ (vídeos na raiz / resiliência).
+// o espelho em data/subtitles/ (vídeos na raiz / resiliência). Checa hashes
+// candidatos para retrocompatibilidade total.
 async function resolveSubtitleVttPath(lib, rel, hash) {
-  const courseVtt = courseSubtitlePath(lib, rel, hash);
-  if (courseVtt) {
-    const st = await fs.stat(courseVtt).catch(() => null);
-    if (st && st.size > 0) return courseVtt;
-  }
-  if (lib && lib.path && typeof rel === "string" && rel.includes("/")) {
-    const parts = rel.split("/");
-    for (let i = parts.length - 1; i >= 1; i--) {
-      const candidate = path.join(lib.path, parts.slice(0, i).join(path.sep), COURSE_SUBTITLE_DIR, hash + ".vtt");
-      if (candidate !== courseVtt) {
-        const st = await fs.stat(candidate).catch(() => null);
-        if (st && st.size > 0) return candidate;
+  const candidateHashes = getCandidateSubtitleHashes(lib, rel, hash);
+
+  for (const h of candidateHashes) {
+    const courseVtt = courseSubtitlePath(lib, rel, h);
+    if (courseVtt) {
+      const st = await fs.stat(courseVtt).catch(() => null);
+      if (st && st.size > 0) return courseVtt;
+    }
+    if (lib && lib.path && typeof rel === "string" && rel.includes("/")) {
+      const parts = rel.split("/");
+      for (let i = parts.length - 1; i >= 1; i--) {
+        const candidate = path.join(lib.path, parts.slice(0, i).join(path.sep), COURSE_SUBTITLE_DIR, h + ".vtt");
+        if (candidate !== courseVtt) {
+          const st = await fs.stat(candidate).catch(() => null);
+          if (st && st.size > 0) return candidate;
+        }
       }
     }
+    const mirror = path.join(SUBTITLE_DIR, h + ".vtt");
+    const st = await fs.stat(mirror).catch(() => null);
+    if (st && st.size > 0) return mirror;
   }
-  const mirror = path.join(SUBTITLE_DIR, hash + ".vtt");
-  const st = await fs.stat(mirror).catch(() => null);
-  if (st && st.size > 0) return mirror;
 
-  if (lib && lib.id !== DEFAULT_LIBRARY_ID && rel) {
-    const defaultHash = subtitleCacheName(DEFAULT_LIBRARY_ID, rel);
-    if (defaultHash !== hash) {
-      const defMirror = path.join(SUBTITLE_DIR, defaultHash + ".vtt");
-      const defSt = await fs.stat(defMirror).catch(() => null);
-      if (defSt && defSt.size > 0) return defMirror;
-    }
-  }
   return null;
 }
 
@@ -7193,6 +7223,10 @@ if (require.main === module) {
     transcodeCacheName,
     subtitleCacheName,
     courseSubtitlePath,
+    resolveSubtitleVttPath,
+    hasFinalVtt,
+    hasValidSubtitle,
+    ensureLibraryDiskId,
     startSubtitleJob,
     cancelSubtitleJob,
     subtitleStatusFor,
