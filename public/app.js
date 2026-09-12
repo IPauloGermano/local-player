@@ -536,6 +536,21 @@ function buildSearchResults(roots, query) {
   return results.slice(0, 18);
 }
 
+function getSearchTrees() {
+  const activeLibs =
+    state.libraries && state.libraries.length
+      ? state.libraries.filter((l) => l.enabled !== false && l.tree)
+      : [];
+  if (activeLibs.length) return activeLibs.map((l) => l.tree);
+  return state.tree ? [state.tree] : [];
+}
+
+function performSearch(query) {
+  const clean = (query || "").trim();
+  if (!clean) return [];
+  return buildSearchResults(getSearchTrees(), clean);
+}
+
 function findParentFolder(node, targetPath) {
   if (node.type !== "folder" && node.type !== "topic") return null;
   if (node.children.some((c) => c.path === targetPath)) return node;
@@ -949,7 +964,7 @@ function renderHome(app) {
     directCourses.push(...collectDirectCourses(lib.tree));
   }
   const search = (document.getElementById("search-input").value || "").trim();
-  const results = buildSearchResults(libs.map((l) => l.tree), search);
+  const results = performSearch(search);
   // Resumo GLOBAL (todas as bibliotecas) → rodapé de "Continuar assistindo".
   // Resumo de "Seu progresso" na Home: PREFERE o escopo DIRETO (cursos filhos
   // da raiz — comportamento contextual documentado); se a raiz não tem curso
@@ -2080,24 +2095,211 @@ async function init() {
     location.hash = "/settings";
   });
 
+  let searchActiveIndex = -1;
+
+  function getOrCreateSearchDropdown() {
+    let dd = document.getElementById("topbar-search-dropdown");
+    if (!dd) {
+      dd = document.createElement("div");
+      dd.id = "topbar-search-dropdown";
+      dd.className = "topbar-search-dropdown";
+      dd.hidden = true;
+      const parent = document.querySelector(".topbar-search") || document.body;
+      parent.appendChild(dd);
+    }
+    return dd;
+  }
+
+  function closeSearchDropdown() {
+    const dd = document.getElementById("topbar-search-dropdown");
+    if (dd) {
+      dd.hidden = true;
+      dd.innerHTML = "";
+    }
+    searchActiveIndex = -1;
+  }
+
+  function renderSearchDropdown(results, query) {
+    const dd = getOrCreateSearchDropdown();
+    if (!query) {
+      closeSearchDropdown();
+      return;
+    }
+
+    searchActiveIndex = -1;
+    const isHome = !location.hash || location.hash === "#/";
+
+    // Na Home, os resultados já são exibidos diretamente na grade principal
+    if (isHome) {
+      closeSearchDropdown();
+      return;
+    }
+
+    if (!results.length) {
+      dd.innerHTML = `<div class="topbar-search-empty">Nenhum resultado para "<strong>${escapeHtml(query)}</strong>"</div>`;
+      dd.hidden = false;
+      return;
+    }
+
+    const itemsToShow = results.slice(0, 8);
+    let html = `<div class="topbar-search-list" role="listbox">`;
+    itemsToShow.forEach((item, idx) => {
+      const tag =
+        item.type === "course"
+          ? "Curso"
+          : item.type === "topic"
+            ? "Tópico"
+            : item.type === "lesson"
+              ? "Aula"
+              : "Material";
+
+      let itemHref;
+      if (item.type === "topic") {
+        itemHref = "#" + topicRoute({ path: item.path, libId: item.libId });
+      } else if (item.lessonPath) {
+        itemHref =
+          "#" +
+          courseRoute({ path: item.coursePath, libId: item.libId }) +
+          `?lesson=${encodeURIComponent(item.lessonPath)}`;
+      } else {
+        itemHref = "#" + courseRoute({ path: item.coursePath, libId: item.libId });
+      }
+
+      html += `
+        <a class="topbar-search-item" href="${itemHref}" data-index="${idx}" role="option">
+          <span class="topbar-search-tag" data-type="${item.type}">${tag}</span>
+          <div class="topbar-search-info">
+            <div class="topbar-search-title">${escapeHtml(item.label)}</div>
+            <div class="topbar-search-sub">${escapeHtml(item.courseName)} ${item.hint ? `· ${escapeHtml(item.hint)}` : ""}</div>
+          </div>
+        </a>
+      `;
+    });
+    html += `</div>`;
+
+    if (results.length > 8) {
+      html += `
+        <a class="topbar-search-footer" href="#/">
+          Ver todos os ${results.length} resultados na Home →
+        </a>
+      `;
+    }
+
+    dd.innerHTML = html;
+    dd.hidden = false;
+
+    dd.querySelectorAll(".topbar-search-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        closeSearchDropdown();
+      });
+    });
+
+    const footerLink = dd.querySelector(".topbar-search-footer");
+    if (footerLink) {
+      footerLink.addEventListener("click", () => {
+        closeSearchDropdown();
+      });
+    }
+  }
+
   const searchInput = document.getElementById("search-input");
   searchInput.addEventListener("input", () => {
-    if (!location.hash || location.hash === "#/")
+    const query = (searchInput.value || "").trim();
+    const results = performSearch(query);
+    state.lastSearchResults = results;
+
+    const isHome = !location.hash || location.hash === "#/";
+    if (isHome) {
+      closeSearchDropdown();
       renderHome(document.getElementById("app"));
-  });
-  searchInput.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    if (location.hash && location.hash !== "#/") return;
-    const first = state.lastSearchResults[0];
-    if (!first) return;
-    event.preventDefault();
-    if (first.type === "topic") {
-      location.hash = topicRoute({ path: first.path, libId: first.libId });
-    } else if (first.lessonPath) {
-      location.hash = courseRoute({ path: first.coursePath, libId: first.libId }) + `?lesson=${encodeURIComponent(first.lessonPath)}`;
     } else {
-      location.hash = courseRoute({ path: first.coursePath, libId: first.libId });
+      renderSearchDropdown(results, query);
     }
+  });
+
+  searchInput.addEventListener("focus", () => {
+    const query = (searchInput.value || "").trim();
+    if (query && location.hash && location.hash !== "#/") {
+      const results = performSearch(query);
+      state.lastSearchResults = results;
+      renderSearchDropdown(results, query);
+    }
+  });
+
+  searchInput.addEventListener("keydown", (event) => {
+    const dd = document.getElementById("topbar-search-dropdown");
+    const isDropdownOpen = dd && !dd.hidden;
+    const items = isDropdownOpen ? Array.from(dd.querySelectorAll(".topbar-search-item")) : [];
+
+    if (event.key === "ArrowDown") {
+      if (isDropdownOpen && items.length > 0) {
+        event.preventDefault();
+        searchActiveIndex = (searchActiveIndex + 1) % items.length;
+        items.forEach((it, idx) => it.classList.toggle("active", idx === searchActiveIndex));
+        items[searchActiveIndex]?.scrollIntoView({ block: "nearest" });
+      }
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      if (isDropdownOpen && items.length > 0) {
+        event.preventDefault();
+        searchActiveIndex = (searchActiveIndex - 1 + items.length) % items.length;
+        items.forEach((it, idx) => it.classList.toggle("active", idx === searchActiveIndex));
+        items[searchActiveIndex]?.scrollIntoView({ block: "nearest" });
+      }
+      return;
+    }
+
+    if (event.key === "Escape") {
+      closeSearchDropdown();
+      searchInput.blur();
+      return;
+    }
+
+    if (event.key !== "Enter") return;
+
+    event.preventDefault();
+
+    // Se houver um item focado pelas setas, navega até ele
+    if (isDropdownOpen && searchActiveIndex >= 0 && items[searchActiveIndex]) {
+      const href = items[searchActiveIndex].getAttribute("href");
+      closeSearchDropdown();
+      if (href) location.hash = href.replace(/^#/, "");
+      return;
+    }
+
+    // Se houver resultados, navega para o primeiro
+    const first = state.lastSearchResults && state.lastSearchResults[0];
+    if (first) {
+      closeSearchDropdown();
+      if (first.type === "topic") {
+        location.hash = topicRoute({ path: first.path, libId: first.libId });
+      } else if (first.lessonPath) {
+        location.hash =
+          courseRoute({ path: first.coursePath, libId: first.libId }) +
+          `?lesson=${encodeURIComponent(first.lessonPath)}`;
+      } else {
+        location.hash = courseRoute({ path: first.coursePath, libId: first.libId });
+      }
+      return;
+    }
+
+    // Se pressionar Enter com termo pesquisado fora da Home, vai para a Home
+    if (searchInput.value.trim() && location.hash && location.hash !== "#/") {
+      closeSearchDropdown();
+      location.hash = "/";
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".topbar-search")) {
+      closeSearchDropdown();
+    }
+  });
+
+  window.addEventListener("hashchange", () => {
+    closeSearchDropdown();
   });
   // Botão "⟳ Atualizar": rescan real no disco + re-render reativo SEM F5.
   // Usa currentTarget (o botão) — e.target pode ser o <span> interno do
