@@ -2037,9 +2037,6 @@ body {
   overflow: hidden;
   pointer-events: none;
 }
-.course-view.theater .lesson-sidebar-toggle {
-  display: inline-flex;
-}
 
 /* Modo Teatro: escala fluida e proporcional sem estourar a viewport */
 .course-view.theater .player-wrap {
