@@ -5859,6 +5859,148 @@ body {
   background: rgba(16, 185, 129, 0.1);
 }
 
+/* Cards de Vídeo Recomendado com Player Incorporado (Embed) */
+.tutor-video-card {
+  margin: 18px 0;
+  border-radius: 12px;
+  background: #0d121c;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  max-width: 100%;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.tutor-video-card:hover {
+  border-color: rgba(255, 138, 61, 0.35);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+.tutor-video-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #141b27;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  gap: 8px;
+}
+
+.tutor-video-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #ff4e45;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.tutor-video-badge .tutor-yt-icon {
+  color: #ff0000;
+  flex-shrink: 0;
+}
+
+.tutor-video-external-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tutor-video-external-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.tutor-video-title {
+  padding: 10px 14px 8px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  line-height: 1.45;
+}
+
+.tutor-video-player-wrap {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%; /* 16:9 Aspect Ratio */
+  background: #000000;
+}
+.tutor-video-player-wrap iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.tutor-video-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 14px;
+  background: #111722;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  gap: 10px;
+}
+
+.tutor-video-alt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tutor-video-alt-btn:hover {
+  background: rgba(255, 138, 61, 0.1);
+  color: var(--accent, #ff8a3d);
+  border-color: rgba(255, 138, 61, 0.35);
+}
+
+.tutor-video-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #c084fc;
+  font-size: 12px;
+}
+
+.tutor-video-replaced-badge {
+  color: #10b981;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tutor-video-no-alt,
+.tutor-video-error {
+  color: #f87171;
+  font-size: 12px;
+}
+
+.tutor-link-video {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #ff8a3d;
+  font-weight: 500;
+}
+
 /* Ações da resposta do assistente: download .md / .txt (gerado no
    navegador via Blob, sem backend). Discretas: aparecem no hover da
    mensagem no desktop; sempre visíveis no touch. */

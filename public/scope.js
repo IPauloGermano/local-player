@@ -331,6 +331,61 @@
     return 0;
   }
 
+  // Extrai ID de 11 caracteres de URLs do YouTube (watch, youtu.be, embed)
+  function extractYouTubeId(url) {
+    if (!url || typeof url !== "string") return null;
+    const trimmed = url.trim();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+    const m = trimmed.match(/(?:youtube(?:-nocookie)?\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+    return m ? m[1] : null;
+  }
+
+  // Gera o HTML do card com player incorporado (embed) do YouTube
+  function buildVideoEmbedCardHtml(opts) {
+    const id = opts && opts.id;
+    if (!id) return "";
+    const rawUrl = opts.url || `https://www.youtube.com/watch?v=${id}`;
+    const safeUrl = sanitizeLinkUrl(rawUrl) || `https://www.youtube.com/watch?v=${id}`;
+    const rawTitle = opts.title || "Vídeo Recomendado";
+    const cleanTitle = escapeHtml(rawTitle);
+    const cleanTopic = escapeHtml(opts.topic || rawTitle);
+
+    return (
+      `<div class="tutor-video-card" data-video-id="${id}" data-video-url="${safeUrl}" data-topic="${cleanTopic}">` +
+        `<div class="tutor-video-header">` +
+          `<div class="tutor-video-badge">` +
+            `<svg class="tutor-yt-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">` +
+              `<path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>` +
+            `</svg>` +
+            `<span>Vídeo Recomendado</span>` +
+          `</div>` +
+          `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="tutor-video-external-btn" title="Abrir no YouTube">` +
+            `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>` +
+            `<span>Abrir</span>` +
+          `</a>` +
+        `</div>` +
+        (cleanTitle ? `<div class="tutor-video-title">${cleanTitle}</div>` : "") +
+        `<div class="tutor-video-player-wrap">` +
+          `<iframe class="tutor-video-iframe" ` +
+            `src="https://www.youtube-nocookie.com/embed/${id}?enablejsapi=1&rel=0&modestbranding=1" ` +
+            `title="${cleanTitle}" ` +
+            `frameborder="0" ` +
+            `allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" ` +
+            `referrerpolicy="strict-origin-when-cross-origin" ` +
+            `allowfullscreen ` +
+            `loading="lazy"` +
+          `></iframe>` +
+        `</div>` +
+        `<div class="tutor-video-footer">` +
+          `<button type="button" class="tutor-video-alt-btn" data-video-alt="${id}" title="Buscar outro vídeo sobre este tema">` +
+            `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>` +
+            `<span>Buscar outro vídeo</span>` +
+          `</button>` +
+        `</div>` +
+      `</div>`
+    );
+  }
+
   // Renderiza formatação inline (código, links, negrito, itálico).
   function renderInlineMarkdown(text) {
     if (!text || typeof text !== "string") return "";
@@ -339,12 +394,16 @@
     out = out.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, url) => {
       const safe = sanitizeLinkUrl(url);
       if (!safe) return label;
-      return `<a class="tutor-link" href="${safe}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+      const isYt = !!extractYouTubeId(url);
+      const ytClass = isYt ? " tutor-link-video" : "";
+      return `<a class="tutor-link${ytClass}" href="${safe}" target="_blank" rel="noopener noreferrer">${label}</a>`;
     });
     out = out.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, prefix, url) => {
       const safe = sanitizeLinkUrl(url);
       if (!safe) return prefix + url;
-      return `${prefix}<a class="tutor-link" href="${safe}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+      const isYt = !!extractYouTubeId(url);
+      const ytClass = isYt ? " tutor-link-video" : "";
+      return `${prefix}<a class="tutor-link${ytClass}" href="${safe}" target="_blank" rel="noopener noreferrer">${url}</a>`;
     });
 
     // Timestamps interativos (ex: 02:15, 1:23:45)
@@ -529,11 +588,41 @@
     let currentPara = [];
     let currentList = null; // { type: 'ul' | 'ol', items: [] }
     let currentQuote = [];
+    const embeddedVideoIds = new Set();
+
+    function attachVideoCards(rawText) {
+      if (!rawText || typeof rawText !== "string") return;
+      // 1. Links markdown: [Label](https://...)
+      const mdRegex = /\[([^\]\n]+)\]\((https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:youtube\.com|youtu\.be)\/[^)\s]+)\)/gi;
+      let m;
+      while ((m = mdRegex.exec(rawText)) !== null) {
+        const label = m[1];
+        const url = m[2];
+        const id = extractYouTubeId(url);
+        if (id && !embeddedVideoIds.has(id)) {
+          embeddedVideoIds.add(id);
+          blocks.push(buildVideoEmbedCardHtml({ id, url, title: label, topic: label }));
+        }
+      }
+      // 2. URLs soltas: https://...
+      const rawRegex = /(?:^|[\s(])(https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:youtube\.com|youtu\.be)\/[^\s<)]+)/gi;
+      while ((m = rawRegex.exec(rawText)) !== null) {
+        const url = m[1];
+        const id = extractYouTubeId(url);
+        if (id && !embeddedVideoIds.has(id)) {
+          embeddedVideoIds.add(id);
+          blocks.push(buildVideoEmbedCardHtml({ id, url, title: "Vídeo Recomendado", topic: "Vídeo" }));
+        }
+      }
+    }
 
     function flushPara() {
       if (currentPara.length) {
         const text = currentPara.map(renderInlineMarkdown).join("<br>");
         blocks.push(`<p class="tutor-p">${text}</p>`);
+        for (const rawLine of currentPara) {
+          attachVideoCards(rawLine);
+        }
         currentPara = [];
       }
     }
@@ -547,6 +636,9 @@
           .map((it) => `<li class="${itemCls}${it.nested ? " tutor-list-nested" : ""}">${renderInlineMarkdown(it.text)}</li>`)
           .join("");
         blocks.push(`<${tag} class="${cls}">${itemsHtml}</${tag}>`);
+        for (const it of currentList.items) {
+          attachVideoCards(it.text);
+        }
         currentList = null;
       }
     }
@@ -555,6 +647,9 @@
       if (currentQuote.length) {
         const text = currentQuote.map(renderInlineMarkdown).join("<br>");
         blocks.push(`<blockquote class="tutor-quote">${text}</blockquote>`);
+        for (const rawLine of currentQuote) {
+          attachVideoCards(rawLine);
+        }
         currentQuote = [];
       }
     }
@@ -766,6 +861,8 @@
     parseMarkdownTable,
     parseTimestampToSeconds,
     renderMarkdownToHtml,
+    extractYouTubeId,
+    buildVideoEmbedCardHtml,
     escapeHtml,
     getKatex,
     sanitizeLatexForKatex,

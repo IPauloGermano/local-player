@@ -30,6 +30,9 @@ const {
   performWebSearch,
   fetchAndSummarizeWebSources,
   detectWebSearchIntent,
+  extractYouTubeId,
+  verifyYouTubeVideo,
+  searchVerifiedVideos,
   parseSubtitleSegments,
   loadLessonTranscription,
   buildLessonTutorContext,
@@ -45,6 +48,8 @@ const {
   sanitizeLinkUrl,
   parseMarkdownTable,
   parseTimestampToSeconds,
+  extractYouTubeId: scopeExtractYouTubeId,
+  buildVideoEmbedCardHtml,
 } = require("../public/scope");
 
 test("Tutor IA: parser e renderização de timestamps interativos", () => {
@@ -1193,5 +1198,155 @@ test("Tutor IA: fluxo integrado de Web Search e injeção no prompt via HTTP", a
     mockLlmServer.close();
     await fs.rm(dataDir, { recursive: true, force: true });
     await fs.rm(libDir, { recursive: true, force: true });
+  }
+});
+
+test("Tutor IA: extração e normalização de ID do YouTube (extractYouTubeId)", () => {
+  // URLs completas
+  assert.strictEqual(extractYouTubeId("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assert.strictEqual(extractYouTubeId("http://youtube.com/watch?v=dQw4w9WgXcQ&feature=share"), "dQw4w9WgXcQ");
+  assert.strictEqual(extractYouTubeId("https://m.youtube.com/watch?v=dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+
+  // URLs curtas
+  assert.strictEqual(extractYouTubeId("https://youtu.be/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assert.strictEqual(extractYouTubeId("https://youtu.be/dQw4w9WgXcQ?t=42"), "dQw4w9WgXcQ");
+
+  // URLs de embed
+  assert.strictEqual(extractYouTubeId("https://www.youtube.com/embed/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assert.strictEqual(extractYouTubeId("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+
+  // ID direto de 11 caracteres
+  assert.strictEqual(extractYouTubeId("dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assert.strictEqual(extractYouTubeId("  dQw4w9WgXcQ  "), "dQw4w9WgXcQ");
+
+  // Client (scope.js) espelha exatamente o backend
+  assert.strictEqual(scopeExtractYouTubeId("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assert.strictEqual(scopeExtractYouTubeId("https://youtu.be/dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+  assert.strictEqual(scopeExtractYouTubeId("dQw4w9WgXcQ"), "dQw4w9WgXcQ");
+
+  // Inválidos / não-YouTube
+  assert.strictEqual(extractYouTubeId("https://vimeo.com/12345678"), null);
+  assert.strictEqual(extractYouTubeId("https://example.com/watch?v=123"), null);
+  assert.strictEqual(extractYouTubeId(""), null);
+  assert.strictEqual(extractYouTubeId(null), null);
+  assert.strictEqual(extractYouTubeId("curto"), null);
+});
+
+test("Tutor IA: Detecção de Intenção de Vídeos no Tutor (detectWebSearchIntent isVideo)", () => {
+  // Solicitações explícitas de vídeo / vídeo-aula
+  const v1 = detectWebSearchIntent("Me recomende um vídeo sobre closures em JavaScript");
+  assert.strictEqual(v1.needsSearch, true);
+  assert.strictEqual(v1.isVideo, true);
+  assert.ok(v1.query.includes("closures em JavaScript"));
+
+  const v2 = detectWebSearchIntent("Tem alguma videoaula explicando Flexbox no CSS?");
+  assert.strictEqual(v2.needsSearch, true);
+  assert.strictEqual(v2.isVideo, true);
+
+  const v3 = detectWebSearchIntent("Gostaria de ver um vídeo sobre async await no YouTube");
+  assert.strictEqual(v3.needsSearch, true);
+  assert.strictEqual(v3.isVideo, true);
+
+  // URL do YouTube direta
+  const v4 = detectWebSearchIntent("Veja o que diz https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  assert.strictEqual(v4.needsSearch, true);
+  assert.strictEqual(v4.isUrl, true);
+  assert.strictEqual(v4.isVideo, true);
+
+  // Pergunta comum sem vídeo
+  const v5 = detectWebSearchIntent("O que significa hoisting em JS?");
+  assert.strictEqual(v5.isVideo, false);
+});
+
+test("Tutor IA: Verificação e Validação de Disponibilidade de Vídeos (verifyYouTubeVideo)", async () => {
+  // 1. ID inválido
+  const invalid = await verifyYouTubeVideo("invalid");
+  assert.strictEqual(invalid.valid, false);
+  assert.ok(invalid.error);
+
+  // 2. ID válido real (dQw4w9WgXcQ)
+  const valid = await verifyYouTubeVideo("dQw4w9WgXcQ");
+  if (valid.valid) {
+    assert.strictEqual(valid.id, "dQw4w9WgXcQ");
+    assert.ok(valid.title);
+    assert.ok(valid.author);
+    assert.ok(valid.url.includes("youtube.com"));
+    assert.ok(valid.embedUrl.includes("youtube-nocookie.com/embed/dQw4w9WgXcQ"));
+  }
+
+  // 3. ID com formato válido mas inexistente no YouTube
+  const nonexistent = await verifyYouTubeVideo("00000000000");
+  assert.strictEqual(nonexistent.valid, false);
+  assert.strictEqual(nonexistent.id, "00000000000");
+});
+
+test("Tutor IA: Renderização de Player Embed e Cartão de Vídeo (buildVideoEmbedCardHtml & renderMarkdownToHtml)", () => {
+  // 1. buildVideoEmbedCardHtml unitário
+  const cardHtml = buildVideoEmbedCardHtml({
+    id: "dQw4w9WgXcQ",
+    title: "Rick Astley - Never Gonna Give You Up",
+    url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    topic: "Música",
+  });
+  assert.ok(cardHtml.includes('class="tutor-video-card"'));
+  assert.ok(cardHtml.includes('data-video-id="dQw4w9WgXcQ"'));
+  assert.ok(cardHtml.includes("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?enablejsapi=1&rel=0&modestbranding=1"));
+  assert.ok(cardHtml.includes('class="tutor-video-alt-btn"'));
+  assert.ok(cardHtml.includes('class="tutor-video-external-btn"'));
+  assert.ok(cardHtml.includes("Rick Astley - Never Gonna Give You Up"));
+
+  // 2. renderMarkdownToHtml integrando embed cards
+  const markdownText = `
+Confira este excelente tutorial:
+https://www.youtube.com/watch?v=dQw4w9WgXcQ
+
+Ele explica tudo do zero. Veja também o link https://youtu.be/dQw4w9WgXcQ novamente.
+`;
+  const rendered = renderMarkdownToHtml(markdownText);
+  assert.ok(rendered.includes('class="tutor-video-card"'));
+  assert.ok(rendered.includes('class="tutor-video-iframe"'));
+  assert.ok(rendered.includes('class="tutor-video-alt-btn"'));
+
+  // Deduplicação: o mesmo ID mencionado 2x só deve gerar 1 card
+  const occurrences = (rendered.match(/class="tutor-video-card"/g) || []).length;
+  assert.strictEqual(occurrences, 1);
+});
+
+test("Tutor IA: Rotas HTTP /api/tutor/video/verify e /api/tutor/video/search", async () => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-video-tutor-data-"));
+  const srv = await startTestServer(dataDir);
+
+  try {
+    // 1. GET /api/tutor/video/verify com ID válido
+    const resValid = await fetch(`${srv.base}/api/tutor/video/verify?id=dQw4w9WgXcQ`);
+    assert.strictEqual(resValid.status, 200);
+    const dataValid = await resValid.json();
+    assert.strictEqual(dataValid.ok, true);
+    assert.strictEqual(dataValid.video.id, "dQw4w9WgXcQ");
+
+    // 2. GET /api/tutor/video/verify com ID inválido
+    const resInvalid = await fetch(`${srv.base}/api/tutor/video/verify?id=invalid-id`);
+    assert.strictEqual(resInvalid.status, 404);
+    const dataInvalid = await resInvalid.json();
+    assert.strictEqual(dataInvalid.ok, false);
+
+    // 3. GET /api/tutor/video/search sem query -> 400
+    const resEmpty = await fetch(`${srv.base}/api/tutor/video/search`);
+    assert.strictEqual(resEmpty.status, 400);
+    const dataEmpty = await resEmpty.json();
+    assert.strictEqual(dataEmpty.ok, false);
+
+    // 4. GET /api/tutor/video/search com query válida
+    const resSearch = await fetch(`${srv.base}/api/tutor/video/search?query=javascript&max=1`);
+    assert.strictEqual(resSearch.status, 200);
+    const dataSearch = await resSearch.json();
+    assert.ok(Array.isArray(dataSearch.videos));
+    if (dataSearch.videos.length > 0) {
+      assert.ok(dataSearch.videos[0].id);
+      assert.strictEqual(dataSearch.videos[0].valid, true);
+    }
+  } finally {
+    await srv.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
   }
 });

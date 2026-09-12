@@ -446,7 +446,93 @@ function wireTutorDrawerEvents(video) {
         }
         return;
       }
+
+      // Botão de buscar vídeo alternativo no card de vídeo embed
+      const altBtn = e.target.closest(".tutor-video-alt-btn");
+      if (altBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (altBtn.disabled) return;
+
+        const card = altBtn.closest(".tutor-video-card");
+        if (!card) return;
+
+        const currentId = card.dataset.videoId || "";
+        const topic = card.dataset.topic || (tutorState.currentVideo ? lessonTitle(tutorState.currentVideo) : "");
+
+        handleVideoCardAlternative(card, currentId, topic);
+        return;
+      }
     });
+  }
+}
+
+async function handleVideoCardAlternative(card, currentId, topic) {
+  if (!card) return;
+  const footer = card.querySelector(".tutor-video-footer");
+  const altBtn = card.querySelector(".tutor-video-alt-btn");
+  if (altBtn) altBtn.disabled = true;
+
+  const prevFooterHtml = footer ? footer.innerHTML : "";
+  if (footer) {
+    footer.innerHTML = `<span class="tutor-video-loading"><span class="tutor-tool-spinner"></span> Buscando alternativa disponível...</span>`;
+  }
+
+  try {
+    const vidPath = tutorState.currentVideo ? tutorState.currentVideo.path : "";
+    const libId = tutorState.currentVideo ? (tutorState.currentVideo.libId || "") : "";
+    const url = `/api/tutor/video/search?query=${encodeURIComponent(topic)}&excludeId=${encodeURIComponent(currentId)}&lessonPath=${encodeURIComponent(vidPath)}&libraryId=${encodeURIComponent(libId)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Falha na busca de alternativas.");
+    const data = await res.json();
+    const alternatives = (data && data.videos) ? data.videos : [];
+    const nextVideo = alternatives.find((v) => v.id !== currentId) || alternatives[0];
+
+    if (!nextVideo) {
+      if (footer) {
+        footer.innerHTML = `<span class="tutor-video-no-alt">Nenhum outro vídeo disponível no momento.</span>`;
+        setTimeout(() => { if (footer) footer.innerHTML = prevFooterHtml; }, 3000);
+      }
+      return;
+    }
+
+    card.dataset.videoId = nextVideo.id;
+    card.dataset.videoUrl = nextVideo.url;
+    card.dataset.topic = nextVideo.title;
+
+    const titleEl = card.querySelector(".tutor-video-title");
+    if (titleEl) {
+      titleEl.textContent = nextVideo.title;
+    }
+
+    const extBtn = card.querySelector(".tutor-video-external-btn");
+    if (extBtn) {
+      extBtn.href = nextVideo.url;
+    }
+
+    const iframe = card.querySelector(".tutor-video-iframe");
+    if (iframe) {
+      iframe.src = `https://www.youtube-nocookie.com/embed/${nextVideo.id}?enablejsapi=1&rel=0&modestbranding=1`;
+      iframe.title = nextVideo.title;
+    }
+
+    if (footer) {
+      footer.innerHTML = `
+        <span class="tutor-video-replaced-badge">✓ Vídeo alternativo carregado</span>
+        <button type="button" class="tutor-video-alt-btn" data-video-alt="${nextVideo.id}" title="Buscar outro vídeo">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          <span>Buscar outro vídeo</span>
+        </button>`;
+      setTimeout(() => {
+        const badge = footer.querySelector(".tutor-video-replaced-badge");
+        if (badge) badge.remove();
+      }, 3500);
+    }
+  } catch (err) {
+    if (footer) {
+      footer.innerHTML = `<span class="tutor-video-error">${escapeHtml(err.message || "Erro ao buscar alternativa.")}</span>`;
+      setTimeout(() => { if (footer) footer.innerHTML = prevFooterHtml; }, 3000);
+    }
   }
 }
 
@@ -747,6 +833,14 @@ async function sendTutorMessage(video, text) {
             if (currentBubble && !accumulatedText) {
               currentBubble.innerHTML = `<div class="tutor-tool-status"><span class="tutor-tool-spinner"></span> Consultando fontes da Web...</div>`;
             }
+          } else if (parsed.status === "searching_video") {
+            if (currentBubble && !accumulatedText) {
+              currentBubble.innerHTML = `<div class="tutor-tool-status"><span class="tutor-tool-spinner"></span> Buscando vídeos recomendados...</div>`;
+            }
+          } else if (parsed.status === "verifying_video") {
+            if (currentBubble && !accumulatedText) {
+              currentBubble.innerHTML = `<div class="tutor-tool-status"><span class="tutor-tool-spinner"></span> Verificando disponibilidade do vídeo...</div>`;
+            }
           }
           if (parsed.content) {
             accumulatedText += parsed.content;
@@ -813,3 +907,48 @@ window.closeTutorDrawer = closeTutorDrawer;
 window.toggleTutorDrawer = toggleTutorDrawer;
 window.renderTutorMessages = renderTutorMessages;
 window.sendTutorMessage = sendTutorMessage;
+window.handleVideoCardAlternative = handleVideoCardAlternative;
+
+// Monitora eventos do player do YouTube para detectar e substituir automaticamente vídeos indisponíveis
+if (typeof window !== "undefined" && !window._tutorYtListenerInstalled) {
+  window._tutorYtListenerInstalled = true;
+  window.addEventListener("message", (event) => {
+    try {
+      if (!event.origin || (!event.origin.includes("youtube.com") && !event.origin.includes("youtube-nocookie.com"))) {
+        return;
+      }
+      let data = event.data;
+      if (typeof data === "string") {
+        try { data = JSON.parse(data); } catch {}
+      }
+      if (!data) return;
+
+      // Códigos de erro do YouTube:
+      // 100: vídeo removido ou privado
+      // 101/150: incorporação bloqueada pelo proprietário
+      // 2/5: erro de parâmetros ou player HTML5
+      const isError = data.event === "onError" || (data.info && [2, 5, 100, 101, 150].includes(Number(data.info)));
+      if (isError) {
+        const iframes = document.querySelectorAll(".tutor-video-iframe");
+        for (const ifr of iframes) {
+          if (ifr.contentWindow === event.source) {
+            const card = ifr.closest(".tutor-video-card");
+            if (card && !card.dataset.replacing) {
+              card.dataset.replacing = "true";
+              const currentId = card.dataset.videoId || "";
+              const topic = card.dataset.topic || (tutorState.currentVideo ? lessonTitle(tutorState.currentVideo) : "");
+              const titleEl = card.querySelector(".tutor-video-title");
+              if (titleEl) {
+                titleEl.innerHTML = `<span style="color:#f87171">⚠️ Vídeo indisponível — substituindo automaticamente...</span>`;
+              }
+              handleVideoCardAlternative(card, currentId, topic).finally(() => {
+                delete card.dataset.replacing;
+              });
+              break;
+            }
+          }
+        }
+      }
+    } catch {}
+  });
+}

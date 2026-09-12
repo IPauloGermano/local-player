@@ -564,15 +564,130 @@ async function fetchAndSummarizeWebSources(query, maxPages = 2, maxResults = 3, 
   };
 }
 
-// 7. Detecção de Intenção de Pesquisa Web na Mensagem do Aluno
+// 7. Extração de ID, Verificação de Disponibilidade e Busca de Vídeos Verificados
+function extractYouTubeId(url) {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+  const m = trimmed.match(/(?:youtube(?:-nocookie)?\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+  return m ? m[1] : null;
+}
+
+async function verifyYouTubeVideo(idOrUrl, timeoutMs = 5000) {
+  const id = extractYouTubeId(idOrUrl);
+  if (!id) return { valid: false, error: "ID de vídeo inválido." };
+
+  const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${id}&format=json`;
+  const res = await fetchSafeWebPage(oembedUrl, 100 * 1024, timeoutMs);
+  if (!res.ok || !res.html) {
+    return { valid: false, id, error: "Vídeo indisponível, privado ou excluído." };
+  }
+  try {
+    const data = JSON.parse(res.html);
+    if (!data || (data.type !== "video" && !data.title)) {
+      return { valid: false, id, error: "Conteúdo não é um vídeo reproduzível." };
+    }
+    return {
+      valid: true,
+      id,
+      title: data.title || "Vídeo",
+      author: data.author_name || "YouTube",
+      authorUrl: data.author_url || "",
+      thumbnailUrl: data.thumbnail_url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      url: `https://www.youtube.com/watch?v=${id}`,
+      embedUrl: `https://www.youtube-nocookie.com/embed/${id}`,
+    };
+  } catch (err) {
+    return { valid: false, id, error: "Falha ao processar dados do vídeo." };
+  }
+}
+
+async function searchVerifiedVideos(query, maxResults = 3, excludeIds = [], onStatus = null) {
+  if (!query || typeof query !== "string" || !query.trim()) return [];
+  const cleanQuery = query.trim().slice(0, 150);
+  const excluded = new Set((excludeIds || []).map((id) => extractYouTubeId(id) || id));
+
+  if (typeof onStatus === "function") {
+    onStatus({ status: "searching_video", query: cleanQuery });
+  }
+
+  const candidateIds = [];
+
+  // 1. Busca direta no YouTube (results?search_query=...)
+  try {
+    const directUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}`;
+    const pageRes = await fetchSafeWebPage(directUrl, 1.5 * 1024 * 1024, 7000);
+    if (pageRes.ok && pageRes.html) {
+      const regex = /"videoId":"([a-zA-Z0-9_-]{11})"/g;
+      let m;
+      const seen = new Set(excluded);
+      while ((m = regex.exec(pageRes.html)) !== null) {
+        const vid = m[1];
+        if (!seen.has(vid)) {
+          seen.add(vid);
+          candidateIds.push(vid);
+          if (candidateIds.length >= maxResults * 3) break;
+        }
+      }
+    }
+  } catch {}
+
+  // 2. Se a busca direta retornou poucos candidatos, usa DuckDuckGo
+  if (candidateIds.length < maxResults) {
+    try {
+      const ddgResults = await performWebSearch(`${cleanQuery} site:youtube.com`, 8);
+      for (const r of ddgResults) {
+        const vid = extractYouTubeId(r.url);
+        if (vid && !excluded.has(vid) && !candidateIds.includes(vid)) {
+          candidateIds.push(vid);
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Validação individual rigorosa via oEmbed (apenas vídeos ativos, disponíveis e públicos)
+  const verifiedVideos = [];
+  for (const id of candidateIds) {
+    if (verifiedVideos.length >= maxResults) break;
+    if (typeof onStatus === "function") {
+      onStatus({ status: "verifying_video", id });
+    }
+    const check = await verifyYouTubeVideo(id, 4000);
+    if (check && check.valid) {
+      verifiedVideos.push(check);
+    }
+  }
+
+  return verifiedVideos;
+}
+
+// 8. Detecção de Intenção de Pesquisa Web e Vídeos na Mensagem do Aluno
 function detectWebSearchIntent(userMsg) {
-  if (!userMsg || typeof userMsg !== "string") return { needsSearch: false, query: "" };
+  if (!userMsg || typeof userMsg !== "string") return { needsSearch: false, isVideo: false, query: "" };
   const text = userMsg.trim();
   const lower = text.toLowerCase();
 
   const urlMatch = /(https?:\/\/[^\s]+)/i.exec(text);
   if (urlMatch) {
-    return { needsSearch: true, isUrl: true, targetUrl: urlMatch[1], query: text };
+    const isYt = !!extractYouTubeId(urlMatch[1]);
+    return { needsSearch: true, isUrl: true, isVideo: isYt, targetUrl: urlMatch[1], query: text };
+  }
+
+  // Padrões de solicitação de vídeo / vídeo-aula / YouTube
+  const videoPatterns = [
+    /\b(?:v[ií]deos?|videoaulas?|video-aulas?|aulas?\s+em\s+v[ií]deo|links?\s+de\s+v[ií]deo|canais?|youtube)\b/i,
+    /(?:me\s+(?:indique|recomende|mande|passe|mostre|d[eê]|traga)|tem|h[aá]|indica[çc][ãa]o|sugest[ãa]o)\s+(?:de\s+)?(?:algum\s+)?(?:v[ií]deos?|aulas?\s+em\s+v[ií]deo|links?\s+de\s+v[ií]deo|no\s+youtube)/i,
+    /(?:assistir|assista|ver)\s+(?:um\s+|algum\s+)?v[ií]deo/i,
+  ];
+
+  const isVideo = videoPatterns.some((p) => p.test(text));
+  if (isVideo) {
+    let queryTopic = text;
+    const topicMatch = text.match(/(?:sobre|de|explicando|do|da|com|em)\s+([^?.!,]+)/i);
+    if (topicMatch && topicMatch[1] && topicMatch[1].trim().length > 2) {
+      queryTopic = topicMatch[1].trim();
+    }
+    return { needsSearch: true, isVideo: true, query: queryTopic };
   }
 
   const explicitSearchPatterns = [
@@ -585,7 +700,7 @@ function detectWebSearchIntent(userMsg) {
   for (const p of explicitSearchPatterns) {
     const m = p.exec(text);
     if (m && m[1]) {
-      return { needsSearch: true, query: m[1].replace(/[?.,!]+$/, "").trim() };
+      return { needsSearch: true, isVideo: false, query: m[1].replace(/[?.,!]+$/, "").trim() };
     }
   }
 
@@ -597,10 +712,10 @@ function detectWebSearchIntent(userMsg) {
     lower.includes("última versão") ||
     lower.includes("novidades da versão")
   ) {
-    return { needsSearch: true, query: text };
+    return { needsSearch: true, isVideo: false, query: text };
   }
 
-  return { needsSearch: false, query: "" };
+  return { needsSearch: false, isVideo: false, query: "" };
 }
 
 module.exports = {
@@ -615,5 +730,8 @@ module.exports = {
   parseDuckDuckGoHtml,
   performWebSearch,
   fetchAndSummarizeWebSources,
+  extractYouTubeId,
+  verifyYouTubeVideo,
+  searchVerifiedVideos,
   detectWebSearchIntent,
 };

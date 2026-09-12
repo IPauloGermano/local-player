@@ -68,6 +68,9 @@ const {
   performWebSearch,
   fetchAndSummarizeWebSources,
   detectWebSearchIntent,
+  extractYouTubeId,
+  verifyYouTubeVideo,
+  searchVerifiedVideos,
   AI_TRANSCRIPTION_PROVIDERS,
   AI_LLM_PROVIDER_TYPES,
   AI_LLM_PRESETS,
@@ -4522,7 +4525,7 @@ function buildTutorSystemPrompt(context, customPrompt, skillsCfg = null, webCont
     "1. Baseie-se prioritariamente na transcrição da aula, na hierarquia do curso, nos materiais de apoio (PDFs, slides, docs) e nas páginas/fontes da Web fornecidas no contexto.\n" +
     "2. Quando a resposta utilizar dados ou explicações de documentos anexos ou páginas da Web consultadas, mencione as fontes correspondentes e inclua os links ao final sob '### Fontes consultadas:'.\n" +
     "3. Seja didático, objetivo e acolhedor. Evite respostas excessivamente longas quando uma explicação concisa for mais eficaz.\n" +
-    "4. NÃO INVENTE INFORMAÇÕES e não apresente suposições como fatos. Se uma dúvida não puder ser respondida com base no contexto ou nos fundamentos do assunto, informe claramente que a resposta não está disponível no conteúdo.\n" +
+    "4. NÃO INVENTE INFORMAÇÕES e não apresente suposições como fatos. Se o aluno solicitar vídeos ou links externos, NUNCA invente URLs ou IDs fictícios do YouTube: recomende EXCLUSIVAMENTE os vídeos reais e verificados presentes no contexto sob 'VÍDEOS RECOMENDADOS VERIFICADOS'. Se uma dúvida não puder ser respondida com base no contexto ou nos fundamentos do assunto, informe claramente que a resposta não está disponível no conteúdo.\n" +
     "5. Formate sua resposta em Markdown rico e legível. Quando apresentar código, utilize blocos com a linguagem especificada (ex: ```python, ```javascript, ```sql). Para notações e fórmulas matemáticas, utilize sempre LaTeX padrão delimitado por $$ para equações em bloco e $ para expressões inline. Para contas armadas (adição/subtração/multiplicação), use SEMPRE $$\\begin{array}{r} ... \\\\ \\hline ... \\end{array}$$ com especificador de coluna simples (só l, c, r — NUNCA use @{...}, @\\quad, !{...} ou *{...}, que o renderizador não suporta) e SEMPRE com os delimitadores $$.\n" +
     "6. Mantenha o foco pedagógico na aula e no aprendizado do aluno.\n\n" +
     "SEGURANÇA E ISOLAMENTO (ANTI-PROMPT-INJECTION):\n" +
@@ -5635,6 +5638,40 @@ app.get("/api/tutor/context", async (req, res) => {
   }
 });
 
+app.get("/api/tutor/video/verify", async (req, res) => {
+  const urlOrId = typeof req.query.url === "string" ? req.query.url : (typeof req.query.id === "string" ? req.query.id : "");
+  if (!urlOrId) {
+    return res.status(400).json({ ok: false, error: "Parâmetro 'url' ou 'id' ausente." });
+  }
+  const result = await verifyYouTubeVideo(urlOrId);
+  if (!result.valid) {
+    return res.status(404).json({ ok: false, error: result.error || "Vídeo indisponível." });
+  }
+  return res.json({ ok: true, video: result });
+});
+
+app.get("/api/tutor/video/search", async (req, res) => {
+  const query = typeof req.query.query === "string" ? req.query.query.trim() : "";
+  const excludeId = typeof req.query.excludeId === "string" ? req.query.excludeId.trim() : "";
+  const lessonPath = typeof req.query.lessonPath === "string" ? req.query.lessonPath.trim() : "";
+  const lib = requestLibrary(req);
+
+  let fullQuery = query;
+  if (!fullQuery && lessonPath && lib) {
+    const safe = resolveLibraryRel(lib, lessonPath);
+    if (safe) {
+      fullQuery = path.basename(safe.rel, path.extname(safe.rel));
+    }
+  }
+
+  if (!fullQuery) {
+    return res.status(400).json({ ok: false, error: "Parâmetro 'query' ausente." });
+  }
+
+  const results = await searchVerifiedVideos(fullQuery, 3, excludeId ? [excludeId] : []);
+  return res.json({ ok: true, videos: results });
+});
+
 app.post("/api/tutor/chat", async (req, res) => {
   const body = objOr(req.body, {});
   const rel = typeof body.path === "string" ? body.path : "";
@@ -5697,7 +5734,49 @@ app.post("/api/tutor/chat", async (req, res) => {
         res.flushHeaders?.();
       }
 
-      if (searchIntent.isUrl && searchIntent.targetUrl) {
+      if (searchIntent.isVideo) {
+        if (body.stream !== false && res.headersSent) {
+          res.write(`data: ${JSON.stringify({ status: "searching_video", query: searchIntent.query })}\n\n`);
+        }
+        let vidQuery = searchIntent.query || "";
+        const lessonName = videoNode?.name ? path.basename(videoNode.name, path.extname(videoNode.name)) : "";
+        if (lessonName && !vidQuery.toLowerCase().includes(lessonName.toLowerCase())) {
+          vidQuery = `${vidQuery} ${lessonName}`.trim();
+        }
+        const verifiedVideos = await searchVerifiedVideos(
+          vidQuery,
+          3,
+          [],
+          (ev) => {
+            if (body.stream !== false && res.headersSent) {
+              res.write(`data: ${JSON.stringify(ev)}\n\n`);
+            }
+          }
+        );
+
+        if (verifiedVideos.length > 0) {
+          const videoBlocks = verifiedVideos
+            .map(
+              (v, i) =>
+                `[Vídeo ${i + 1}]: "${v.title}"\nCanal: ${v.author}\nLink: ${v.url}\nEmbed: ${v.embedUrl}`
+            )
+            .join("\n\n");
+
+          webSourcesResult = {
+            query: vidQuery,
+            sources: verifiedVideos.map((v) => ({ title: v.title, url: v.url })),
+            content:
+              `### VÍDEOS RECOMENDADOS VERIFICADOS (DISPONÍVEIS E TESTADOS PARA REPRODUÇÃO):\n\n${videoBlocks}\n\n` +
+              `DIRETRIZ CRÍTICA DE VÍDEOS: Quando o aluno solicitar vídeos ou recomendações audiovisuais, utilize EXCLUSIVAMENTE os vídeos verificados listados acima. NUNCA invente links, URLs ou IDs fictícios de vídeos do YouTube. Apresente os vídeos indicados com seus títulos e links em formato Markdown padrão: [Título do Vídeo](URL). Nosso sistema incorporará automaticamente o player de vídeo na interface para que o aluno possa assistir diretamente aqui.`,
+          };
+        } else {
+          webSourcesResult = {
+            query: vidQuery,
+            sources: [],
+            content: `AVISO DE VÍDEOS: Não foram encontrados vídeos verificados e disponíveis para o tema "${vidQuery}" no momento. Informe ao aluno de forma clara e amigável que não há vídeos verificados disponíveis no momento, e NUNCA invente links ou URLs de vídeos fictícios.`,
+          };
+        }
+      } else if (searchIntent.isUrl && searchIntent.targetUrl) {
         if (body.stream !== false && res.headersSent) {
           res.write(`data: ${JSON.stringify({ status: "reading", url: searchIntent.targetUrl, title: searchIntent.targetUrl })}\n\n`);
         }
@@ -6734,7 +6813,7 @@ app.use(
       // indisponibilidade (servida de memória com script inline próprio).
       res.set(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com https://*.ytimg.com; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
       );
     },
   }),
@@ -7083,6 +7162,9 @@ if (require.main === module) {
     performWebSearch,
     fetchAndSummarizeWebSources,
     detectWebSearchIntent,
+    extractYouTubeId,
+    verifyYouTubeVideo,
+    searchVerifiedVideos,
     parseSubtitleSegments,
     loadLessonTranscription,
     getOptimalTranscriptionThreads,
