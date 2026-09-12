@@ -680,10 +680,16 @@ function renderPlayerAndLesson() {
     .getElementById("tutor-btn")
     ?.addEventListener("click", () => toggleTutorDrawer(video));
 
-  // Drawer mobile: abre/fecha pelo botão "☰ Aulas" e fecha ao tocar o backdrop.
+  // Alterna a lista de aulas: drawer no mobile ou painel lateral no desktop.
   document
     .getElementById("lesson-sidebar-toggle")
-    ?.addEventListener("click", () => toggleDrawer());
+    ?.addEventListener("click", () => {
+      if (typeof toggleSummaryPanel === "function") {
+        toggleSummaryPanel();
+      } else if (typeof toggleDrawer === "function") {
+        toggleDrawer();
+      }
+    });
   document
     .getElementById("sidebar-backdrop")
     ?.addEventListener("click", () => closeMobileDrawer());

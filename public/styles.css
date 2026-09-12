@@ -789,20 +789,6 @@ body {
   color: var(--text-dim);
   margin-top: 3px;
 }
-  padding: 10px 12px;
-}
-.storage-value {
-  display: block;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text);
-}
-.storage-label {
-  display: block;
-  font-size: 11.5px;
-  color: var(--text-dim);
-  margin-top: 2px;
-}
 
 /* Workspace de legendas */
 .workspace-fields {
@@ -2035,9 +2021,24 @@ body {
   grid-template-columns: minmax(0, 1fr) var(--sidebar-w);
 }
 /* Colapsado no desktop: além do trilho 0px, esconde o conteúdo para que os
-   links da árvore não fiquem tabuláveis enquanto invisíveis. */
+   links da árvore não fiquem tabuláveis enquanto invisíveis e zera larguras/paddings
+   para prevenir overflow horizontal. */
+.course-view.theater:not(.summary-open) {
+  column-gap: 0;
+}
 .course-view.theater:not(.summary-open) .sidebar {
   visibility: hidden;
+  width: 0;
+  max-width: 0;
+  height: 0;
+  padding: 0;
+  border: none;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.course-view.theater .lesson-sidebar-toggle {
+  display: inline-flex;
 }
 
 /* Modo Teatro: escala fluida e proporcional sem estourar a viewport */
@@ -3235,7 +3236,7 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  flex: 1 1 240px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 .lesson-header .lesson-title-block {
@@ -3377,6 +3378,8 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius);
   padding: 10px;
+  height: calc(100vh - 90px);
+  height: calc(100dvh - 90px);
   max-height: calc(100vh - 90px);
   max-height: calc(100dvh - 90px);
   overflow: hidden;
@@ -3924,7 +3927,7 @@ body {
     display: inline-flex;
   }
   .player-wrap {
-    min-height: 240px;
+    min-height: 0;
   }
   .player-controls {
     justify-content: flex-start;
@@ -4506,13 +4509,15 @@ body {
     gap: 12px;
     margin-top: 10px;
   }
-  .lesson-title-row {
+  .lesson-header .lesson-title-row {
     width: 100%;
     flex: none;
+    height: auto;
+    min-height: 0;
     gap: 10px;
     align-items: center;
   }
-  .lesson-title-block {
+  .lesson-header .lesson-title-block {
     flex: 1;
     min-width: 0;
   }
@@ -4634,16 +4639,19 @@ body {
     font-size: 13.5px;
   }
   .course-toolbar-actions .secondary-btn {
-    flex: 1;
+    flex: 1 1 auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 40px;
+    min-height: 38px;
+    padding: 8px 10px;
     font-size: 12px;
+    white-space: nowrap;
   }
   .course-toolbar-actions {
     width: 100%;
-    gap: 6px;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .pc-vol-label {
@@ -7405,13 +7413,13 @@ body {
     display: none;
   }
 
-/* Landscape largo: sem itens sobrando no ⋮ (teatro/sumário ocultos acima e
-   grupos estreitos só até 640px), o botão some junto — sem popover vazio. */
-@media (orientation: landscape) and (max-height: 550px) and (min-width: 641px) {
-  .pc-group-more {
-    display: none;
+  /* Landscape largo: sem itens sobrando no ⋮ (teatro/sumário ocultos acima e
+     grupos estreitos só até 640px), o botão some junto — sem popover vazio. */
+  @media (min-width: 641px) {
+    .pc-group-more {
+      display: none;
+    }
   }
-}
 
   /* Título/breadcrumb e Anterior/Concluir/Próxima/Tutor ficam no fluxo de
      rolagem ABAIXO do player (nunca competem pelo viewport inicial); a

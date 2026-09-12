@@ -961,6 +961,13 @@ function applyViewModeToDOM() {
       summaryItem.textContent = open ? "Fechar sumário" : "Resumo da aula";
     }
   }
+  const lessonToggle = document.getElementById("lesson-sidebar-toggle");
+  if (lessonToggle) {
+    const isMobile = isMobileDrawer();
+    const open = isMobile ? !!(view && view.classList.contains("drawer-open")) : (theater && getSummaryOpen());
+    lessonToggle.setAttribute("aria-expanded", String(open));
+    lessonToggle.title = open ? "Fechar lista de aulas" : "Abrir lista de aulas";
+  }
 }
 
 function toggleTheaterMode() {
@@ -2154,7 +2161,7 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
           <div class="course-toolbar-actions">
             <button class="secondary-btn" id="toggle-fav-course">${isFavorite(course.path, course.libId) ? "★ Favorito" : "☆ Favoritar"}</button>
             ${courseSubtitleBtn}
-            <button class="secondary-btn" id="clear-course-progress">Limpar progresso do curso</button>
+            <button class="secondary-btn" id="clear-course-progress">Limpar progresso</button>
           </div>
         </div>
         <div class="player-wrap" id="player-wrap"></div>
@@ -2287,6 +2294,7 @@ function route() {
   }
   detachAudioSource();
   fallbackPreparing = false;
+  window.scrollTo(0, 0);
 
   const app = document.getElementById("app");
   const hash = location.hash.slice(1) || "/";
@@ -2380,6 +2388,12 @@ async function init() {
   await loadAll();
   route();
   window.addEventListener("hashchange", route);
+  window.addEventListener("resize", () => {
+    if (!isMobileDrawer()) {
+      closeMobileDrawer();
+    }
+    applyViewModeToDOM();
+  });
   window.addEventListener("beforeunload", () => {
     if (currentVideoBeacon) currentVideoBeacon(false);
   });
