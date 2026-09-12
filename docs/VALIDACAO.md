@@ -6,12 +6,9 @@ a suíte automatizada; o restante é exercício manual do fluxo real.
 ## 1. Suíte automatizada
 
 ```bash
-node --check server.js public/app.js public/scope.js
+node --check server.js electron-main.js public/app.js public/scope.js public/js/*.js server/*.js server/**/*.js
 git diff --check
-node --test test/progress.test.js test/topics.test.js test/libraries.test.js \
-  test/scope.test.js test/sidebar.test.js test/sidebar-runtime-smoke.js \
-  test/progress-invariance.test.js test/progress-persistence.test.js \
-  test/progress-forensic.test.js
+npm test
 ```
 
 `progress`, `sidebar-runtime-smoke`, `progress-invariance`,

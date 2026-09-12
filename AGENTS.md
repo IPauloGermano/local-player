@@ -26,7 +26,7 @@ npm install --no-bin-links   # --no-bin-links ajuda em drives externos/FAT/exFAT
 npm start                    # node server.js, escuta em :4173 (PORT/HOST override)
 ```
 
-- Sintaxe: `node --check server.js public/app.js public/scope.js public/js/*.js server/*.js server/**/*.js`
+- Sintaxe: `node --check server.js electron-main.js public/app.js public/scope.js public/js/*.js server/*.js server/**/*.js`
 - Testes:
 
 ```bash

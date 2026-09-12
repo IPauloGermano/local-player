@@ -55,20 +55,49 @@ sem envio para a internet.
 - **Interface responsiva**: suporte completo a desktop, tablet e smartphones com
   drawer retrátil para navegação.
 
-## Requisitos
+## Escolha como usar
 
+Você pode usar o Local Player de duas formas: baixando o executável pronto para Linux (**AppImage**) ou rodando direto pelo código-fonte (**Web / Node.js**).
+
+---
+
+## Baixar pronto (AppImage)
+
+A forma mais simples e recomendada para desktop Linux — sem necessidade de instalar Node.js ou compilar dependências:
+
+1. Acesse as [Releases](https://github.com/IPauloGermano/local-player/releases) e baixe o `LocalPlayer.AppImage`.
+2. Dê permissão de execução e execute:
+   ```bash
+   chmod +x LocalPlayer.AppImage
+   ./LocalPlayer.AppImage
+   ```
+
+> **IA & Whisper offline**: Para usar legendas automáticas offline no AppImage, coloque seus modelos Whisper (ex: `ggml-small.bin`) em uma pasta `models/` ao lado do executável `LocalPlayer.AppImage` ou configure a variável `WHISPER_MODEL_DIR`. Modelos e binários pesados nunca são commitados no repositório.
+
+### Gerando e publicando novas versões (AppImage)
+
+Para desenvolvedores que desejam compilar o AppImage a partir do código:
+```bash
+npm run dist
+gh release create vX.Y.Z dist/LocalPlayer.AppImage --title "vX.Y.Z" --notes "Notas da versão"
+```
+
+---
+
+## Rodar via código (web)
+
+Para quem prefere rodar o servidor HTTP localmente e acessar via navegador:
+
+### Requisitos
 - **Sistema Operacional**: Linux (Fedora, Ubuntu, Debian, Arch Linux, openSUSE, etc.).
 - **Node.js**: 18+.
 - **Navegador moderno**: Firefox, Chrome, Chromium, Brave, Edge.
-- **FFmpeg / FFprobe (opcionais)**: necessários apenas para transcoding de vídeos
-  incompatíveis e extração de áudio para legendas.
-- **Whisper.cpp (opcional)**: necessário apenas para transcrição local de legendas
-  (ver `docs/whisper.md`).
+- **FFmpeg / FFprobe (opcionais)**: necessários apenas para transcoding de vídeos incompatíveis e extração de áudio para legendas.
+- **Whisper.cpp (opcional)**: necessário apenas para transcrição local de legendas (ver `docs/whisper.md`).
 
-## Como rodar
+### Instalação
 
-O app deve ficar em uma pasta cujo **pai seja a raiz da biblioteca padrão** (a
-raiz é derivada da localização do app, nunca hardcoded):
+O app deve ficar em uma pasta cujo **pai seja a raiz da biblioteca padrão** (a raiz é derivada da localização do app, nunca hardcoded):
 
 ```text
 Minha Biblioteca/
@@ -77,40 +106,33 @@ Minha Biblioteca/
 └── _LocalPlayer/          ← pasta do app (nome livre)
 ```
 
-### Instalação
-
 ```bash
 npm install --no-bin-links   # --no-bin-links ajuda em drives externos/FAT/exFAT
 ```
 
 ### Execução
 
-Você pode executar o Local Player de duas formas:
+Você pode executar o Local Player das seguintes formas:
 
-#### Opção 1: Em segundo plano (sem janela de terminal aberta)
-
-```bash
-./local-player.sh
-# ou via npm:
-npm run start:bg
-```
-
-O script inicia o servidor desacoplado da sessão (`setsid`), abre o navegador padrão automaticamente e libera o terminal imediatamente. Para encerrar o servidor em background:
-
-```bash
-./stop.sh
-# ou:
-npm run stop
-```
-
-#### Opção 2: No terminal (foreground tradicional)
-
+#### Opção 1: No terminal (foreground tradicional - Web)
 ```bash
 npm start                    # servidor em http://localhost:4173
 ```
+`PORT` e `HOST` sobrescrevem porta e interface (padrão: todas as interfaces — use `HOST=127.0.0.1` para restringir à máquina local).
 
-`PORT` e `HOST` sobrescrevem porta e interface (padrão: todas as interfaces —
-use `HOST=127.0.0.1` para restringir à máquina local).
+#### Opção 2: Em segundo plano (sem janela de terminal aberta)
+```bash
+./local-player.sh            # ou: npm run start:bg
+```
+Para encerrar o servidor em background:
+```bash
+./stop.sh                    # ou: npm run stop
+```
+
+#### Opção 3: Modo Desktop nativo (janela Electron)
+```bash
+npm run start:desktop        # abre a janela desktop integrada via Electron
+```
 
 ---
 

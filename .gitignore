@@ -42,3 +42,7 @@ $RECYCLE.BIN/
 models/
 bin/
 
+# ===== Build Electron / Dist =====
+dist/
+builder-debug.yml
+builder-effective-config.yaml

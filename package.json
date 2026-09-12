@@ -1,18 +1,66 @@
 {
   "name": "local-player",
+  "desktopName": "local-player.desktop",
   "version": "1.0.0",
   "description": "Player local/offline para organizar e reproduzir conteúdo de mídia em disco",
+  "author": "Local Player",
   "private": true,
-  "main": "server.js",
+  "main": "electron-main.js",
   "scripts": {
     "start": "node server.js",
     "start:bg": "./local-player.sh",
     "stop": "./stop.sh",
+    "start:desktop": "electron .",
+    "start:web": "node server.js",
+    "dist": "electron-builder --linux AppImage",
+    "dist:dir": "electron-builder --linux dir --dir",
     "shortcut:install": "./instalar-atalho.sh",
     "shortcut:remove": "./remover-atalho.sh",
     "test": "node --test test/*.test.js test/*-smoke.js"
   },
   "dependencies": {
     "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "electron": "^44.3.0",
+    "electron-builder": "^26.7.1"
+  },
+  "build": {
+    "appId": "com.localplayer.app",
+    "productName": "Local Player",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "AudioVideo",
+      "icon": "build/icons",
+      "executableName": "local-player",
+      "syncDesktopName": true,
+      "artifactName": "LocalPlayer.AppImage",
+      "synopsis": "Player local/offline de cursos e midia"
+    },
+    "files": [
+      "**/*",
+      "!test/**",
+      "!data/**",
+      "!models/**",
+      "!bin/**",
+      "!*.sh",
+      "!dist/**"
+    ],
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": false
   }
 }
