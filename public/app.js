@@ -36,15 +36,9 @@ const {
   collectOrphanRecords,
 } = window.LocalPlayerScope;
 
-// Limite de cards de "Continuar assistindo": 4 no mobile (coluna única,
-// pouco espaço vertical), 8 no PC. Avaliado a cada render (sem listeners de
-// resize — a troca de rota re-renderiza e reaplica).
+// Limite de cards de "Continuar assistindo": limitado a no máximo 4 cards.
 function continueLimit() {
-  try {
-    return window.matchMedia("(max-width: 640px)").matches ? 4 : 8;
-  } catch {
-    return 8;
-  }
+  return 4;
 }
 
 // Marca cada nó de uma árvore com o id da biblioteca a que pertence — o rel
@@ -829,17 +823,14 @@ function renderContinueCard(item, i) {
     </a>`;
 }
 
-// Seção "Continuar assistindo": cabeçalho + cards. `summary` vem do escopo.
+// Seção "Continuar assistindo": cabeçalho + cards.
 function renderContinueSection(items, summary) {
-  const inProgressLabel = `${summary.inProgressLessons} ${
-    summary.inProgressLessons === 1 ? "aula" : "aulas"
-  } em andamento`;
   let html = `
     <section class="home-section">
       <div class="section-head">
         <div>
           <h2 class="section-heading">Continuar assistindo</h2>
-          <p class="section-subtitle">Retome de onde parou · ${inProgressLabel}</p>
+          <p class="section-subtitle">Retome de onde parou</p>
         </div>
       </div>
       <div class="continue-row">`;
@@ -1055,7 +1046,16 @@ function renderHome(app) {
     html += `<div class="section-title">${sectionLabel} <span class="count">(${totalShown})</span></div>`;
   }
   if (!totalShown) {
-    if (!libs.length) {
+    const unavailableLibs = (state.libraries || []).filter(
+      (l) => l.enabled !== false && (l.status === "unavailable" || l.status === "error"),
+    );
+    if (unavailableLibs.length > 0 && !libs.length) {
+      html += `<div class="empty-state" style="border: 1px solid rgba(234, 179, 8, 0.35); background: rgba(234, 179, 8, 0.08); border-radius: 10px; padding: 24px; text-align: center; margin: 20px 0;">
+        <div style="font-size: 1.15rem; font-weight: 600; margin-bottom: 8px; color: #eab308;">⚠ Biblioteca indisponível</div>
+        <p style="margin-bottom: 14px; opacity: 0.85;">O dispositivo ou pasta onde seus cursos estão armazenados não está acessível no momento.</p>
+        <a href="#/settings" class="btn btn--primary" style="display: inline-block; text-decoration: none; padding: 8px 18px; border-radius: 6px; font-weight: 500;">Configurações → Bibliotecas</a>
+      </div>`;
+    } else if (!libs.length) {
       html += `<div class="empty-state">Nenhuma biblioteca configurada. Adicione uma pasta em <a href="#/settings" style="text-decoration:underline;color:inherit;font-weight:600;">Configurações → Bibliotecas</a>.</div>`;
     } else {
       html += `<div class="empty-state">Nenhum curso encontrado na biblioteca.</div>`;

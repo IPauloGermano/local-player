@@ -11,7 +11,36 @@ function renderMarkdownToHtml(markdown) {
 // Baixa um texto como arquivo no navegador (sem backend): cria um Blob,
 // gera URL temporária e dispara um <a download>. Usado pelos botões
 // "⬇ .md / .txt" de cada resposta do assistente.
+function copyTextToClipboard(text) {
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    return navigator.clipboard.writeText(text).catch(() => fallbackCopyText(text));
+  }
+  return Promise.resolve(fallbackCopyText(text));
+}
+
+function fallbackCopyText(text) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.style.top = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+var _lastDownloadTime = 0;
 function downloadTutorFile(filename, text, mime) {
+  const now = Date.now();
+  if (now - _lastDownloadTime < 1000) return;
+  _lastDownloadTime = now;
   try {
     const blob = new Blob([text], { type: mime + ";charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -251,6 +280,9 @@ function switchTutorTab(tabName, video) {
 
 function wireTutorDrawerEvents(video) {
   const drawer = document.getElementById("tutor-drawer");
+  if (!drawer || drawer.dataset.wired === "true") return;
+  drawer.dataset.wired = "true";
+
   const closeBtn = document.getElementById("tutor-close");
   const backdrop = document.getElementById("tutor-backdrop");
   const newChatBtn = document.getElementById("tutor-new-chat");
@@ -312,18 +344,58 @@ function wireTutorDrawerEvents(video) {
       // Botão de copiar código
       const copyBtn = e.target.closest(".tutor-code-copy-btn");
       if (copyBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (copyBtn.disabled) return;
+        copyBtn.disabled = true;
         const card = copyBtn.closest(".tutor-code-card");
         const code = card?.querySelector("code")?.textContent || "";
         if (code) {
-          navigator.clipboard.writeText(code).then(() => {
+          copyTextToClipboard(code).then(() => {
             const textSpan = copyBtn.querySelector(".tutor-copy-text");
             if (textSpan) textSpan.textContent = "Copiado!";
             copyBtn.classList.add("copied");
             setTimeout(() => {
               if (textSpan) textSpan.textContent = "Copiar";
               copyBtn.classList.remove("copied");
+              copyBtn.disabled = false;
             }, 2000);
+          }).catch(() => {
+            copyBtn.disabled = false;
           });
+        } else {
+          copyBtn.disabled = false;
+        }
+        return;
+      }
+
+      // Botão de copiar mensagem (usuário ou assistente)
+      const copyMsgBtn = e.target.closest("[data-tutor-copy]");
+      if (copyMsgBtn && copyMsgBtn.dataset.tutorCopy !== undefined) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (copyMsgBtn.disabled) return;
+        copyMsgBtn.disabled = true;
+        const vid = tutorState.currentVideo || video;
+        const history = getTutorHistory(vid ? vid.path : "");
+        const idx = parseInt(copyMsgBtn.dataset.tutorCopy, 10);
+        const msg = history[idx];
+        if (msg && msg.content) {
+          copyTextToClipboard(msg.content).then(() => {
+            const span = copyMsgBtn.querySelector("span");
+            const prevText = span ? span.textContent : "Copiar";
+            if (span) span.textContent = "Copiado!";
+            copyMsgBtn.classList.add("copied");
+            setTimeout(() => {
+              if (span) span.textContent = prevText;
+              copyMsgBtn.classList.remove("copied");
+              copyMsgBtn.disabled = false;
+            }, 2000);
+          }).catch(() => {
+            copyMsgBtn.disabled = false;
+          });
+        } else {
+          copyMsgBtn.disabled = false;
         }
         return;
       }
@@ -331,8 +403,22 @@ function wireTutorDrawerEvents(video) {
       // Botão de download da resposta (.md / .txt)
       const dlBtn = e.target.closest("[data-tutor-dl]");
       if (dlBtn && dlBtn.dataset.tutorMsg !== undefined) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (dlBtn.disabled) return;
+        dlBtn.disabled = true;
         const vid = tutorState.currentVideo || video;
-        downloadTutorMessage(vid, parseInt(dlBtn.dataset.tutorMsg, 10), dlBtn.dataset.tutorDl);
+        const format = dlBtn.dataset.tutorDl;
+        downloadTutorMessage(vid, parseInt(dlBtn.dataset.tutorMsg, 10), format);
+        const span = dlBtn.querySelector("span");
+        const prevText = span ? span.textContent : format.toUpperCase();
+        if (span) span.textContent = "Baixado!";
+        dlBtn.classList.add("copied");
+        setTimeout(() => {
+          if (span) span.textContent = prevText;
+          dlBtn.classList.remove("copied");
+          dlBtn.disabled = false;
+        }, 1500);
         return;
       }
 
@@ -420,8 +506,6 @@ function openTutorDrawer(video) {
   if (!drawer) {
     initTutorDrawer(video);
     drawer = document.getElementById("tutor-drawer");
-  } else {
-    wireTutorDrawerEvents(video);
   }
   const bd = document.getElementById("tutor-backdrop");
   if (drawer) {
@@ -519,7 +603,14 @@ function renderTutorMessages(video) {
       lastUserText = msg.content || "";
       html += `
         <div class="tutor-msg tutor-msg-user">
-          <div class="tutor-msg-bubble">${escapeHtml(msg.content)}</div>
+          <div class="tutor-msg-main">
+            <div class="tutor-msg-bubble">${escapeHtml(msg.content)}</div>
+            <div class="tutor-msg-actions">
+              <button type="button" class="tutor-dl-btn" data-tutor-copy="${i}" title="Copiar minha mensagem" aria-label="Copiar mensagem">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copiar</span>
+              </button>
+            </div>
+          </div>
         </div>`;
     } else {
       const formatted = renderMarkdownToHtml(msg.content);
@@ -536,14 +627,18 @@ function renderTutorMessages(video) {
           <div class="tutor-msg-bubble ${msg.error ? "tutor-msg-error" : ""}">
             ${formatted}
           </div>
-          ${downloadable ? `
+          ${!msg.error && msg.content ? `
           <div class="tutor-msg-actions">
+            <button type="button" class="tutor-dl-btn" data-tutor-copy="${i}" title="Copiar resposta" aria-label="Copiar resposta">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copiar</span>
+            </button>
+            ${downloadable ? `
             <button type="button" class="tutor-dl-btn" data-tutor-dl="md" data-tutor-msg="${i}" title="Baixar esta resposta em Markdown (.md)" aria-label="Baixar em Markdown">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>MD</span>
             </button>
             <button type="button" class="tutor-dl-btn" data-tutor-dl="txt" data-tutor-msg="${i}" title="Baixar esta resposta em texto puro (.txt)" aria-label="Baixar em texto puro">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>TXT</span>
-            </button>
+            </button>` : ""}
           </div>` : ""}
           </div>
         </div>`;

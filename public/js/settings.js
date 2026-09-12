@@ -27,9 +27,14 @@ function stopCapture(preserveMsg) {
     msg.textContent = "";
     msg.classList.remove("error");
   }
+  const currentKey = getShortcuts()[action];
+  const kbd = row.querySelector(".shortcut-key");
+  if (kbd) {
+    kbd.textContent = shortcutLabel(currentKey);
+  }
   row.setAttribute(
     "aria-label",
-    `Atalho de ${SHORTCUT_LABELS[action]}: ${shortcutLabel(getShortcuts()[action])}`,
+    `Atalho de ${SHORTCUT_LABELS[action]}: ${shortcutLabel(currentKey)}`,
   );
 }
 
@@ -712,7 +717,10 @@ function openLibraryDialog(app, { mode, libId, onSaved }) {
         }</p>
         <div class="lib-field">
           <label class="ai-label" for="lib-path">Caminho da pasta</label>
-          <input class="ai-input" id="lib-path" type="text" value="${escapeHtml(lib ? lib.path : "")}" placeholder="/caminho/para/sua/pasta" autocomplete="off">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input class="ai-input" id="lib-path" type="text" value="${escapeHtml(lib ? lib.path : "")}" placeholder="/caminho/para/sua/pasta" autocomplete="off" style="flex:1;">
+            <button type="button" class="btn btn--secondary" id="lib-browse-btn" style="white-space:nowrap;padding:8px 12px;font-size:0.875rem;cursor:pointer;">📁 Escolher pasta…</button>
+          </div>
         </div>
         <div class="lib-field">
           <label class="ai-label" for="lib-name">Nome (opcional)</label>
@@ -743,6 +751,27 @@ function openLibraryDialog(app, { mode, libId, onSaved }) {
     if (event.target === overlay) close();
   });
   overlay.querySelector(".btn-cancel").addEventListener("click", close);
+
+  const browseBtn = overlay.querySelector("#lib-browse-btn");
+  if (browseBtn) {
+    browseBtn.addEventListener("click", async () => {
+      try {
+        browseBtn.disabled = true;
+        const res = await fetch("/api/system/select-folder", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (data && data.path) {
+          pathInput.value = data.path;
+          if (!nameInput.value) {
+            const parts = data.path.split(/[/\\]/).filter(Boolean);
+            if (parts.length) nameInput.value = parts[parts.length - 1];
+          }
+        }
+      } catch {}
+      finally {
+        browseBtn.disabled = false;
+      }
+    });
+  }
 
   const confirmBtn = overlay.querySelector(".btn-confirm");
   const pathInput = overlay.querySelector("#lib-path");
@@ -1339,7 +1368,12 @@ function renderAiTranscription() {
     </div>
     <div class="ai-field">
       <label class="ai-label" for="ai-tr-model">Modelo</label>
-      <select class="ai-select" id="ai-tr-model">${modelOptions || '<option value="">—</option>'}</select>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <select class="ai-select" id="ai-tr-model" style="flex: 1; min-width: 200px;">${modelOptions || '<option value="">—</option>'}</select>
+        <button type="button" class="btn btn--secondary" id="ai-btn-select-model" style="font-size: 13px; padding: 6px 12px; white-space: nowrap;">📁 Selecionar arquivo .bin</button>
+        <button type="button" class="btn btn--secondary" id="ai-btn-open-models-dir" style="font-size: 13px; padding: 6px 12px; white-space: nowrap;">📂 Abrir pasta de modelos</button>
+      </div>
+      <p class="ai-note" id="ai-model-dir-hint" style="margin-top: 6px; font-size: 12px; opacity: 0.85;"></p>
     </div>
     <div class="ai-field">
       <label class="ai-label" for="ai-tr-language">Idioma</label>
@@ -1464,6 +1498,54 @@ function bindAiTranscription(panel) {
       renderAiPanelInto(panel);
     });
   }
+
+  const selectModelBtn = document.getElementById("ai-btn-select-model");
+  if (selectModelBtn) {
+    selectModelBtn.addEventListener("click", async () => {
+      selectModelBtn.disabled = true;
+      selectModelBtn.textContent = "Selecionando...";
+      try {
+        const res = await fetch("/api/ai/models/select-file", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+        });
+        const data = await res.json();
+        if (data && data.supported && !data.canceled && data.path) {
+          aiState.status = await (await fetch("/api/ai/status")).json();
+          renderAiPanelInto(panel);
+        }
+      } catch (err) {
+        console.error("Erro ao selecionar modelo:", err);
+      } finally {
+        selectModelBtn.disabled = false;
+        selectModelBtn.textContent = "📁 Selecionar arquivo .bin";
+      }
+    });
+  }
+
+  const openModelsBtn = document.getElementById("ai-btn-open-models-dir");
+  if (openModelsBtn) {
+    openModelsBtn.addEventListener("click", async () => {
+      try {
+        await fetch("/api/ai/models/open-folder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+        });
+      } catch (err) {
+        console.error("Erro ao abrir pasta de modelos:", err);
+      }
+    });
+  }
+
+  fetch("/api/ai/models/info")
+    .then((r) => r.json())
+    .then((info) => {
+      const hint = document.getElementById("ai-model-dir-hint");
+      if (hint && info && info.ok) {
+        hint.textContent = `Pasta de modelos: ${info.modelDir}`;
+      }
+    })
+    .catch(() => {});
 }
 
 function aiGoToTab(tab) {
@@ -2141,10 +2223,12 @@ function renderAiModels() {
     ${asrBlock}
     <h4 class="ai-block-title">Modelos de LLM</h4>
     ${llmBlock}
-    <div class="settings-actions">
+    <div class="settings-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <button class="btn btn--primary" id="ai-md-select-file" type="button">📁 Selecionar arquivo .bin</button>
+      <button class="btn btn--secondary" id="ai-md-open-folder" type="button">📂 Abrir pasta de modelos</button>
       <button class="btn btn--secondary" id="ai-md-check" type="button">Verificar novamente</button>
     </div>
-    <p class="ai-note">Instalação manual do ASR: coloque o binário em <code>bin/</code> e o modelo em <code>models/</code> (consulte o README de cada pasta). Nada é baixado automaticamente pelo projeto.</p>`;
+    <p class="ai-note" id="ai-models-tab-hint">Modelos suportados: <code>ggml-small.bin</code> (recomendado), <code>ggml-base.bin</code>, <code>ggml-tiny.bin</code>.</p>`;
 }
 function bindAiModels(panel) {
   const check = document.getElementById("ai-md-check");
@@ -2154,6 +2238,54 @@ function bindAiModels(panel) {
       renderAiPanelInto(panel);
     });
   }
+
+  const selectBtn = document.getElementById("ai-md-select-file");
+  if (selectBtn) {
+    selectBtn.addEventListener("click", async () => {
+      selectBtn.disabled = true;
+      selectBtn.textContent = "Selecionando...";
+      try {
+        const res = await fetch("/api/ai/models/select-file", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+        });
+        const data = await res.json();
+        if (data && data.supported && !data.canceled && data.path) {
+          aiState.status = await (await fetch("/api/ai/status")).json();
+          renderAiPanelInto(panel);
+        }
+      } catch (err) {
+        console.error("Erro ao selecionar modelo:", err);
+      } finally {
+        selectBtn.disabled = false;
+        selectBtn.textContent = "📁 Selecionar arquivo .bin";
+      }
+    });
+  }
+
+  const openFolderBtn = document.getElementById("ai-md-open-folder");
+  if (openFolderBtn) {
+    openFolderBtn.addEventListener("click", async () => {
+      try {
+        await fetch("/api/ai/models/open-folder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+        });
+      } catch (err) {
+        console.error("Erro ao abrir pasta de modelos:", err);
+      }
+    });
+  }
+
+  fetch("/api/ai/models/info")
+    .then((r) => r.json())
+    .then((info) => {
+      const hint = document.getElementById("ai-models-tab-hint");
+      if (hint && info && info.ok) {
+        hint.innerHTML = `Pasta monitorada: <code>${escapeHtml(info.modelDir)}</code><br>Modelos suportados: <code>ggml-small.bin</code> (recomendado), <code>ggml-base.bin</code>, <code>ggml-tiny.bin</code>.`;
+      }
+    })
+    .catch(() => {});
 }
 
 function renderAiAdvanced() {

@@ -282,6 +282,41 @@
     return null;
   }
 
+  // Normaliza LaTeX para o KaTeX vendored (0.16.11): o KaTeX não suporta
+  // separadores de coluna `@{...}` / `!{...}` no especificador do
+  // `\begin{array}{...}` (ex.: `{r@{\quad}l}`, comum em contas armadas
+  // geradas por LLMs) nem alinhamentos de posição `[t|b|c]` em array,
+  // devolvendo `katex-error` com o fonte cru em vermelho ou bloco de código.
+  // Mantém só o que o KaTeX entende (`l`, `c`, `r`, `|`, `:`); se nada
+  // restar ou não for especificado, usa `c`. Converte também tabular -> array.
+  // Idempotente e segura para chamar sempre antes de renderizar.
+  function sanitizeLatexForKatex(latex) {
+    if (typeof latex !== "string" || (!latex.includes("\\begin") && !latex.includes("\\end"))) return latex;
+    let out = latex;
+    // Converte ambiente tabular para array (KaTeX não implementa tabular nativo)
+    out = out.replace(/\\begin\{tabular\}/g, "\\begin{array}").replace(/\\end\{tabular\}/g, "\\end{array}");
+
+    return out.replace(/\\begin\{(array|alignedat|aligned)\}(?:\s*\[[^\]]*\])?(?:\s*\{([^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}[^{}]*)*)\})?/g, (match, env, spec) => {
+      if (spec === undefined) {
+        // Se \begin{array} foi emitido sem especificador de coluna {}, fornece {c} como padrão
+        return env === "array" ? `\\begin{array}{c}` : `\\begin{${env}}`;
+      }
+      let s = String(spec);
+      // Remove separadores @{...} (com múltiplos níveis de chaves aninhadas, ex.: @{\hspace{1cm}} ou @{\quad})
+      s = s.replace(/@[ \t]*\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}/g, "");
+      // Remove separadores !{...} e modificadores >{...} <{...}
+      s = s.replace(/[!><][ \t]*\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}/g, "");
+      // Remove colunas p{...}/m{...}/b{...} → trata como coluna centrada
+      s = s.replace(/[pmb][ \t]*\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}/g, "c");
+      // Expande *{n}{cols} → repete cols n vezes (ex.: *{2}{c} → cc)
+      s = s.replace(/\*\s*\{(\d+)\}\s*\{([^{}]*)\}/g, (_, n, cols) => cols.repeat(Math.min(32, parseInt(n, 10) || 1)));
+      // Mantém só alinhamentos que o KaTeX conhece (l, c, r, |, :)
+      s = s.replace(/[^lcr|:]/g, "");
+      if (!s) s = "c";
+      return `\\begin{${env}}{${s}}`;
+    });
+  }
+
   // Converte formatos HH:MM:SS ou MM:SS em segundos (número).
   function parseTimestampToSeconds(ts) {
     if (!ts || typeof ts !== "string") return 0;
@@ -405,8 +440,8 @@
       mathItems.push({ block: true, content: math.trim() });
       return placeholder;
     });
-    // Inline: \(...\)
-    processed = processed.replace(/\\\((.+?)\\\)/g, (_, math) => {
+    // Inline: \(...\) (multilinha: contas armadas em array quebram linha)
+    processed = processed.replace(/\\\(([\s\S]+?)\\\)/g, (_, math) => {
       const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
       mathItems.push({ block: false, content: math.trim() });
       return placeholder;
@@ -415,6 +450,15 @@
     processed = processed.replace(/(?<!\\)\$(?!\s)([^\$\n]+?)(?<!\s)\$/g, (_, math) => {
       const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
       mathItems.push({ block: false, content: math.trim() });
+      return placeholder;
+    });
+    // Ambientes LaTeX nus (sem $$/\(\) — alguns LLMs emitem o \begin{array}
+    // puro em contas armadas): envolve como bloco para não vazar fonte crua.
+    // Roda DEPOIS das extrações acima, então o que já estava delimitado virou
+    // placeholder e não casa aqui (sem duplo-wrap).
+    processed = processed.replace(/\\begin\{(array|tabular|matrix|bmatrix|pmatrix|vmatrix|Vmatrix|aligned|gathered|cases|split)\}[\s\S]*?\\end\{\1\}/g, (math) => {
+      const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
+      mathItems.push({ block: true, content: math.trim() });
       return placeholder;
     });
 
@@ -626,11 +670,20 @@
 
       if (kLib && typeof kLib.renderToString === "function") {
         try {
-          const rendered = kLib.renderToString(item.content, {
+          const source = sanitizeLatexForKatex(item.content);
+          let rendered = kLib.renderToString(source, {
             displayMode: item.block,
             throwOnError: false,
             trust: false,
           });
+          // Se mesmo sanitizado o KaTeX devolver erro (sintaxe inválida do
+          // modelo), não exibe o fonte cru em vermelho: mostra como código.
+          if (rendered.includes("katex-error")) {
+            const safe = escapeHtml(item.content);
+            return item.block
+              ? `<div class="tutor-math-block"><code class="tutor-math">${safe}</code></div>`
+              : `<code class="tutor-math tutor-math-inline">${safe}</code>`;
+          }
           if (item.block) {
             return `<div class="tutor-math-block">${rendered}</div>`;
           }
@@ -715,5 +768,6 @@
     renderMarkdownToHtml,
     escapeHtml,
     getKatex,
+    sanitizeLatexForKatex,
   };
 });

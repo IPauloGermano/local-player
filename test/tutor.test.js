@@ -220,6 +220,21 @@ test("Tutor IA: renderização rica de fórmulas matemáticas LaTeX com KaTeX", 
   const streamHtml = renderMarkdownToHtml(incompleteStream);
   assert.ok(!streamHtml.includes("katex-error"), "Fórmula aberta no streaming não deve explodir erro do KaTeX");
   assert.ok(streamHtml.includes("E[Y \\mid \\theta]"), "Texto parcial deve ser preservado com segurança durante streaming");
+
+  // 6. Contas armadas com \begin{array}{r@{\quad}l} (subtração vertical com separador customizado)
+  const verticalArrayMd = "$$\\begin{array}{r@{\\quad}l} 5,400 \\\\ - 0,003 \\\\ \\hline 5,397 \\end{array}$$";
+  const verticalArrayHtml = renderMarkdownToHtml(verticalArrayMd);
+  assert.ok(verticalArrayHtml.includes("tutor-math-block"), "Deve conter container de bloco");
+  assert.ok(!verticalArrayHtml.includes("katex-error"), "Não deve conter erro do KaTeX");
+  assert.ok(!verticalArrayHtml.includes("code class=\"tutor-math\""), "Não deve falhar para código cru");
+  assert.ok(verticalArrayHtml.includes("5,400") && verticalArrayHtml.includes("5,397"), "Valores da conta devem estar presentes");
+
+  // 7. Conta armada em ambiente nu (sem $$) e com espaços antes do especificador
+  const nakedArrayMd = "\\begin{array} {r@{\\quad}l} 5,400 \\\\ - 0,003 \\\\ \\hline 5,397 \\end{array}";
+  const nakedArrayHtml = renderMarkdownToHtml(nakedArrayMd);
+  assert.ok(nakedArrayHtml.includes("tutor-math-block"), "Ambiente nu deve ser encapsulado como bloco");
+  assert.ok(!nakedArrayHtml.includes("katex-error"), "Não deve conter erro do KaTeX");
+  assert.ok(!nakedArrayHtml.includes("code class=\"tutor-math\""), "Não deve falhar para código cru");
 });
 
 test("Whisper: cálculo dinâmico de threads ideais (getOptimalTranscriptionThreads)", () => {

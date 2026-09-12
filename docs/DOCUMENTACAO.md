@@ -380,7 +380,7 @@ Resumo:
   (`collectDirectCourses`); sem curso direto na raiz (biblioteca toda em
   tópicos), cai para o **global** (`collectCoursesInScope`) — o bloco nunca
   some por estrutura. "Continuar assistindo" = **global** (todas as
-  bibliotecas, até 8 itens no PC e 4 no mobile, um por curso; `position > 5 && !completed`).
+  bibliotecas, até 4 itens, um por curso; `position > 5 && !completed`).
   Dentro de um tópico, ambos consideram **só a subárvore**
   (`collectCoursesInScope(topicNode)`), recursivo em tópicos aninhados;
   comparação por segmentos (`isDescendantPath`): `TI` não alcança `TI2`.

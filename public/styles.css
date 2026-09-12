@@ -27,6 +27,40 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+/* Scrollbars modernas, ultrafinas e que desaparecem em repouso (estilo overlay) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  transition: background 0.2s ease;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 html,
@@ -3063,17 +3097,28 @@ body {
   overflow-x: hidden;
   padding: 4px 4px 8px;
   scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.2s ease;
+}
+#tree-slot:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 #tree-slot::-webkit-scrollbar {
-  width: 8px;
-}
-#tree-slot::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
+  width: 5px;
 }
 #tree-slot::-webkit-scrollbar-track {
   background: transparent;
+}
+#tree-slot::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  transition: background 0.2s ease;
+}
+#tree-slot:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+}
+#tree-slot::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .tree-folder {
@@ -5359,16 +5404,26 @@ body {
   display: flex;
   flex-direction: column;
   gap: 26px;
-  scroll-behavior: smooth;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.2s ease;
+}
+.tutor-messages:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 .tutor-messages::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 .tutor-messages::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  background: transparent;
+  border-radius: 999px;
+  transition: background 0.2s ease;
+}
+.tutor-messages:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+}
+.tutor-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 /* Estado Inicial / Vazio */
@@ -5797,7 +5852,8 @@ body {
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.2);
 }
-.tutor-code-copy-btn.copied {
+.tutor-code-copy-btn.copied,
+.tutor-dl-btn.copied {
   color: #10b981;
   border-color: rgba(16, 185, 129, 0.4);
   background: rgba(16, 185, 129, 0.1);
@@ -5812,6 +5868,13 @@ body {
   min-width: 0;
   flex: 1;
 }
+.tutor-msg-user .tutor-msg-main {
+  align-items: flex-end;
+  max-width: 86%;
+}
+.tutor-msg-user .tutor-msg-main .tutor-msg-bubble {
+  max-width: 100%;
+}
 .tutor-msg-actions {
   display: flex;
   gap: 4px;
@@ -5821,6 +5884,7 @@ body {
   transition: opacity 0.15s ease;
 }
 .tutor-msg-assistant:hover .tutor-msg-actions,
+.tutor-msg-user:hover .tutor-msg-actions,
 .tutor-msg-actions:focus-within {
   opacity: 1;
 }

@@ -64,10 +64,10 @@ StartupNotify=true
 Categories=AudioVideo;Player;Video;Education;
 Keywords=video;player;curso;aula;offline;local;"
 
-  # Menu de aplicativos
-  rm -f "$apps_dir/local-player.desktop" 2>/dev/null || true
-  echo "$desktop_content" > "$apps_dir/localplayer.desktop"
-  chmod +x "$apps_dir/localplayer.desktop" 2>/dev/null || true
+  # Menu de aplicativos (padronizado em local-player.desktop)
+  rm -f "$apps_dir/localplayer.desktop" 2>/dev/null || true
+  echo "$desktop_content" > "$apps_dir/local-player.desktop"
+  chmod +x "$apps_dir/local-player.desktop" 2>/dev/null || true
   update-desktop-database "$apps_dir" 2>/dev/null || true
 
   # Área de Trabalho
