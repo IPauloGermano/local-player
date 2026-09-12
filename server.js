@@ -82,6 +82,7 @@ const {
   applyCavemanDirectives,
   applyRtkMaterialFiltering,
   applyHeadroomContextCompression,
+  applyAdhdDirectives,
   extractAndParseJson,
   buildQuizPrompt,
   buildFlashcardsPrompt,
@@ -4519,6 +4520,11 @@ function buildTutorSystemPrompt(context, customPrompt, skillsCfg = null, webCont
     base = applyCavemanDirectives(base, skillsCfg.caveman);
   }
 
+  // Injeta diretivas ADHD de formato acionável se a skill estiver ativa
+  if (skillsCfg?.adhd?.enabled && skillsCfg?.adhd?.applyToTutor !== false) {
+    base = applyAdhdDirectives(base, skillsCfg.adhd);
+  }
+
   let finalPrompt = `${base}\n\n<untrusted_lesson_context>\n${context}\n</untrusted_lesson_context>`;
   if (webContext && webContext.trim()) {
     finalPrompt += `\n\n<untrusted_web_context>\n${webContext.trim()}\n</untrusted_web_context>`;
@@ -6943,6 +6949,7 @@ if (require.main === module) {
     applyCavemanDirectives,
     applyRtkMaterialFiltering,
     applyHeadroomContextCompression,
+    applyAdhdDirectives,
     extractAndParseJson,
     buildQuizPrompt,
     buildFlashcardsPrompt,

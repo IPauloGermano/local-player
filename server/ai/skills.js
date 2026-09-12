@@ -1,4 +1,4 @@
-// Skills e Otimizadores de Contexto / Tokens (Caveman, RTK, Headroom)
+// Skills e Otimizadores de Contexto / Tokens (Caveman, RTK, Headroom, ADHD)
 
 const TUTOR_TEXT_EXTS = new Set([
   ".txt", ".md", ".markdown", ".rst", ".json", ".js", ".mjs", ".cjs", ".ts",
@@ -111,9 +111,28 @@ function applyHeadroomContextCompression(text, ext, headroomCfg) {
   return result;
 }
 
+// Skill 4: ADHD (ayghri/i-have-adhd, MIT) — Formato de resposta acionável.
+// Não mexe no conteúdo didático: molda a APRESENTAÇÃO (ação primeiro,
+// passos numerados, próximo passo concreto, sem preâmbulo/fechos).
+function applyAdhdDirectives(systemPrompt, adhdCfg) {
+  if (!systemPrompt || !adhdCfg || !adhdCfg.enabled) return systemPrompt;
+  const directive =
+    "\n\n[DIRETIVA SKILL ADHD ATIVA — formato de resposta acionável]:\n" +
+    "- Comece pela resposta ou próxima ação (comando, caminho ou trecho essencial primeiro).\n" +
+    "- Trabalhos com vários passos: numere, uma ação delimitada por passo.\n" +
+    "- Termine com UM próximo passo concreto executável em menos de dois minutos.\n" +
+    "- Suprima tangentes; resolva o assunto atual antes de levantar outro.\n" +
+    "- Estimativas de tempo sempre em unidades concretas (minutos), nunca 'rapidinho'.\n" +
+    "- Erros: informe local, causa e correção de forma objetiva, sem drama.\n" +
+    "- Listas com no máximo 5 itens.\n" +
+    "- Sem preâmbulo ('Ótima pergunta!'), sem recapitulação e sem fechos ('Espero ter ajudado').\n";
+  return systemPrompt + directive;
+}
+
 module.exports = {
   TUTOR_TEXT_EXTS,
   applyCavemanDirectives,
   applyRtkMaterialFiltering,
   applyHeadroomContextCompression,
+  applyAdhdDirectives,
 };

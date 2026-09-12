@@ -48,7 +48,7 @@ sem envio para a internet.
   chat streaming (SSE), com contexto automático da aula (transcrição, timestamps
   clicáveis e leitura inteligente de PDFs, Office e códigos), pesquisa web
   segura com proteção anti-SSRF e skills de otimização de tokens (Caveman, RTK,
-  Headroom).
+  Headroom) e formato de resposta (ADHD).
 - **Quizzes e Flashcards 3D por IA**: geração automática de questões de múltipla
   escolha com avaliação imediata e cartões de repetição espaçada com animação 3D
   baseados no conteúdo da aula.
@@ -209,6 +209,7 @@ Na aba lateral do Player, você tem acesso às ferramentas de estudo por IA:
   - *Caveman*: respostas concisas e econômicas em tokens.
   - *RTK*: filtragem de ruído e logs em materiais extensos.
   - *Headroom*: compressão estruturada de contexto e snippets.
+  - *ADHD*: respostas acionáveis (ação primeiro, passos numerados, próximo passo concreto).
 - **Quizzes**: gere testes rápidos de múltipla escolha com correção interativa e
   justificativas baseadas na aula.
 - **Flashcards 3D**: memorize conceitos-chave com cartões interativos giratórios.

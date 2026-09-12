@@ -14,10 +14,11 @@ const {
   applyCavemanDirectives,
   applyRtkMaterialFiltering,
   applyHeadroomContextCompression,
+  applyAdhdDirectives,
   buildTutorSystemPrompt,
 } = require("../server.js");
 
-test("Skills: defaultAiConfig contém estrutura válida para Caveman, RTK e Headroom", () => {
+test("Skills: defaultAiConfig contém estrutura válida para Caveman, RTK, Headroom e ADHD", () => {
   const cfg = defaultAiConfig();
   assert.ok(cfg.skills, "skills deve estar presente");
   assert.equal(typeof cfg.skills, "object");
@@ -41,6 +42,10 @@ test("Skills: defaultAiConfig contém estrutura válida para Caveman, RTK e Head
   assert.equal(cfg.skills.headroom.compressJson, true);
   assert.equal(cfg.skills.headroom.alignCache, true);
   assert.equal(cfg.skills.headroom.applyToContext, true);
+
+  // ADHD
+  assert.equal(cfg.skills.adhd.enabled, false);
+  assert.equal(cfg.skills.adhd.applyToTutor, true);
 });
 
 test("Skills: sanitizeAiConfig valida e corrige entradas de skills", () => {
@@ -60,6 +65,9 @@ test("Skills: sanitizeAiConfig valida e corrige entradas de skills", () => {
         enabled: true,
         compressJson: false,
       },
+      adhd: {
+        enabled: true,
+      },
     },
   });
 
@@ -73,6 +81,9 @@ test("Skills: sanitizeAiConfig valida e corrige entradas de skills", () => {
 
   assert.equal(sanitized.skills.headroom.enabled, true);
   assert.equal(sanitized.skills.headroom.compressJson, false);
+
+  assert.equal(sanitized.skills.adhd.enabled, true);
+  assert.equal(sanitized.skills.adhd.applyToTutor, true);
 });
 
 test("Skills: applyAiPatch aplica merges parciais com segurança", () => {
@@ -82,6 +93,7 @@ test("Skills: applyAiPatch aplica merges parciais com segurança", () => {
       caveman: { enabled: true, mode: "concise" },
       rtk: { enabled: true, maxLinesPerSnippet: 40 },
       headroom: { enabled: true },
+      adhd: { enabled: true, applyToTutor: false },
     },
   });
 
@@ -95,6 +107,9 @@ test("Skills: applyAiPatch aplica merges parciais com segurança", () => {
 
   assert.equal(patched.skills.headroom.enabled, true);
   assert.equal(patched.skills.headroom.compressCode, true); // manteve o padrão
+
+  assert.equal(patched.skills.adhd.enabled, true);
+  assert.equal(patched.skills.adhd.applyToTutor, false);
 });
 
 test("Skills: maskAiConfig serializa skills perfeitamente", () => {
@@ -218,6 +233,39 @@ test("Skill Headroom: applyHeadroomContextCompression minifica JSON e comprime c
   });
   assert.ok(!compressed.includes("\n\n\n"));
   assert.ok(!compressed.includes(";   \n"));
+});
+
+test("Skill ADHD: applyAdhdDirectives injeta formato acionável sem tocar conteúdo", () => {
+  const initialPrompt = "Você é um tutor.";
+
+  // Desabilitado ou ausente -> retorna inalterado
+  assert.equal(applyAdhdDirectives(initialPrompt, { enabled: false }), initialPrompt);
+  assert.equal(applyAdhdDirectives(initialPrompt, null), initialPrompt);
+  assert.equal(applyAdhdDirectives("", { enabled: true }), "");
+
+  const out = applyAdhdDirectives(initialPrompt, { enabled: true, applyToTutor: true });
+  assert.ok(out.startsWith(initialPrompt), "preserva o prompt original");
+  assert.ok(out.includes("DIRETIVA SKILL ADHD ATIVA"));
+  assert.ok(out.includes("5 itens"));
+  assert.ok(out.includes("dois minutos"));
+});
+
+test("Skill ADHD: buildTutorSystemPrompt injeta diretiva quando ativa", () => {
+  const withAdhd = buildTutorSystemPrompt("ctx", "", {
+    caveman: { enabled: false },
+    adhd: { enabled: true, applyToTutor: true },
+  });
+  assert.ok(withAdhd.includes("DIRETIVA SKILL ADHD ATIVA"));
+
+  const off = buildTutorSystemPrompt("ctx", "", {
+    adhd: { enabled: false },
+  });
+  assert.ok(!off.includes("DIRETIVA SKILL ADHD ATIVA"));
+
+  const notApplied = buildTutorSystemPrompt("ctx", "", {
+    adhd: { enabled: true, applyToTutor: false },
+  });
+  assert.ok(!notApplied.includes("DIRETIVA SKILL ADHD ATIVA"));
 });
 
 async function startTestServer(dataDir) {

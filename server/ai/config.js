@@ -119,6 +119,10 @@ function defaultAiConfig() {
         alignCache: true,
         applyToContext: true,
       },
+      adhd: {
+        enabled: false,
+        applyToTutor: true,
+      },
     },
     postprocessing: { capitalize: true, segment: true, technicalDictionary: false },
     llm: { providers: [] },
@@ -202,6 +206,10 @@ function sanitizeAiConfig(raw) {
   out.skills.headroom.compressJson = hr.compressJson !== false;
   out.skills.headroom.alignCache = hr.alignCache !== false;
   out.skills.headroom.applyToContext = hr.applyToContext !== false;
+
+  const adhd = objOr(sk.adhd, {});
+  out.skills.adhd.enabled = adhd.enabled === true;
+  out.skills.adhd.applyToTutor = adhd.applyToTutor !== false;
 
   const llm = objOr(raw.llm, {});
   if (Array.isArray(llm.providers)) {
@@ -401,6 +409,12 @@ function applyAiPatch(config, patch) {
       if (hr.compressJson !== undefined) out.skills.headroom.compressJson = hr.compressJson === true;
       if (hr.alignCache !== undefined) out.skills.headroom.alignCache = hr.alignCache === true;
       if (hr.applyToContext !== undefined) out.skills.headroom.applyToContext = hr.applyToContext === true;
+    }
+    const adhd = objOr(sk.adhd, {});
+    if (Object.keys(adhd).length) {
+      if (!out.skills.adhd) out.skills.adhd = defaultAiConfig().skills.adhd;
+      if (adhd.enabled !== undefined) out.skills.adhd.enabled = adhd.enabled === true;
+      if (adhd.applyToTutor !== undefined) out.skills.adhd.applyToTutor = adhd.applyToTutor === true;
     }
   }
 

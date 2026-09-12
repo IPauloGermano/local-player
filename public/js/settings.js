@@ -1652,6 +1652,7 @@ function renderAiSkills() {
   const cv = sk.caveman || {};
   const rtk = sk.rtk || {};
   const hr = sk.headroom || {};
+  const adhd = sk.adhd || {};
 
   const skSwitch = (id, label, on, desc) => `
     <div class="ai-field ai-field-switch">
@@ -1667,7 +1668,7 @@ function renderAiSkills() {
 
   return `
     <h4 class="ai-block-title">Skills & Otimizadores de Contexto / Tokens</h4>
-    <p class="ai-note">Otimizações e extensões inspiradas nos projetos de código aberto <strong>Caveman</strong>, <strong>RTK</strong> e <strong>Headroom</strong> para reduzir custos de tokens, eliminar ruídos e maximizar a eficiência dos modelos de IA.</p>
+    <p class="ai-note">Otimizações e extensões inspiradas nos projetos de código aberto <strong>Caveman</strong>, <strong>RTK</strong>, <strong>Headroom</strong> e <strong>ADHD</strong> para reduzir custos de tokens, eliminar ruídos e moldar respostas acionáveis.</p>
 
     <!-- Skill 1: Caveman -->
     <div class="ai-field" style="margin-top: 16px;">
@@ -1745,6 +1746,20 @@ function renderAiSkills() {
       ${skSwitch("ai-sk-hr-context", "Aplicar na montagem do contexto da aula", hr.applyToContext !== false, "Otimiza os blocos montados para o Tutor IA.")}
     </div>
 
+    <hr class="ai-sep">
+
+    <!-- Skill 4: ADHD -->
+    <div class="ai-field">
+      <h4 class="ai-block-title">
+        <span>🎯 ADHD</span>
+        <span class="ai-block-tag">Actionable Output</span>
+        <a href="https://github.com/ayghri/i-have-adhd" target="_blank" rel="noopener noreferrer" class="ai-tr-summary-link" style="margin-left: auto; font-size: 11px;">GitHub ↗</a>
+      </h4>
+      <p class="ai-field-desc" style="margin-bottom: 8px;">Molda as respostas do Tutor IA para ação imediata: resposta primeiro, passos numerados, um próximo passo concreto — sem preâmbulos, rodeios ou fechos. Não altera o conteúdo didático, só a apresentação.</p>
+      ${skSwitch("ai-sk-adhd-enabled", "Habilitar Skill ADHD", adhd.enabled === true, "Injeta diretivas de formato acionável no prompt de sistema do Tutor IA.")}
+      ${skSwitch("ai-sk-adhd-tutor", "Aplicar nas conversas do Tutor IA", adhd.applyToTutor !== false, "Ativo por padrão ao habilitar a skill.")}
+    </div>
+
     <div class="settings-actions" style="margin-top: 20px;">
       <button class="btn btn--primary" id="ai-sk-save" type="button">Salvar Skills</button>
     </div>
@@ -1761,6 +1776,7 @@ function bindAiSkills(panel) {
   const cv = sk.caveman = sk.caveman || {};
   const rtk = sk.rtk = sk.rtk || {};
   const hr = sk.headroom = sk.headroom || {};
+  const adhd = sk.adhd = sk.adhd || {};
 
   const bindSwitch = (id, obj, key, defaultOn = false) => {
     const el = document.getElementById(id);
@@ -1814,6 +1830,10 @@ function bindAiSkills(panel) {
   bindSwitch("ai-sk-hr-json", hr, "compressJson", true);
   bindSwitch("ai-sk-hr-align", hr, "alignCache", true);
   bindSwitch("ai-sk-hr-context", hr, "applyToContext", true);
+
+  // ADHD switches
+  bindSwitch("ai-sk-adhd-enabled", adhd, "enabled", false);
+  bindSwitch("ai-sk-adhd-tutor", adhd, "applyToTutor", true);
 
   // Save button
   const saveBtn = document.getElementById("ai-sk-save");
