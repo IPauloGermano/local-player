@@ -592,7 +592,7 @@
     function attachVideoCards(rawText) {
       if (!rawText || typeof rawText !== "string") return;
       // 1. Links markdown: [Label](https://...)
-      const mdRegex = /\[([^\]\n]+)\]\((https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:youtube\.com|youtu\.be)\/[^)\s]+)\)/gi;
+      const mdRegex = /\[([^\]\n]+)\]\((https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)\/[^)\s]+)\)/gi;
       let m;
       while ((m = mdRegex.exec(rawText)) !== null) {
         const label = m[1];
@@ -604,7 +604,7 @@
         }
       }
       // 2. URLs soltas: https://...
-      const rawRegex = /(?:^|[\s(])(https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:youtube\.com|youtu\.be)\/[^\s<)]+)/gi;
+      const rawRegex = /(?:^|[\s(])(https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)\/[^\s<)]+)/gi;
       while ((m = rawRegex.exec(rawText)) !== null) {
         const url = m[1];
         const id = extractYouTubeId(url);
