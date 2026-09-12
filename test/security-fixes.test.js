@@ -328,6 +328,39 @@ test("Integração HTTP: proteção CSRF e validações em endpoints destrutivos
     });
     assert.strictEqual(resOk.status, 200, "Same-origin com all: true deve retornar 200");
 
+    // 4b. POST /api/ai/config cross-site deve retornar 403
+    const resAiConfigCross = await fetch(`${srv.base}/api/ai/config`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Sec-Fetch-Site": "cross-site",
+      },
+      body: JSON.stringify({ advanced: { maxConcurrentAiJobs: 4 } }),
+    });
+    assert.strictEqual(resAiConfigCross.status, 403, "AI config cross-site deve retornar 403");
+
+    // 4c. POST /api/libraries cross-site deve retornar 403
+    const resLibCross = await fetch(`${srv.base}/api/libraries`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Sec-Fetch-Site": "cross-site",
+      },
+      body: JSON.stringify({ path: "/tmp" }),
+    });
+    assert.strictEqual(resLibCross.status, 403, "Libraries cross-site deve retornar 403");
+
+    // 4d. POST /api/progress cross-site deve retornar 403
+    const resProgCross = await fetch(`${srv.base}/api/progress`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Sec-Fetch-Site": "cross-site",
+      },
+      body: JSON.stringify({ path: "test.mp4", position: 10, duration: 100 }),
+    });
+    assert.strictEqual(resProgCross.status, 403, "Progress cross-site deve retornar 403");
+
     // 5. POST /api/transcode/clear com cross-site deve retornar 403
     const resTranscodeCross = await fetch(`${srv.base}/api/transcode/clear`, {
       method: "POST",

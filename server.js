@@ -4703,6 +4703,18 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "100kb" }));
 
+// Proteção anti-CSRF global para todas as rotas mutantes (POST, PUT, PATCH, DELETE).
+// Bloqueia requisições cross-site (Sec-Fetch-Site: cross-site) e Origins/Referers divergentes do Host.
+app.use((req, res, next) => {
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+    const csrf = verifyCsrfAndSafeOrigin(req);
+    if (!csrf.ok) {
+      return res.status(csrf.status).json({ error: csrf.error });
+    }
+  }
+  next();
+});
+
 // Funções de Segurança importadas de ./server
 
 app.get("/api/subtitles/editor", async (req, res) => {
@@ -4890,7 +4902,7 @@ app.get("/api/libraries", async (req, res) => {
 // Cria uma biblioteca: `{ name?, path }`. Path validado/canonicalizado UMA vez
 // (nunca reutilizado em operações de mídia — ver auditoria §11). Id estável =
 // randomUUID, imune a rename de nome/path.
-app.post("/api/libraries", async (req, res) => {
+app.post("/api/libraries", requireAdminOrLocal, async (req, res) => {
   await loadLibraries();
   const proposed = req.body && typeof req.body.path === "string" ? req.body.path : "";
   const v = await validateLibraryPath(proposed);
@@ -4915,7 +4927,7 @@ app.post("/api/libraries", async (req, res) => {
 
 // Atualiza `{ name?, enabled?, path? }`. Path da PADRÃO é imutável (403); para
 // as demais, path é revalidado como no POST (400/409). Renomear nunca muda o id.
-app.patch("/api/libraries/:id", async (req, res) => {
+app.patch("/api/libraries/:id", requireAdminOrLocal, async (req, res) => {
   await loadLibraries();
   const lib = getLibraryById(req.params.id);
   if (!lib) return res.status(404).json({ error: "library not found" });
@@ -5470,7 +5482,7 @@ app.get("/api/ai/config", async (req, res) => {
   }
 });
 
-app.post("/api/ai/config", async (req, res) => {
+app.post("/api/ai/config", requireAdminOrLocal, async (req, res) => {
   try {
     const config = await saveAiConfig((cfg) => applyAiPatch(cfg, req.body));
     // Valida o workspace custom antes de aceitar: deve ser criável/escrevível
@@ -5502,7 +5514,7 @@ app.post("/api/ai/reset", requireAdminOrLocal, async (req, res) => {
   }
 });
 
-app.post("/api/ai/llm/test", async (req, res) => {
+app.post("/api/ai/llm/test", requireAdminOrLocal, async (req, res) => {
   try {
     const body = objOr(req.body, {});
     let provider = null;
@@ -6316,7 +6328,7 @@ app.post("/api/subtitles/clear", requireAdminOrLocal, async (req, res) => {
 // Limpa o workspace de processamento (WAV + saída temporária do Whisper) SEM
 // tocar em raw/processed (retomada) nem nos VTTs finais. Arquivos de jobs em
 // andamento são preservados.
-app.post("/api/subtitles/workspace/cleanup", async (req, res) => {
+app.post("/api/subtitles/workspace/cleanup", requireAdminOrLocal, async (req, res) => {
   try {
     const cfg = await loadAiConfig();
     const { removed } = await cleanupWorkspace(cfg);
