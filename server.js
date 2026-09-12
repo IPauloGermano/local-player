@@ -1348,6 +1348,27 @@ async function persistLibraries() {
   await writeFileAtomic(LIBRARIES_FILE, serialized);
 }
 
+// Garante uma identidade portátil (.courseplayer/library.json) gravada na raiz
+// da própria biblioteca. Se o drive/pasta já foi usado antes em outra máquina
+// ou na versão Web, recupera o mesmo id estável para preservar todos os hashes
+// de legendas (sha1(libId\0rel)) e chaves de progresso sem forçar regeração.
+async function ensureLibraryDiskId(libPath, proposedId = null, libName = null) {
+  if (!libPath || typeof libPath !== "string") return proposedId || crypto.randomUUID();
+  try {
+    const metaFile = path.join(libPath, ".courseplayer", "library.json");
+    const read = await readJsonFile(metaFile);
+    if (read.ok && read.parsed && typeof read.parsed.id === "string" && read.parsed.id.trim()) {
+      return read.parsed.id.trim();
+    }
+    const finalId = proposedId || crypto.randomUUID();
+    await fs.mkdir(path.dirname(metaFile), { recursive: true }).catch(() => {});
+    await writeFileAtomic(metaFile, JSON.stringify({ id: finalId, name: libName || path.basename(libPath) }, null, 2)).catch(() => {});
+    return finalId;
+  } catch {
+    return proposedId || crypto.randomUUID();
+  }
+}
+
 // Carrega o registry do disco. Arquivo ausente → semeia a biblioteca
 // padrão; corrompido → preserva o original como .corrupt-<ts> e re-semeia.
 async function loadLibraries() {
@@ -1371,7 +1392,23 @@ async function loadLibraries() {
   } else if (!entries.some((l) => l.isDefault || l.id === DEFAULT_LIBRARY_ID)) {
     entries.unshift(defaultLibraryEntry());
   }
+
+  // Sincroniza com a identidade persistente do disco (.courseplayer/library.json)
+  let needsPersist = false;
+  for (const l of entries) {
+    if (!l.isDefault && l.path && typeof l.path === "string") {
+      const diskId = await ensureLibraryDiskId(l.path, l.id, l.name);
+      if (diskId && diskId !== l.id) {
+        l.id = diskId;
+        needsPersist = true;
+      }
+    }
+  }
+
   librariesCache = entries;
+  if (needsPersist) {
+    await persistLibraries().catch(() => {});
+  }
   return librariesCache;
 }
 
@@ -2512,22 +2549,57 @@ async function writeCourseSubtitle(lib, rel, hash, vttText) {
   }
 }
 
+// Resolve o VTT final de um vídeo: canônico na pasta do curso primeiro,
+// busca recursiva em pastas-pai para cursos aninhados em tópicos, e cai para
+// o espelho em data/subtitles/ (vídeos na raiz / resiliência).
+async function resolveSubtitleVttPath(lib, rel, hash) {
+  const courseVtt = courseSubtitlePath(lib, rel, hash);
+  if (courseVtt) {
+    const st = await fs.stat(courseVtt).catch(() => null);
+    if (st && st.size > 0) return courseVtt;
+  }
+  if (lib && lib.path && typeof rel === "string" && rel.includes("/")) {
+    const parts = rel.split("/");
+    for (let i = parts.length - 1; i >= 1; i--) {
+      const candidate = path.join(lib.path, parts.slice(0, i).join(path.sep), COURSE_SUBTITLE_DIR, hash + ".vtt");
+      if (candidate !== courseVtt) {
+        const st = await fs.stat(candidate).catch(() => null);
+        if (st && st.size > 0) return candidate;
+      }
+    }
+  }
+  const mirror = path.join(SUBTITLE_DIR, hash + ".vtt");
+  const st = await fs.stat(mirror).catch(() => null);
+  if (st && st.size > 0) return mirror;
+
+  if (lib && lib.id !== DEFAULT_LIBRARY_ID && rel) {
+    const defaultHash = subtitleCacheName(DEFAULT_LIBRARY_ID, rel);
+    if (defaultHash !== hash) {
+      const defMirror = path.join(SUBTITLE_DIR, defaultHash + ".vtt");
+      const defSt = await fs.stat(defMirror).catch(() => null);
+      if (defSt && defSt.size > 0) return defMirror;
+    }
+  }
+  return null;
+}
+
 // Remover o VTT do curso (clear de um vídeo). Nunca lança.
 async function removeCourseSubtitle(lib, rel, hash) {
+  const found = await resolveSubtitleVttPath(lib, rel, hash);
+  if (found && !found.startsWith(SUBTITLE_DIR)) {
+    await fs.rm(found, { force: true }).catch(() => {});
+  }
   const dest = courseSubtitlePath(lib, rel, hash);
-  if (dest) await fs.rm(dest, { force: true }).catch(() => {});
+  if (dest && dest !== found) {
+    await fs.rm(dest, { force: true }).catch(() => {});
+  }
 }
 
 // O artefato final existe? Prioriza o VTT da pasta do curso (canônico) e cai
 // para o espelho de data/subtitles/ (vídeos na raiz / resiliência).
 async function hasFinalVtt(lib, rel, hash) {
-  const courseVtt = courseSubtitlePath(lib, rel, hash);
-  if (courseVtt) {
-    const st = await fs.stat(courseVtt).catch(() => null);
-    if (st && st.size > 0) return true;
-  }
-  const st = await fs.stat(path.join(SUBTITLE_DIR, hash + ".vtt")).catch(() => null);
-  return !!(st && st.size > 0);
+  const vtt = await resolveSubtitleVttPath(lib, rel, hash);
+  return !!vtt;
 }
 
 // Remove todos os VTTs finais de .courseplayer/subtitles de TODAS as
@@ -2583,8 +2655,9 @@ async function hasValidSubtitle(lib, rel, abs) {
   const hash = subtitleCacheName(lib.id, rel);
   const processedPath = path.join(SUBTITLE_PROCESSED_DIR, hash + ".json");
   const doc = await loadValidProcessed(processedPath, abs, sourceStat);
-  if (!doc) return false;
-  return hasFinalVtt(lib, rel, hash);
+  if (doc && (await hasFinalVtt(lib, rel, hash))) return true;
+  if (await hasFinalVtt(lib, rel, hash)) return true;
+  return false;
 }
 
 // Primeiro vídeo de um curso em ordem natural (DFS: pastas antes dos arquivos,
@@ -3247,11 +3320,11 @@ async function runSubtitlePipeline(job) {
       await Promise.all(targets.map(p => fs.rm(p, { force: true }).catch(() => {})));
     }
 
-    // 1) Cache já pronto e válido? (processed + vtt) → conclui direto.
+    // 1) Cache já pronto e válido? (processed ou VTT final existente) → conclui direto.
     const processedPath = path.join(SUBTITLE_PROCESSED_DIR, hash + ".json");
-    if (await loadValidProcessed(processedPath, job.abs, sourceStat)) {
+    if ((await loadValidProcessed(processedPath, job.abs, sourceStat)) || (await hasFinalVtt(lib, rel, hash))) {
       updateSubtitleJob(hash, { status: "completed", progress: "Cache encontrado", error: null });
-      console.log(`[SUBTITLE] cache encontrado: ${rel}`);
+      console.log(`[SUBTITLE] cache encontrado (VTT pronto): ${rel}`);
       return;
     }
 
@@ -3974,20 +4047,6 @@ function renderVtt(segments) {
 // pipeline refazer a transcrição.
 // ==========================================================================
 
-// Resolve o VTT final de um vídeo: canônico na pasta do curso primeiro, depois
-// o espelho em data/subtitles/ (vídeos na raiz / resiliência). Mesma regra da
-// rota /subtitles/*.
-async function resolveSubtitleVttPath(lib, rel, hash) {
-  const courseVtt = courseSubtitlePath(lib, rel, hash);
-  if (courseVtt) {
-    const st = await fs.stat(courseVtt).catch(() => null);
-    if (st && st.size > 0) return courseVtt;
-  }
-  const mirror = path.join(SUBTITLE_DIR, hash + ".vtt");
-  const st = await fs.stat(mirror).catch(() => null);
-  if (st && st.size > 0) return mirror;
-  return null;
-}
 
 // Parser WebVTT mínimo (para editar legendas de um curso copiado sem data/,
 // onde o VTT canônico é o único artefato). Só o necessário: timestamps
@@ -4914,8 +4973,9 @@ app.post("/api/libraries", requireAdminOrLocal, async (req, res) => {
     req.body && typeof req.body.name === "string" && req.body.name.trim()
       ? req.body.name.trim()
       : path.basename(v.path) || v.path;
+  const libraryId = await ensureLibraryDiskId(v.path, null, name);
   const entry = {
-    id: crypto.randomUUID(),
+    id: libraryId,
     name,
     path: v.path,
     enabled: true,
@@ -6136,7 +6196,12 @@ async function subtitleStatusFor(lib, rel, abs) {
   if (sourceStat) {
     const processedPath = path.join(SUBTITLE_PROCESSED_DIR, hash + ".json");
     const doc = await loadValidProcessed(processedPath, abs, sourceStat);
-    if (doc && (await hasFinalVtt(lib, rel, hash))) ready = true;
+    if (doc && (await hasFinalVtt(lib, rel, hash))) {
+      ready = true;
+    } else if (await hasFinalVtt(lib, rel, hash)) {
+      ready = true;
+      sourceReady = true;
+    }
   }
   const job = subtitleJobs.get(hash);
   const editedDoc = await readJsonFile(path.join(SUBTITLE_EDITED_DIR, hash + ".json"));
@@ -6189,8 +6254,8 @@ app.post("/api/subtitles/generate", async (req, res) => {
   const skipIfReady = req.query.skipIfReady === "1" || req.query.skipIfReady === "true";
   try {
     await loadSubtitleJobs(); // reconcilia antes do dedup
-    if (skipIfReady && !force) {
-      // Skip-if-ready (usado por P1/P2/P3): legenda já válida ⇒ não enfileira.
+    if (!force) {
+      // Se não for regeneração forçada e a legenda já existe/é válida ⇒ não enfileira.
       if (await hasValidSubtitle(lib, safe.rel, safe.abs)) {
         return res.json({ ok: true, skipped: true, alreadyRunning: false, status: "completed" });
       }
@@ -6436,12 +6501,8 @@ app.get("/subtitles/*", async (req, res, next) => {
     const safe = lib ? resolveLibraryRel(lib, relParam) : null;
     if (safe && subtitleCacheName(lib.id, safe.rel) === hash) {
       // `name` = `hash.vtt` (original) ou `hash-lang.vtt` (tradução); o
-      // canônico é ancorado no mesmo curso.
-      const courseVtt = courseSubtitlePath(lib, safe.rel, name.replace(/\.vtt$/, ""));
-      if (courseVtt) {
-        const st = await fs.stat(courseVtt).catch(() => null);
-        if (st && st.size > 0) vttPath = courseVtt;
-      }
+      // canônico é ancorado no mesmo curso ou suas pastas-pai.
+      vttPath = await resolveSubtitleVttPath(lib, safe.rel, name.replace(/\.vtt$/, ""));
     }
   }
   if (!vttPath) {
