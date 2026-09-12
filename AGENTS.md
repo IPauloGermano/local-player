@@ -1,8 +1,8 @@
 # AGENTS.md
 
 Guia de trabalho para agentes/desenvolvedores. O código é a fonte de verdade.
-Referência técnica detalhada: `docs/DOCUMENTACAO.md`; legendas: `docs/SUBTITLES.md`;
-instalação do whisper: `docs/whisper.md`; checklist de validação: `docs/VALIDACAO.md`.
+Referência técnica detalhada: `docs/DOCUMENTATION.md` (pt-BR: `docs/pt-br/DOCUMENTACAO.md`); legendas: `docs/SUBTITLES.md` (pt-BR: `docs/pt-br/SUBTITLES.md`);
+instalação do whisper: `docs/whisper.md` (pt-BR: `docs/pt-br/whisper.md`); checklist de validação: `docs/VALIDATION.md` (pt-BR: `docs/pt-br/VALIDACAO.md`).
 
 ## Projeto
 
@@ -276,7 +276,7 @@ funciona normal.**
 6. Duas instâncias na mesma porta → mensagem clara + exit.
 7. IA sem nada: `GET /api/ai/status` → `available:false`; Central renderiza as
    6 abas.
-8. Geração/LLM/concorrência/editor: `docs/VALIDACAO.md` (checklist completo).
+8. Geração/LLM/concorrência/editor: `docs/VALIDATION.md` (`docs/pt-br/VALIDACAO.md`) (checklist completo).
 9. Mudança de UI: valide com o Playwright MCP (servidor `playwright`):
    suba o app (`npm start`, porta 4173), navegue até a tela, interaja
    (cliques, drawer, menus) e confira screenshot + `browser_console_messages`

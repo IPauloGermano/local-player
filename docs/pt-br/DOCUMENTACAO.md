@@ -1,10 +1,12 @@
 # Local Player — Documentação Técnica
 
+[English](../DOCUMENTATION.md) | **Português**
+
 Referência técnica central. Escrita a partir do código real (`server.js`,
 `public/`, `package.json`, `test/`) — o código é a fonte de verdade. Para
-instalação/uso voltados ao usuário: `README.md`. Subsistemas especializados:
-`docs/SUBTITLES.md` (legendas/IA), `docs/whisper.md` (instalação do whisper),
-`docs/VALIDACAO.md` (checklist).
+instalação/uso voltados ao usuário: `README.pt-BR.md` (ou `README.md` em inglês). Subsistemas especializados:
+`SUBTITLES.md` (legendas/IA), `whisper.md` (instalação do whisper),
+`VALIDACAO.md` (checklist).
 
 ## Sumário
 
@@ -236,7 +238,7 @@ Mecanismos implementados (todos verificáveis no código):
 
 ## 9. API
 
-Rotas de legendas/IA → `docs/SUBTITLES.md`.
+Rotas de legendas/IA → `SUBTITLES.md`.
 
 | Método | Rota | Propósito |
 | --- | --- | --- |
@@ -342,8 +344,8 @@ transcrição bruta → pós-processamento determinístico →
 WebVTT → cache. **Adicional**: sem binário/modelo/
 internet o player funciona normal. Detalhe completo (registry, fila P0–P3,
 preempção, estado/retomada, raw-sourced gate, cache/artefato,
-concorrência, player, segurança, env vars, editor desativado): **`docs/SUBTITLES.md`**.
-Instalação do whisper: **`docs/whisper.md`**.
+concorrência, player, segurança, env vars, editor desativado): **`SUBTITLES.md`**.
+Instalação do whisper: **`whisper.md`**.
 
 Resumo:
 

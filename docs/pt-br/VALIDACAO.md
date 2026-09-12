@@ -1,5 +1,7 @@
 # Como validar alterações
 
+[English](../VALIDATION.md) | **Português**
+
 Checklist operacional. Rode os passos que se aplicarem à sua mudança. A base é
 a suíte automatizada; o restante é exercício manual do fluxo real.
 

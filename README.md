@@ -1,278 +1,258 @@
 # Local Player
 
-Player local/offline em Node.js + Express (backend único `server.js`, SPA em
-`public/` em JS puro, **sem build step**) para organizar e reproduzir mídia em
-disco — módulos, treinamentos, cursos e bibliotecas de vídeo no **Linux**. Lê
-tudo direto do armazenamento local ou externo (HD, SSD, pendrive, cartão SD),
-sem envio para a internet.
+**English** | [Português](README.pt-BR.md)
 
-## Funcionalidades
+Local/offline player in Node.js + Express (single orchestrator backend `server.js`, pure JS SPA in `public/`, **no build step**) to organize and play disk media — modules, trainings, courses, and video libraries on **Linux**. Reads everything directly from local or external storage (HDD, SSD, USB flash drive, SD card), with zero telemetry and without sending anything to the internet.
 
-- **Boot instantâneo e scan concorrente**: cache de árvore persistente em disco
-  (`data/tree-cache-<libId>.json`) e varredura paralela com concorrência
-  controlada, carregando bibliotecas com milhares de aulas em milissegundos mesmo
-  em pendrives ou discos USB.
-- **Execução sem terminal e atalhos de sistema (Linux)**: inicialização desacoplada
-  em segundo plano (`setsid`), sem janelas de terminal abertas. Integração nativa
-  opcional com o menu de aplicativos e área de trabalho (GNOME, KDE, XFCE) com
-  ícones nítidos em SVG/PNG via especificação FreeDesktop (`.desktop` e `hicolor`).
-- **Tópicos hierárquicos**: pastas declaradas como tópicos (`.topic` ou nome
-  terminando em `(TP)`) viram navegação com breadcrumb (`Home › TI › Python`).
-- **Cards com capa inteligente**: capas automáticas detectadas pelo nome da
-  imagem ou herdadas de módulos filhos; sem imagem, gera gradiente com iniciais.
-- **Destaque visual sutil para módulos concluídos**: cursos e módulos com todas
-  as aulas finalizadas tornam-se discretos e esmaecidos, mantendo o foco visual
-  nos conteúdos pendentes.
-- **Busca global e contextual**: busca instantânea por tópicos, módulos, aulas e
-  materiais de apoio com correspondência flexível e sem distinção de acentos.
-- **Player robusto com progresso persistente**: salvamento atômico de posição,
-  retomada automática inteligente e auto-conclusão ao atingir >95% do vídeo.
-- **Áudio Boost, Normalizador e Controles**: amplificação de volume até 300% via Web
-  Audio API (GainNode) para gravações muito baixas, normalizador profundo nativo
-  (pré-amplificação + DynamicsCompressorNode a -34 dB + limiter anti-clipping a -1 dB)
-  que resgata áudios inaudíveis e nivela falas automaticamente sem distorção, velocidade
-  ajustável (0.5× a 2×) persistida, modo teatro, tela cheia nativa e atalhos de teclado configuráveis.
-- **Sidebar de aulas e materiais**: sidebar focada exclusivamente em navegação de
-  aulas; arquivos de suporte (.pdf, .zip, .docx, códigos) ficam isolados na seção
-  "Materiais da aula".
-- **Transcoding de fallback transparente**: reprodução direta de formatos
-  nativos via HTTP Range; fallback progressivo em tempo real com FFmpeg apenas
-  se o navegador não suportar o codec do arquivo.
-- **Multi-biblioteca configurável**: registre bibliotecas extras em pastas ou
-  discos externos (Configurações → Bibliotecas) com isolamento total de chaves
-  (`libId\0rel`), backups dedicados e suporte a bibliotecas desativadas.
-- **Legendas automáticas por IA**: transcrição offline com
-  **whisper.cpp**, fila de prioridades (P0 a P3), pós-processamento
-  determinístico e recuperação robusta contra erros.
-- **Tutor IA integrado com Web Search**: assistente de estudos em tempo real via
-  chat streaming (SSE), com contexto automático da aula (transcrição, timestamps
-  clicáveis e leitura inteligente de PDFs, Office e códigos), pesquisa web
-  segura com proteção anti-SSRF e skills de otimização de tokens (Caveman, RTK,
-  Headroom) e formato de resposta (ADHD).
-- **Quizzes e Flashcards 3D por IA**: geração automática de questões de múltipla
-  escolha com avaliação imediata e cartões de repetição espaçada com animação 3D
-  baseados no conteúdo da aula.
-- **Interface responsiva**: suporte completo a desktop, tablet e smartphones com
-  drawer retrátil para navegação.
+## Features
 
-## Escolha como usar
-
-Você pode usar o Local Player de duas formas: baixando o executável pronto para Linux (**AppImage**) ou rodando direto pelo código-fonte (**Web / Node.js**).
+- **Instant Boot and Concurrent Scan**: persistent on-disk tree cache (`data/tree-cache-<libId>.json`) and parallel directory scanning with controlled concurrency, loading libraries with thousands of lessons in milliseconds even on USB flash drives or external drives.
+- **Terminal-Free Background Run & System Shortcuts (Linux)**: decoupled background startup (`setsid`), without hanging terminal windows. Optional native desktop integration with application menus and desktop launchers (GNOME, KDE, XFCE) with sharp SVG/PNG icons following the FreeDesktop specification (`.desktop` and `hicolor`).
+- **Hierarchical Topics**: folders declared as topics (`.topic` marker file or folder name ending in `(TP)`) become breadcrumb navigation pages (`Home › IT › Python`).
+- **Smart Cover Cards**: automatic covers detected by image name hints or inherited from child modules; generates a gradient with initials if no image is present.
+- **Subtle Visual Dimming for Completed Modules**: courses and modules with all lessons finished become discretely dimmed, keeping visual focus on pending learning material.
+- **Global & Contextual Search**: instant search for topics, modules, lessons, and auxiliary files with accent-insensitive flexible matching.
+- **Robust Player with Persistent Progress**: atomic position saving, intelligent auto-resume, and automatic lesson completion when watching >95% of the video.
+- **Audio Boost, Deep Normalizer & Controls**: volume amplification up to 300% via Web Audio API (GainNode) for quiet recordings; built-in deep normalizer (pre-gain + DynamicsCompressorNode at -34 dB + anti-clipping limiter at -1 dB) that rescues low voices and evens speech without distortion; persistent playback speed (0.5× to 2×); theater mode; native fullscreen; configurable keyboard shortcuts.
+- **Sidebar for Lessons & Materials**: sidebar focused strictly on lesson navigation; supplementary files (.pdf, .zip, .docx, code) stay neatly isolated under the "Lesson materials" drawer.
+- **Transparent Fallback Transcoding**: native formats play directly via HTTP Range; progressive real-time fallback transcoding using FFmpeg only if the browser does not natively support the file's codec.
+- **Configurable Multi-Library**: register external folders or mounted drives (Settings → Libraries) with full key isolation (`libId\0rel`), dedicated on-device backups, and support for disabled libraries without unmounting.
+- **Automated AI Subtitles**: offline audio transcription powered by **whisper.cpp**, multi-tier priority queue (P0 to P3), deterministic post-processing, and resilient recovery against crashes.
+- **Integrated AI Tutor with Web Search**: real-time study assistant via streaming chat (SSE) with automatic lesson context (transcription, interactive timestamps, and zero-dependency text extraction from PDFs, Office docs, and source code), safe web search with anti-SSRF protection, token-efficiency skills (Caveman, RTK, Headroom), and actionable response formatting (ADHD).
+- **AI Quizzes & 3D Flashcards**: automated generation of multiple-choice tests with instant feedback and 3D flip repetition flashcards based on lesson content.
+- **Responsive Interface**: full support for desktop, tablet, and mobile smartphones with a slide-out lesson drawer.
 
 ---
 
-## Baixar pronto (AppImage)
+## Choose How to Use
 
-A forma mais simples e recomendada para desktop Linux — sem necessidade de instalar Node.js ou compilar dependências:
+You can run Local Player in two ways: by downloading the pre-packaged standalone Linux executable (**AppImage**) or by running directly from source (**Web / Node.js**).
 
-1. Acesse as [Releases](https://github.com/IPauloGermano/local-player/releases) e baixe o `LocalPlayer.AppImage`.
-2. Dê permissão de execução e execute:
+---
+
+## Standalone Linux AppImage
+
+The easiest and recommended way for Linux desktop users — no need to install Node.js or compile dependencies:
+
+1. Visit [Releases](https://github.com/IPauloGermano/local-player/releases) and download `LocalPlayer.AppImage`.
+2. Grant execute permission and run:
    ```bash
    chmod +x LocalPlayer.AppImage
    ./LocalPlayer.AppImage
    ```
 
-> **IA & Whisper offline**: Para usar legendas automáticas offline no AppImage, coloque seus modelos Whisper (ex: `ggml-small.bin`) em uma pasta `models/` ao lado do executável `LocalPlayer.AppImage` ou configure a variável `WHISPER_MODEL_DIR`. Modelos e binários pesados nunca são commitados no repositório.
+> **Offline AI & Whisper**: To use automated offline subtitles in the AppImage, place your Whisper ggml models (e.g. `ggml-small.bin`) inside a `models/` directory next to the `LocalPlayer.AppImage` executable or configure the `WHISPER_MODEL_DIR` environment variable. Large binary files and models are never committed to the git repository.
 
-### Gerando e publicando novas versões (AppImage)
+### Building and Publishing New Releases (AppImage)
 
-Para desenvolvedores que desejam compilar o AppImage a partir do código:
+For developers who wish to compile and package the AppImage from source:
 ```bash
 npm run dist
-gh release create vX.Y.Z dist/LocalPlayer.AppImage --title "vX.Y.Z" --notes "Notas da versão"
+gh release create vX.Y.Z dist/LocalPlayer.AppImage --title "vX.Y.Z" --notes "Release notes"
 ```
 
 ---
 
-## Rodar via código (web)
+## Run from Source (Web / Node.js)
 
-Para quem prefere rodar o servidor HTTP localmente e acessar via navegador:
+For users and developers who prefer running the local HTTP server and accessing through a web browser:
 
-### Requisitos
-- **Sistema Operacional**: Linux (Fedora, Ubuntu, Debian, Arch Linux, openSUSE, etc.).
+### Requirements
+- **Operating System**: Linux (Fedora, Ubuntu, Debian, Arch Linux, openSUSE, etc.).
 - **Node.js**: 18+.
-- **Navegador moderno**: Firefox, Chrome, Chromium, Brave, Edge.
-- **FFmpeg / FFprobe (opcionais)**: necessários apenas para transcoding de vídeos incompatíveis e extração de áudio para legendas.
-- **Whisper.cpp (opcional)**: necessário apenas para transcrição local de legendas (ver `docs/whisper.md`).
+- **Modern Browser**: Firefox, Chrome, Chromium, Brave, Edge.
+- **FFmpeg / FFprobe (optional)**: only required for fallback transcoding of incompatible codecs and audio extraction for subtitles.
+- **Whisper.cpp (optional)**: only required for local AI subtitle generation (see `docs/whisper.md`).
 
-### Instalação
+### Installation
 
-O app deve ficar em uma pasta cujo **pai seja a raiz da biblioteca padrão** (a raiz é derivada da localização do app, nunca hardcoded):
+The application folder should be placed inside a directory whose **parent is the root of the default library** (the library root is derived from the app's location, never hardcoded):
 
 ```text
-Minha Biblioteca/
-├── Módulo A/
-├── Módulo B/
-└── _LocalPlayer/          ← pasta do app (nome livre)
+My Library/
+├── Module A/
+├── Module B/
+└── _LocalPlayer/          ← app directory (any folder name)
 ```
 
 ```bash
-npm install --no-bin-links   # --no-bin-links ajuda em drives externos/FAT/exFAT
+npm install --no-bin-links   # --no-bin-links helps on external FAT/exFAT drives
 ```
 
-### Execução
+### Running
 
-Você pode executar o Local Player das seguintes formas:
+You can launch Local Player using the following options:
 
-#### Opção 1: No terminal (foreground tradicional - Web)
+#### Option 1: Foreground Terminal (Web)
 ```bash
-npm start                    # servidor em http://localhost:4173
+npm start                    # starts server on http://localhost:4173
 ```
-`PORT` e `HOST` sobrescrevem porta e interface (padrão: todas as interfaces — use `HOST=127.0.0.1` para restringir à máquina local).
+`PORT` and `HOST` override port and network interface (default binds to all interfaces; use `HOST=127.0.0.1` to restrict to localhost).
 
-#### Opção 2: Em segundo plano (sem janela de terminal aberta)
+#### Option 2: Detached Background Run (No terminal window)
 ```bash
-./local-player.sh            # ou: npm run start:bg
+./local-player.sh            # or: npm run start:bg
 ```
-Para encerrar o servidor em background:
+To gracefully stop the background server:
 ```bash
-./stop.sh                    # ou: npm run stop
+./stop.sh                    # or: npm run stop
 ```
 
-#### Opção 3: Modo Desktop nativo (janela Electron)
+#### Option 3: Native Desktop Mode (Electron window)
 ```bash
-npm run start:desktop        # abre a janela desktop integrada via Electron
+npm run start:desktop        # launches the integrated Electron desktop application
 ```
 
 ---
 
-### Atalho de Aplicativo no Sistema (Opcional)
+### System Application Shortcut (Optional)
 
-A criação do atalho no sistema é **100% opcional** e nunca é imposta automaticamente:
+Creating a system launcher shortcut is **100% optional** and is never forced automatically:
 
-- **Pela Interface Web**: Acesse **Configurações → Geral** no app e clique no botão **Criar Atalho no Sistema** (ou **Remover Atalho**).
-- **Pelo Terminal**:
-  - Para instalar no menu de aplicativos e área de trabalho:
+- **Via Web Interface**: Open **Settings → General** inside the app and click **Create System Shortcut** (or **Remove Shortcut**).
+- **Via Terminal**:
+  - Install to application menu and desktop:
     ```bash
-    ./instalar-atalho.sh     # ou: npm run shortcut:install
+    ./instalar-atalho.sh     # or: npm run shortcut:install
     ```
-  - Para desinstalar e limpar os ícones do sistema:
+  - Uninstall and clean system icons:
     ```bash
-    ./remover-atalho.sh      # ou: npm run shortcut:remove
+    ./remover-atalho.sh      # or: npm run shortcut:remove
     ```
 
-O instalador gera o arquivo `localplayer.desktop` em `~/.local/share/applications/`, distribui os ícones em SVG e PNG na hierarquia de temas `hicolor` e atualiza a base de dados do ambiente gráfico (GNOME, KDE, etc.).
+The installer creates `localplayer.desktop` in `~/.local/share/applications/`, distributes high-res SVG and PNG icons across the `hicolor` icon theme hierarchy, and updates the desktop environment database (GNOME, KDE, etc.).
 
+---
 
-## Configuração (variáveis de ambiente)
+## Configuration (Environment Variables)
 
-Todas opcionais:
+All environment variables are optional:
 
-| Variável | Padrão | Uso |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `PORT` | `4173` | Porta do servidor HTTP |
-| `HOST` | todas as interfaces | Interface de rede para escuta |
-| `FFMPEG_BIN` / `FFPROBE_BIN` | `ffmpeg` / `ffprobe` no PATH | Caminho dos binários do FFmpeg (aceita espaços) |
-| `MAX_CONCURRENT_TRANSCODES` | `1` | Limite de conversões de vídeo simultâneas |
-| `MAX_CONCURRENT_TRANSCRIPTIONS` | `1` | Limite de transcrições whisper simultâneas |
-| `MAX_CONCURRENT_AI_JOBS` | `1` | Slots de concorrência pesada compartilhados (transcode + whisper) |
-| `BACKGROUND_SUBTITLE_GENERATION` | config da Central de IA | `true`/`1` ativa geração P3 em background |
-| `WHISPER_BIN` / `WHISPER_MODEL_DIR` | `bin/` / `models/` | Binário e modelos do whisper (ver `docs/whisper.md`) |
-| `LP_DATA_DIR` | `data/` | Redireciona os dados de runtime (usado para sandbox de testes) |
-| `LP_NO_BROWSER` | (inativo) | `1` impede abertura automática do navegador no boot |
-| `LP_PROGRESS_FORENSIC` | (inativo) | `1` ativa logs forenses detalhados de escrita de progresso |
-| `LP_IDLE_TIMEOUT_MINUTES` | `30` | Minutos de inatividade sem abas para auto-shutdown (`0` = desativado) |
+| `PORT` | `4173` | HTTP server port |
+| `HOST` | all interfaces | Network interface for listening |
+| `FFMPEG_BIN` / `FFPROBE_BIN` | `ffmpeg` / `ffprobe` in PATH | Path to FFmpeg binaries (spaces supported) |
+| `MAX_CONCURRENT_TRANSCODES` | `1` | Concurrent video transcoding limit |
+| `MAX_CONCURRENT_TRANSCRIPTIONS` | `1` | Concurrent Whisper transcription limit |
+| `MAX_CONCURRENT_AI_JOBS` | `1` | Shared heavy slots semaphore (transcoding + whisper) |
+| `BACKGROUND_SUBTITLE_GENERATION` | AI Center config | `true`/`1` enables automatic P3 background generation |
+| `WHISPER_BIN` / `WHISPER_MODEL_DIR` | `bin/` / `models/` | Whisper binary and models directory |
+| `LP_DATA_DIR` | `data/` | Redirects runtime data directory (used in test sandboxes) |
+| `LP_NO_BROWSER` | (disabled) | `1` prevents automatic browser launch on startup |
+| `LP_PROGRESS_FORENSIC` | (disabled) | `1` enables verbose forensic progress persistence logs |
+| `LP_IDLE_TIMEOUT_MINUTES` | `30` | Minutes of inactivity without tabs before auto-shutdown (`0` = disabled) |
 
-## Uso rápido
+---
 
-1. Abra a Home e escolha um curso ou tópico.
-2. Na página do curso, navegue pela sidebar para selecionar a aula.
-3. O progresso é gravado automaticamente e retomado com precisão ao retornar.
-4. Utilize o botão **⟳ Atualizar** no topo sempre que alterar ou adicionar arquivos no disco.
-5. **Atalhos de teclado padrão**:
-   - `Espaço`: Reproduzir / Pausar
-   - `←` / `→`: Retroceder / Avançar 5 segundos
-   - `J` / `L`: Retroceder / Avançar 10 segundos
-   - `N` / `P`: Próxima aula / Aula anterior
-   - `M`: Ativar / Desativar mudo
-   - `,` / `.`: Diminuir / Aumentar velocidade
-   - `F`: Tela cheia
-   - `T`: Modo teatro
-   - `/`: Focar campo de busca
-   - `H`: Ir para a Home
-   *(Todos configuráveis em Configurações → Atalhos)*.
+## Quick Start & Shortcuts
 
-## Tópicos
+1. Open Home and click on a course or topic.
+2. Inside a course, use the sidebar to select a lesson.
+3. Your playback position is saved atomically and resumed accurately when you return.
+4. Click the **⟳ Refresh** button on the topbar whenever you add or modify files on disk.
+5. **Default Keyboard Shortcuts**:
+   - `Space`: Play / Pause
+   - `←` / `→`: Rewind / Fast forward 5 seconds
+   - `J` / `L`: Rewind / Fast forward 10 seconds
+   - `N` / `P`: Next lesson / Previous lesson
+   - `M`: Mute / Unmute
+   - `,` / `.`: Decrease / Increase playback speed
+   - `F`: Fullscreen toggle
+   - `T`: Theater mode toggle
+   - `/`: Focus search input
+   - `H`: Navigate to Home
+   *(All customizable in Settings → Shortcuts)*.
 
-Uma pasta é classificada como **tópico** de forma explícita e previsível:
-- Contém o arquivo marcador `.topic` **ou**
-- Seu nome termina com o sufixo `(TP)` (case-insensitive, ex.: `Programação (TP)`).
+---
 
-Tópicos abrem telas de navegação hierárquica com breadcrumb. O marcador `(TP)` e
-a numeração inicial são removidos apenas do título visual exibido na interface.
+## Topics vs Courses
 
-## Bibliotecas externas
+A folder is classified as a **topic** explicitly and predictably:
+- It contains a `.topic` marker file, **or**
+- Its folder name ends with the suffix `(TP)` (case-insensitive, e.g., `Programming (TP)`).
 
-Em **Configurações → Bibliotecas**, você pode adicionar diretórios extras por
-caminho absoluto (HDs externos, pendrives ou outras pastas locais).
-- Paths são validados contra aninhamento e escape.
-- Chaves de progresso, favoritos e caches são isolados por biblioteca (`libId\0rel`).
-- Bibliotecas desativadas permanecem visíveis para reativação ou remoção, sem bloquear caminhos.
-- A remoção de bibliotecas é estritamente **config-only**: nenhum arquivo é excluído do disco.
+Topics open hierarchical navigation cards with breadcrumbs. The `(TP)` marker and leading numbering are stripped only from the visual displayed title in the interface.
 
-## Legendas por IA
+---
 
-O player transcreve áudio com **whisper.cpp** local de forma não-bloqueante:
-1. Extração de áudio mono PCM16 com FFmpeg.
-2. Transcrição com threads calculadas dinamicamente.
-3. Pós-processamento determinístico.
-4. **Resiliência**: botão de ação com reinício forçado (`force=1`), cancelamento de jobs órfãos e mensagens explicativas em caso de ausência de binários ou modelos.
+## External Libraries
 
-*Consulte o guia detalhado em `docs/whisper.md` e `docs/SUBTITLES.md`.*
+In **Settings → Libraries**, you can register extra directories using absolute paths (external HDDs, USB sticks, or other local folders).
+- Paths are validated against nesting, symlink escapes, and application directory collisions.
+- Progress keys, favorites, and caches are strictly isolated per library (`libId\0rel`).
+- Disabled libraries remain visible for quick re-enabling or removal without file locking.
+- Removing a library is strictly **config-only**: no files are deleted from disk.
 
-## Tutor IA, Quizzes e Flashcards
+---
 
-Na aba lateral do Player, você tem acesso às ferramentas de estudo por IA:
-- **Tutor IA**: tire dúvidas sobre a aula via streaming SSE. O assistente recebe
-  automaticamente o título, hierarquia, transcrição da aula, materiais de apoio
-  (com extração de PDFs sem dependências externas, arquivos Word/PowerPoint/RTF e código)
-  e conta com pesquisa web integrada contra dados desatualizados.
-- **Skills de IA**:
-  - *Caveman*: respostas concisas e econômicas em tokens.
-  - *RTK*: filtragem de ruído e logs em materiais extensos.
-  - *Headroom*: compressão estruturada de contexto e snippets.
-  - *ADHD*: respostas acionáveis (ação primeiro, passos numerados, próximo passo concreto).
-- **Quizzes**: gere testes rápidos de múltipla escolha com correção interativa e
-  justificativas baseadas na aula.
-- **Flashcards 3D**: memorize conceitos-chave com cartões interativos giratórios.
+## AI Subtitles
 
-## Segurança e Privacidade
+The player transcribes audio using local **whisper.cpp** in a non-blocking background queue:
+1. 16kHz mono PCM16 audio extraction using FFmpeg.
+2. Transcription using dynamically computed optimal CPU threads.
+3. Deterministic post-processing.
+4. **Resilience**: action button with forced restart (`force=1`), orphan job cancellation, and clear diagnostic messages if binaries or models are missing.
 
-- **100% Local**: sem telemetria e sem dependência de nuvem para execução do player.
-- **Proteção Anti-CSRF e Origem Segura**: endpoints mutáveis e sensíveis (limpeza de progresso, transcoding, atalhos do sistema) exigem verificação de mesma origem (`Sec-Fetch-Site: same-origin` / `same-site`) e validação estrita de cabeçalhos `Host` e `Origin`.
-- **Proteção Anti-SSRF na Pesquisa Web**: bloqueio rigoroso contra requisições a redes privadas e especiais (RFC 1918, loopback `127.0.0.0/8`, link-local `169.254.0.0/16`, CGNAT `100.64.0.0/10`, IPv6 `::1`, `fc00::/7`, `fe80::/10`, IPv4-mapped IPv6 `::ffff:`, túneis 6to4) e bloqueio de portas não-web perigosas.
-- **Proteção contra Path Traversal**: todas as rotas de mídia e arquivos passam por resolução canônica que impede escape do diretório da biblioteca ou do aplicativo.
-- **Sanitização de Caminhos na Interface**: caminhos absolutos do sistema exibidos no frontend substituem a pasta do usuário por `~` para proteger a privacidade do sistema de arquivos local.
-- **Isolamento de Materiais**: arquivos de suporte com potencial executável (HTML, JS, SVG, JSON) são servidos obrigatoriamente como anexo com cabeçalhos `attachment` e `X-Content-Type-Options: nosniff`.
-- **Chaves de API protegidas**: credenciais de provedores de IA ficam salvas exclusivamente no servidor (`data/ai-config.json`), nunca retornam para o navegador e são censuradas em logs.
+*See `docs/whisper.md` and `docs/SUBTITLES.md` for complete technical details.*
 
-## Desenvolvimento e Testes
+---
 
-- **Sem build step**: edite `server.js` ou os arquivos em `public/` e recarregue a página no navegador.
-- **Verificação de sintaxe**:
+## AI Tutor, Quizzes, and Flashcards
 
-```bash
-node --check server.js public/app.js public/scope.js
-```
+In the Player's side drawer, you have access to integrated AI study tools:
+- **AI Tutor**: ask questions about the current lesson with real-time SSE streaming. The assistant automatically receives the lesson title, hierarchy, transcription, supplementary materials (zero-dependency text extraction for PDF, Word, PowerPoint, RTF, and code files), and safe web search against outdated knowledge.
+- **AI Skills**:
+  - *Caveman*: concise, token-efficient direct answers.
+  - *RTK*: noise and log filtering on large support materials.
+  - *Headroom*: structured context compression and code minification.
+  - *ADHD*: actionable formatting (action first, numbered steps, concrete next step).
+- **Quizzes**: generate multiple-choice assessments with instant correction and explanations based on lesson materials.
+- **3D Flashcards**: memorize key concepts with interactive 3D flipping cards.
 
-- **Execução da suíte completa de testes (150 testes)**:
+---
 
-```bash
-npm test
-# ou diretamente:
-node --test test/*.test.js test/*-smoke.js
-```
+## Security and Privacy
 
-- **Validação manual**: consulte `docs/VALIDACAO.md` para o checklist completo.
+- **100% Local**: zero telemetry, tracking, or cloud runtime dependency.
+- **Anti-CSRF & Safe Origin Protection**: mutating and administrative endpoints (progress reset, transcoding clear, system shortcuts, AI config) require strict same-origin verification (`Sec-Fetch-Site: same-origin` / `same-site`) and matching `Host` and `Origin` headers.
+- **Anti-SSRF Protection on Web Search**: strict blocking against requests to private, loopback, and cloud metadata IP ranges (RFC 1918, `127.0.0.0/8`, link-local `169.254.0.0/16`, CGNAT `100.64.0.0/10`, IPv6 `::1`, `fc00::/7`, `fe80::/10`, IPv4-mapped IPv6, 6to4 tunnels) and non-web ports.
+- **Path Traversal Protection**: all media and static routes resolve canonical paths ensuring zero escape from the authorized library root or application directory.
+- **UI Path Sanitization**: absolute filesystem paths displayed in the frontend mask the user's home directory with `~` to protect local filesystem privacy.
+- **Material Isolation**: supplementary files with potentially active content (HTML, JS, SVG, JSON) are served as downloads with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff` headers.
+- **Protected API Keys**: AI provider credentials are stored strictly on the server (`data/ai-config.json`), are masked in APIs (`hasApiKey: true`), and are never printed in logs.
 
-## Estrutura do projeto
+---
 
-- `server.js` — Backend completo (scan com cache, API REST, media Range, persistência atômica, fallback ffmpeg, pipeline Whisper, rotas do Tutor e integração com atalhos de sistema).
-- `public/` — SPA em JS/CSS puro (`index.html`, `app.js`, `scope.js`, `styles.css`, `favicon.svg`, `favicon.png`).
-- `assets/` — Ícones de alta fidelidade da aplicação em SVG e PNG.
-- `local-player.sh` — Script de inicialização desacoplada em background para Linux (sem console aberto).
-- `instalar-atalho.sh` / `remover-atalho.sh` — Scripts auxiliares para instalação e remoção dos atalhos `.desktop` e ícones no sistema.
-- `stop.sh` — Script para encerramento gracioso do servidor em segundo plano.
-- `data/` — Runtime local: `progress.json` (+ backups), `tree-cache-<libId>.json`, `ai-config.json`, `libraries.json`, `subtitles/`, `transcoded/`.
-- `test/` — Suíte de testes automatizados com `node:test` (unitários, invariância, persistência, segurança anti-SSRF/CSRF, forense e runtime smoke).
-- `docs/` — Documentação técnica (`DOCUMENTACAO.md`, `SUBTITLES.md`, `whisper.md`, `VALIDACAO.md`).
+## Development and Testing
+
+- **Zero Build Step**: edit `server.js` or files in `public/` and reload your browser.
+- **Syntax Check**:
+  ```bash
+  node --check server.js public/app.js public/scope.js public/js/*.js server/*.js server/**/*.js
+  ```
+- **Automated Test Suite (155 tests)**:
+  ```bash
+  npm test
+  # or directly:
+  node --test test/*.test.js test/*-smoke.js
+  ```
+- **Validation Checklist**: see `docs/VALIDATION.md` for the full release validation steps.
+
+---
+
+## Project Structure
+
+- `server.js` — Main backend orchestrator (scans with disk cache, REST API, HTTP Range media streaming, atomic persistence, FFmpeg fallback, Whisper pipeline, Tutor routes, and system shortcut integration).
+- `electron-main.js` — Native Electron desktop application entry point (`asar: false`, hardened context isolation).
+- `server/` — Decoupled backend modules (`core/`, `services/`, `ai/`).
+- `public/` — Zero-build SPA in vanilla JS/CSS (`index.html`, `app.js`, `scope.js`, `styles.css`, `favicon.svg`, `favicon.png`).
+- `public/js/` — Modular SPA components (`player`, `subtitles`, `tutor`, `study`, `settings`, `shortcuts`, `editor`).
+- `assets/` — Application icon assets in SVG and PNG formats.
+- `local-player.sh` — Decoupled background startup script for Linux (no open terminal).
+- `instalar-atalho.sh` / `remover-atalho.sh` — FreeDesktop `.desktop` shortcut installation and removal scripts.
+- `stop.sh` — Graceful background server shutdown script.
+- `data/` — Local runtime data: `progress.json` (+ backups), `tree-cache-<libId>.json`, `ai-config.json`, `libraries.json`, `subtitles/`, `transcoded/`.
+- `test/` — Automated test suite with `node:test` (unit, invariance, persistence, security, forensic, and runtime smoke).
+- `docs/` — Technical documentation in English (`DOCUMENTATION.md`, `SUBTITLES.md`, `whisper.md`, `VALIDATION.md`).
+- `docs/pt-br/` — Technical documentation in Portuguese (`DOCUMENTACAO.md`, `SUBTITLES.md`, `whisper.md`, `VALIDACAO.md`).
