@@ -29,6 +29,7 @@ const {
   isSidebarNavigableNode,
   flattenVideos,
   collectCoursesInScope,
+  collectTopicsInScope,
   collectDirectCourses,
   buildContinueItems,
   getNodeProgressStats,
@@ -446,94 +447,138 @@ function flattenMaterials(node, out = []) {
   return out;
 }
 
+function getLessonModuleTitle(video, course) {
+  if (!video || !video.path || !course || !course.path) return "";
+  if (!video.path.startsWith(course.path + "/")) return "";
+  const sub = video.path.slice(course.path.length + 1);
+  const parts = sub.split("/");
+  if (parts.length > 1) {
+    const rawFolderName = parts[parts.length - 2];
+    const parentNode = findNodeByPath(course, course.path + "/" + parts.slice(0, -1).join("/"));
+    if (parentNode) return moduleTitle(parentNode);
+    return displayTitle({ name: rawFolderName }, "módulo");
+  }
+  return "";
+}
+
+function scoreSearchText(text, tokens, fullQuery) {
+  if (!tokens || !tokens.length) return 0;
+  const haystack = normalizeText(text);
+  if (!haystack) return 0;
+  const qNorm = normalizeText(fullQuery);
+  let sc = 0;
+  if (haystack === qNorm) sc += 160;
+  else if (haystack.startsWith(qNorm)) sc += 90;
+  else if (haystack.includes(qNorm)) sc += 50;
+
+  for (const token of tokens) {
+    const idx = haystack.indexOf(token);
+    if (idx === -1) return 0;
+    sc += Math.max(5, 25 - Math.min(20, idx));
+  }
+  return sc;
+}
+
 function buildSearchResults(roots, query) {
   const tokens = toSearchTokens(query);
   if (!tokens.length) return [];
 
+  const trees = (Array.isArray(roots) ? roots : [roots]).filter(Boolean);
   const results = [];
-  // Caminha a árvore inteira de CADA biblioteca: tópicos viram resultados
-  // próprios (clique → #/topic/) e cursos aninhados em tópicos também aparecem
-  // (aulas/materiais inclusive). Cada resultado leva o libraryId de origem.
-  for (const tree of (Array.isArray(roots) ? roots : [roots]).filter(Boolean)) {
-    for (const folder of collectAllFolders(tree)) {
-      if (folder.type === "topic") {
-        const topicScore = scoreMatch(
-          `${folder.name} ${topicTitle(folder)} ${folder.path}`,
-          tokens,
-        );
-        if (topicScore) {
+  const seenPaths = new Set();
+
+  for (const tree of trees) {
+    // 1. Tópicos
+    const topics = (typeof collectTopicsInScope === "function" ? collectTopicsInScope(tree) : []).concat(
+      tree.type === "topic" && !seenPaths.has(tree.path) ? [tree] : []
+    );
+    for (const topic of topics) {
+      if (!topic || !topic.path || seenPaths.has(topic.path)) continue;
+      const tTitle = topicTitle(topic);
+      const sc = scoreSearchText(tTitle, tokens, query);
+      if (sc > 0) {
+        seenPaths.add(topic.path);
+        results.push({
+          type: "topic",
+          libId: topic.libId,
+          path: topic.path,
+          label: tTitle,
+          courseName: "Tópico",
+          score: sc + 300,
+          node: topic,
+        });
+      }
+    }
+
+    // 2. Cursos
+    const courses = collectCoursesInScope(tree);
+    for (const course of courses) {
+      if (!course || !course.path) continue;
+      const cTitle = courseTitle(course);
+      const courseScore = scoreSearchText(cTitle, tokens, query);
+      if (courseScore > 0 && !seenPaths.has(course.path)) {
+        seenPaths.add(course.path);
+        results.push({
+          type: "course",
+          libId: course.libId,
+          path: course.path,
+          coursePath: course.path,
+          courseName: cTitle,
+          label: cTitle,
+          score: courseScore + 200,
+          node: course,
+        });
+      }
+
+      // 3. Aulas
+      for (const v of flattenVideos(course)) {
+        if (!v || !v.path) continue;
+        const vTitle = lessonTitle(v);
+        const modTitle = getLessonModuleTitle(v, course);
+
+        const targetSearch = `${vTitle} ${modTitle} ${cTitle}`;
+        const vScore = scoreSearchText(targetSearch, tokens, query);
+
+        const lessonOrMod = `${normalizeText(vTitle)} ${normalizeText(modTitle)}`;
+        const matchesLessonDirectly = tokens.some((t) => lessonOrMod.includes(t));
+
+        if (vScore > 0 && (matchesLessonDirectly || courseScore === 0)) {
           results.push({
-            type: "topic",
-            libId: folder.libId,
-            path: folder.path,
-            courseName: "Tópico",
-            label: topicTitle(folder),
-            hint: folder.path,
-            score: topicScore + 15,
+            type: "lesson",
+            libId: course.libId,
+            coursePath: course.path,
+            lessonPath: v.path,
+            courseName: cTitle,
+            moduleName: modTitle,
+            label: vTitle,
+            score: vScore + (matchesLessonDirectly ? 60 : 20),
+            video: v,
           });
         }
-        continue;
       }
 
-    const course = folder;
-    const courseScore = scoreMatch(
-      `${course.name} ${courseTitle(course)} ${course.path}`,
-      tokens,
-    );
-    if (courseScore) {
-      results.push({
-        type: "course",
-        libId: course.libId,
-        coursePath: course.path,
-        courseName: courseTitle(course),
-        label: courseTitle(course),
-        hint: "Curso",
-        score: courseScore + 15,
-      });
-    }
-
-    for (const video of flattenVideos(course)) {
-      const videoLabel = lessonTitle(video);
-      const videoScore = scoreMatch(
-        `${videoLabel} ${video.name} ${video.path} ${courseTitle(course)}`,
-        tokens,
-      );
-      if (videoScore) {
-        results.push({
-          type: "lesson",
-          libId: course.libId,
-          coursePath: course.path,
-          lessonPath: video.path,
-          courseName: courseTitle(course),
-          label: videoLabel,
-          hint: video.path,
-          score: videoScore + 10,
-        });
+      // 4. Materiais
+      for (const m of flattenMaterials(course)) {
+        if (!m || !m.path) continue;
+        const mScore = scoreSearchText(`${m.name} ${cTitle}`, tokens, query);
+        if (mScore > 0) {
+          results.push({
+            type: "material",
+            libId: course.libId,
+            coursePath: course.path,
+            filePath: m.path,
+            courseName: cTitle,
+            label: m.name,
+            score: mScore,
+            file: m,
+          });
+        }
       }
     }
-
-    for (const file of flattenMaterials(course)) {
-      const fileScore = scoreMatch(
-        `${file.name} ${file.path} ${courseTitle(course)}`,
-        tokens,
-      );
-      if (fileScore) {
-        results.push({
-          type: "material",
-          libId: course.libId,
-          coursePath: course.path,
-          courseName: courseTitle(course),
-          label: file.name,
-          hint: file.path,
-          score: fileScore,
-        });
-      }
-    }
-  }
   }
 
   results.sort((a, b) => b.score - a.score || a.label.localeCompare(b.label));
-  return results.slice(0, 18);
+  return results;
 }
 
 function getSearchTrees() {
@@ -545,10 +590,63 @@ function getSearchTrees() {
   return state.tree ? [state.tree] : [];
 }
 
-function performSearch(query) {
+function performSearch(query, roots = null) {
   const clean = (query || "").trim();
   if (!clean) return [];
-  return buildSearchResults(getSearchTrees(), clean);
+  const searchRoots = roots ? (Array.isArray(roots) ? roots : [roots]) : getSearchTrees();
+  return buildSearchResults(searchRoots, clean);
+}
+
+function renderSearchLessonCard(item) {
+  const itemHref =
+    "#" +
+    courseRoute({ path: item.coursePath, libId: item.libId }) +
+    `?lesson=${encodeURIComponent(item.lessonPath)}`;
+
+  const moduleHtml = item.moduleName
+    ? `<span class="search-lesson-module" title="Módulo: ${escapeHtml(item.moduleName)}"><span class="search-module-icon" aria-hidden="true">📂</span> ${escapeHtml(item.moduleName)}</span>`
+    : `<span class="search-lesson-module"></span>`;
+
+  return `
+    <a class="search-lesson-card" href="${itemHref}" data-type="lesson">
+      <div class="search-lesson-header">
+        <span class="search-tag-badge">Aula</span>
+        <span class="search-course-badge" title="Curso: ${escapeHtml(item.courseName)}">
+          <svg class="search-course-badge-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          </svg>
+          <span class="search-course-badge-text">${escapeHtml(item.courseName)}</span>
+        </span>
+      </div>
+      <div class="search-lesson-title" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</div>
+      <div class="search-lesson-footer">
+        ${moduleHtml}
+        <span class="search-lesson-play">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          Assistir
+        </span>
+      </div>
+    </a>`;
+}
+
+function renderSearchMaterialCard(item) {
+  const fileHref = mediaUrl(item.filePath, item.libId);
+  return `
+    <a class="search-material-card" href="${fileHref}" target="_blank" rel="noopener">
+      <div class="search-material-header">
+        <span class="search-tag-badge" style="background:rgba(16,185,129,0.15);color:#34d399;">Material</span>
+        <span class="search-course-badge" title="Curso: ${escapeHtml(item.courseName)}">
+          <span class="search-course-badge-text">${escapeHtml(item.courseName)}</span>
+        </span>
+      </div>
+      <div class="search-material-title">${escapeHtml(item.label)}</div>
+      <div class="search-material-footer">
+        <span class="search-material-open">Abrir material ↗</span>
+      </div>
+    </a>`;
 }
 
 function findParentFolder(node, targetPath) {
@@ -987,112 +1085,94 @@ function renderHome(app) {
   const progressScope = directCourses.length ? directCourses : allCourses;
   const librarySummary = getLibraryProgressSummary(progressScope, progFor, orphans);
   state.lastSearchResults = results;
-  // Tópicos têm path (sem coursePath); cursos/aulas/materiais têm coursePath.
-  const matchedPaths = new Set(
-    results.map((r) => (r.type === "topic" ? r.path : r.coursePath)),
-  );
-  for (const s of sections) {
-    s.filtered = search
-      ? s.topNodes.filter((c) => matchedPaths.has(c.path))
-      : s.topNodes;
-  }
   const grouped = libs.length > 1 && !search;
-
-  // "Continuar assistindo": GLOBAL na Home (todos os cursos de todas as
-  // bibliotecas, incluindo os aninhados em tópicos). Uma aula por curso — a
-  // elegível com updatedAt mais recente. Regras preservadas: concluídas e
-  // <=5s ficam fora.
   const topContinue = buildContinueItems(allCourses, progFor, continueLimit());
 
   let html = "";
 
   if (search) {
+    const coursesAndTopics = results.filter((r) => r.type === "course" || r.type === "topic");
+    const lessons = results.filter((r) => r.type === "lesson");
+    const materials = results.filter((r) => r.type === "material");
+
+    html += `<div class="search-results-wrapper">`;
     html += `<div class="section-title">Resultados da pesquisa <span class="count">(${results.length})</span></div>`;
     if (!results.length) {
-      html += `<div class="empty-state">Nenhum resultado para "${escapeHtml(search)}".</div>`;
+      html += `<div class="empty-state">Nenhum resultado encontrado para "${escapeHtml(search)}".</div>`;
     } else {
-      html += `<div class="search-results">`;
-      for (const item of results) {
-        const tag =
-          item.type === "course"
-            ? "Curso"
-            : item.type === "topic"
-              ? "Tópico"
-              : item.type === "lesson"
-                ? "Aula"
-                : "Material";
-        let itemHref;
-        if (item.type === "topic") {
-          itemHref = "#" + topicRoute({ path: item.path, libId: item.libId });
-        } else if (item.lessonPath) {
-          itemHref =
-            "#" +
-            courseRoute({ path: item.coursePath, libId: item.libId }) +
-            `?lesson=${encodeURIComponent(item.lessonPath)}`;
-        } else {
-          itemHref = "#" + courseRoute({ path: item.coursePath, libId: item.libId });
+      if (coursesAndTopics.length) {
+        html += `<div class="section-title" style="margin-top: 18px;">Cursos e Tópicos <span class="count">(${coursesAndTopics.length})</span></div>`;
+        html += `<div class="course-grid">`;
+        for (const item of coursesAndTopics) {
+          html += renderNodeCard(item.node);
         }
-        html += `
-          <a class="search-result-item" href="${itemHref}" data-type="${item.type}">
-            <span class="search-result-tag">${tag}</span>
-            <span class="search-result-main">${escapeHtml(item.label)}</span>
-            <span class="search-result-sub">${escapeHtml(item.courseName)} · ${escapeHtml(item.hint)}</span>
-          </a>`;
+        html += `</div>`;
+      }
+
+      if (lessons.length) {
+        html += `<div class="section-title" style="margin-top: 24px;">Aulas <span class="count">(${lessons.length})</span></div>`;
+        html += `<div class="search-lessons-grid">`;
+        for (const item of lessons) {
+          html += renderSearchLessonCard(item);
+        }
+        html += `</div>`;
+      }
+
+      if (materials.length) {
+        html += `<div class="section-title" style="margin-top: 24px;">Materiais de apoio <span class="count">(${materials.length})</span></div>`;
+        html += `<div class="search-materials-list">`;
+        for (const item of materials) {
+          html += renderSearchMaterialCard(item);
+        }
+        html += `</div>`;
+      }
+    }
+    html += `</div>`;
+  } else {
+    if (topContinue.length) {
+      html += renderContinueSection(topContinue, continueSummary);
+    }
+
+    if (progressScope.length) {
+      html += renderProgressSection(librarySummary, progressScope.length);
+    }
+
+    const totalShown = sections.reduce((n, s) => n + s.topNodes.length, 0);
+    if (!grouped) {
+      const sectionLabel = hasTopics ? "Biblioteca" : "Meus cursos";
+      html += `<div class="section-title">${sectionLabel} <span class="count">(${totalShown})</span></div>`;
+    }
+    if (!totalShown) {
+      const unavailableLibs = (state.libraries || []).filter(
+        (l) => l.enabled !== false && (l.status === "unavailable" || l.status === "error"),
+      );
+      if (unavailableLibs.length > 0 && !libs.length) {
+        html += `<div class="empty-state" style="border: 1px solid rgba(234, 179, 8, 0.35); background: rgba(234, 179, 8, 0.08); border-radius: 10px; padding: 24px; text-align: center; margin: 20px 0;">
+          <div style="font-size: 1.15rem; font-weight: 600; margin-bottom: 8px; color: #eab308;">⚠ Biblioteca indisponível</div>
+          <p style="margin-bottom: 14px; opacity: 0.85;">O dispositivo ou pasta onde seus cursos estão armazenados não está acessível no momento.</p>
+          <a href="#/settings" class="btn btn--primary" style="display: inline-block; text-decoration: none; padding: 8px 18px; border-radius: 6px; font-weight: 500;">Configurações → Bibliotecas</a>
+        </div>`;
+      } else if (!libs.length) {
+        html += `<div class="empty-state">Nenhuma biblioteca configurada. Adicione uma pasta em <a href="#/settings" style="text-decoration:underline;color:inherit;font-weight:600;">Configurações → Bibliotecas</a>.</div>`;
+      } else {
+        html += `<div class="empty-state">Nenhum curso encontrado na biblioteca.</div>`;
+      }
+    }
+    for (const s of sections) {
+      if (!s.topNodes.length) continue;
+      if (grouped) {
+        html += `<div class="section-title">${escapeHtml(s.lib.name)} <span class="count">(${s.topNodes.length})</span></div>`;
+      }
+      const ordered = s.topNodes.slice().sort(
+        (a, b) =>
+          Number(isFavorite(b.path, b.libId)) - Number(isFavorite(a.path, a.libId)),
+      );
+      html += `<div class="course-grid">`;
+      for (const node of ordered) {
+        html += renderNodeCard(node);
       }
       html += `</div>`;
     }
-  }
-
-  if (topContinue.length) {
-    html += renderContinueSection(topContinue, continueSummary);
-  }
-
-  // "Seu progresso" na Home: escopo DIRETO quando houver cursos na raiz; sem
-  // cursos diretos (ex.: biblioteca toda organizada em tópicos), o bloco mostra
-  // o resumo GLOBAL — o progresso existente nunca some da Home por estrutura.
-  if (progressScope.length) {
-    html += renderProgressSection(librarySummary, progressScope.length);
-  }
-
-  const totalShown = sections.reduce((n, s) => n + s.filtered.length, 0);
-  // Uma biblioteca (ou busca ativa): cabeçalho único, como sempre foi.
-  if (!grouped) {
-    const sectionLabel = hasTopics ? "Biblioteca" : "Meus cursos";
-    html += `<div class="section-title">${sectionLabel} <span class="count">(${totalShown})</span></div>`;
-  }
-  if (!totalShown) {
-    const unavailableLibs = (state.libraries || []).filter(
-      (l) => l.enabled !== false && (l.status === "unavailable" || l.status === "error"),
-    );
-    if (unavailableLibs.length > 0 && !libs.length) {
-      html += `<div class="empty-state" style="border: 1px solid rgba(234, 179, 8, 0.35); background: rgba(234, 179, 8, 0.08); border-radius: 10px; padding: 24px; text-align: center; margin: 20px 0;">
-        <div style="font-size: 1.15rem; font-weight: 600; margin-bottom: 8px; color: #eab308;">⚠ Biblioteca indisponível</div>
-        <p style="margin-bottom: 14px; opacity: 0.85;">O dispositivo ou pasta onde seus cursos estão armazenados não está acessível no momento.</p>
-        <a href="#/settings" class="btn btn--primary" style="display: inline-block; text-decoration: none; padding: 8px 18px; border-radius: 6px; font-weight: 500;">Configurações → Bibliotecas</a>
-      </div>`;
-    } else if (!libs.length) {
-      html += `<div class="empty-state">Nenhuma biblioteca configurada. Adicione uma pasta em <a href="#/settings" style="text-decoration:underline;color:inherit;font-weight:600;">Configurações → Bibliotecas</a>.</div>`;
-    } else {
-      html += `<div class="empty-state">Nenhum curso encontrado na biblioteca.</div>`;
-    }
-  }
-  for (const s of sections) {
-    if (!s.filtered.length) continue;
-    // Mais de uma biblioteca: cada uma ganha um cabeçalho com o próprio nome.
-    if (grouped) {
-      html += `<div class="section-title">${escapeHtml(s.lib.name)} <span class="count">(${s.filtered.length})</span></div>`;
-    }
-    const ordered = search
-      ? s.filtered
-      : s.filtered.slice().sort(
-          (a, b) =>
-            Number(isFavorite(b.path, b.libId)) - Number(isFavorite(a.path, a.libId)),
-        );
-    html += `<div class="course-grid">`;
-    for (const node of ordered) {
-      html += renderNodeCard(node);
-    }
-    html += `</div>`;
   }
 
   app.innerHTML = html;
@@ -1647,6 +1727,10 @@ function renderTopic(app, topicPath, libId) {
   }
   state.currentCourseNode = null;
   state.flatVideos = [];
+
+  const searchInput = document.getElementById("search-input");
+  const search = (searchInput?.value || "").trim();
+
   const children = node.children || [];
   // Escopo contextual do tópico (CURRENT_TOPIC subtree only, recursivo):
   // "Continuar assistindo" e "Seu progresso" só enxergam cursos DENTRO deste
@@ -1670,38 +1754,98 @@ function renderTopic(app, topicPath, libId) {
     <div class="topic-view">
       <div class="topic-breadcrumb">${topicBreadcrumb(topicPath, libId)}</div>
       <h1 class="topic-title" title="${escapeHtml(topicTitle(node))}">${escapeHtml(topicTitle(node))}</h1>`;
-  if (topContinue.length) {
-    html += renderContinueSection(topContinue, scopeSummary);
-  }
-  if (scopeCourses.length) {
-    html += renderProgressSection(scopeSummary, scopeCourses.length);
-  }
-  if (!children.length) {
-    html += `<div class="empty-state">Tópico vazio.</div>`;
-  } else {
-    // Tópico, por construção, só tem pastas como filhas (sub-tópicos e cursos).
-    // Defensivo: se houver vídeo/material direto, renderiza como lista simples
-    // em vez de card.
-    const folders = children.filter(
-      (c) => c.type === "folder" || c.type === "topic",
-    );
-    const loose = children.filter((c) => c.type !== "folder");
-    if (folders.length) {
-      const orderedFolders = folders.slice().sort(
-        (a, b) => Number(isFavorite(b.path, b.libId)) - Number(isFavorite(a.path, a.libId)),
-      );
-      html += `<div class="course-grid">`;
-      for (const child of orderedFolders) {
-        html += renderNodeCard(child);
+
+  if (search) {
+    const results = performSearch(search, [node]);
+    state.lastSearchResults = results;
+
+    const coursesAndTopics = results.filter((r) => r.type === "course" || r.type === "topic");
+    const lessons = results.filter((r) => r.type === "lesson");
+    const materials = results.filter((r) => r.type === "material");
+
+    html += `
+      <div class="topic-search-header">
+        <div class="section-title">Resultados em "${escapeHtml(topicTitle(node))}" <span class="count">(${results.length})</span></div>
+      </div>`;
+
+    if (!results.length) {
+      html += `
+        <div class="empty-state" style="padding: 32px 16px; text-align: center;">
+          <p style="font-size: 1.05rem; margin-bottom: 14px;">Nenhum resultado para "<strong>${escapeHtml(search)}</strong>" dentro deste tópico.</p>
+          <a href="#/" class="topic-search-switch-btn btn btn--secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+            Buscar em toda a biblioteca →
+          </a>
+        </div>`;
+    } else {
+      if (coursesAndTopics.length) {
+        html += `<div class="section-title" style="margin-top: 18px;">Cursos e Tópicos <span class="count">(${coursesAndTopics.length})</span></div>`;
+        html += `<div class="course-grid">`;
+        for (const item of coursesAndTopics) {
+          html += renderNodeCard(item.node);
+        }
+        html += `</div>`;
       }
-      html += `</div>`;
+
+      if (lessons.length) {
+        html += `<div class="section-title" style="margin-top: 24px;">Aulas <span class="count">(${lessons.length})</span></div>`;
+        html += `<div class="search-lessons-grid">`;
+        for (const item of lessons) {
+          html += renderSearchLessonCard(item);
+        }
+        html += `</div>`;
+      }
+
+      if (materials.length) {
+        html += `<div class="section-title" style="margin-top: 24px;">Materiais de apoio <span class="count">(${materials.length})</span></div>`;
+        html += `<div class="search-materials-list">`;
+        for (const item of materials) {
+          html += renderSearchMaterialCard(item);
+        }
+        html += `</div>`;
+      }
+
+      html += `
+        <div class="search-topic-footer-action">
+          <span style="color: var(--text-dim); font-size: 13px;">Buscando somente dentro de "${escapeHtml(topicTitle(node))}".</span>
+          <a href="#/" class="topic-search-switch-btn" style="color: var(--accent); font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer;">
+            Buscar em toda a biblioteca →
+          </a>
+        </div>`;
     }
-    if (loose.length) {
-      html += `<ul class="topic-loose">`;
-      for (const item of loose) {
-        html += `<li><a href="${mediaUrl(item.path, item.libId)}" target="_blank" rel="noopener">${escapeHtml(item.name)}</a></li>`;
+  } else {
+    if (topContinue.length) {
+      html += renderContinueSection(topContinue, scopeSummary);
+    }
+    if (scopeCourses.length) {
+      html += renderProgressSection(scopeSummary, scopeCourses.length);
+    }
+    if (!children.length) {
+      html += `<div class="empty-state">Tópico vazio.</div>`;
+    } else {
+      // Tópico, por construção, só tem pastas como filhas (sub-tópicos e cursos).
+      // Defensivo: se houver vídeo/material direto, renderiza como lista simples
+      // em vez de card.
+      const folders = children.filter(
+        (c) => c.type === "folder" || c.type === "topic",
+      );
+      const loose = children.filter((c) => c.type !== "folder");
+      if (folders.length) {
+        const orderedFolders = folders.slice().sort(
+          (a, b) => Number(isFavorite(b.path, b.libId)) - Number(isFavorite(a.path, a.libId)),
+        );
+        html += `<div class="course-grid">`;
+        for (const child of orderedFolders) {
+          html += renderNodeCard(child);
+        }
+        html += `</div>`;
       }
-      html += `</ul>`;
+      if (loose.length) {
+        html += `<ul class="topic-loose">`;
+        for (const item of loose) {
+          html += `<li><a href="${mediaUrl(item.path, item.libId)}" target="_blank" rel="noopener">${escapeHtml(item.name)}</a></li>`;
+        }
+        html += `</ul>`;
+      }
     }
   }
   html += `</div>`;
@@ -1716,6 +1860,12 @@ function renderTopic(app, topicPath, libId) {
         toggleFavorite(favPath, favLib);
         renderTopic(app, topicPath, libId);
       }
+    });
+  });
+  app.querySelectorAll(".topic-search-switch-btn").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      location.hash = "/";
     });
   });
   bindProgressToggle();
@@ -2127,10 +2277,12 @@ async function init() {
     }
 
     searchActiveIndex = -1;
-    const isHome = !location.hash || location.hash === "#/";
+    const hash = (location.hash || "").replace(/^#/, "");
+    const isHome = !hash || hash === "/";
+    const isTopic = hash.startsWith("/topic/");
 
-    // Na Home, os resultados já são exibidos diretamente na grade principal
-    if (isHome) {
+    // Na Home e em Tópicos, os resultados já são exibidos diretamente na grade principal da página
+    if (isHome || isTopic) {
       closeSearchDropdown();
       return;
     }
@@ -2161,8 +2313,21 @@ async function init() {
           "#" +
           courseRoute({ path: item.coursePath, libId: item.libId }) +
           `?lesson=${encodeURIComponent(item.lessonPath)}`;
+      } else if (item.type === "material") {
+        itemHref = mediaUrl(item.filePath, item.libId);
       } else {
         itemHref = "#" + courseRoute({ path: item.coursePath, libId: item.libId });
+      }
+
+      let subHtml = "";
+      if (item.type === "lesson") {
+        subHtml = `<span class="topbar-search-course-name">${escapeHtml(item.courseName)}</span>${item.moduleName ? ` · <span class="topbar-search-module-name">${escapeHtml(item.moduleName)}</span>` : ""}`;
+      } else if (item.type === "course") {
+        subHtml = `<span class="topbar-search-course-name">Curso</span>`;
+      } else if (item.type === "topic") {
+        subHtml = `<span class="topbar-search-course-name">Tópico</span>`;
+      } else {
+        subHtml = `<span class="topbar-search-course-name">${escapeHtml(item.courseName || "Material")}</span>`;
       }
 
       html += `
@@ -2170,8 +2335,9 @@ async function init() {
           <span class="topbar-search-tag" data-type="${item.type}">${tag}</span>
           <div class="topbar-search-info">
             <div class="topbar-search-title">${escapeHtml(item.label)}</div>
-            <div class="topbar-search-sub">${escapeHtml(item.courseName)} ${item.hint ? `· ${escapeHtml(item.hint)}` : ""}</div>
+            <div class="topbar-search-sub">${subHtml}</div>
           </div>
+          <span class="topbar-search-arrow" aria-hidden="true">→</span>
         </a>
       `;
     });
@@ -2205,21 +2371,42 @@ async function init() {
   const searchInput = document.getElementById("search-input");
   searchInput.addEventListener("input", () => {
     const query = (searchInput.value || "").trim();
-    const results = performSearch(query);
-    state.lastSearchResults = results;
+    const hash = (location.hash || "").replace(/^#/, "");
 
-    const isHome = !location.hash || location.hash === "#/";
+    const isHome = !hash || hash === "/";
+    const isTopic = hash.startsWith("/topic/");
+
     if (isHome) {
       closeSearchDropdown();
       renderHome(document.getElementById("app"));
+    } else if (isTopic) {
+      closeSearchDropdown();
+      const rest = hash.slice("/topic/".length);
+      const [nodePathEnc] = rest.split("?");
+      let libId = null;
+      let pathEnc = nodePathEnc;
+      const slashIdx = nodePathEnc.indexOf("/");
+      if (slashIdx !== -1) {
+        const first = decodeURIComponent(nodePathEnc.slice(0, slashIdx));
+        if (getLibById(first)) {
+          libId = first;
+          pathEnc = nodePathEnc.slice(slashIdx + 1);
+        }
+      }
+      renderTopic(document.getElementById("app"), decodeURIComponent(pathEnc), libId);
     } else {
+      const results = performSearch(query);
+      state.lastSearchResults = results;
       renderSearchDropdown(results, query);
     }
   });
 
   searchInput.addEventListener("focus", () => {
     const query = (searchInput.value || "").trim();
-    if (query && location.hash && location.hash !== "#/") {
+    const hash = (location.hash || "").replace(/^#/, "");
+    const isHome = !hash || hash === "/";
+    const isTopic = hash.startsWith("/topic/");
+    if (query && !isHome && !isTopic) {
       const results = performSearch(query);
       state.lastSearchResults = results;
       renderSearchDropdown(results, query);
@@ -2253,6 +2440,27 @@ async function init() {
 
     if (event.key === "Escape") {
       closeSearchDropdown();
+      if (searchInput.value) {
+        searchInput.value = "";
+        const hash = (location.hash || "").replace(/^#/, "");
+        if (!hash || hash === "/") {
+          renderHome(document.getElementById("app"));
+        } else if (hash.startsWith("/topic/")) {
+          const rest = hash.slice("/topic/".length);
+          const [nodePathEnc] = rest.split("?");
+          let libId = null;
+          let pathEnc = nodePathEnc;
+          const slashIdx = nodePathEnc.indexOf("/");
+          if (slashIdx !== -1) {
+            const first = decodeURIComponent(nodePathEnc.slice(0, slashIdx));
+            if (getLibById(first)) {
+              libId = first;
+              pathEnc = nodePathEnc.slice(slashIdx + 1);
+            }
+          }
+          renderTopic(document.getElementById("app"), decodeURIComponent(pathEnc), libId);
+        }
+      }
       searchInput.blur();
       return;
     }
@@ -2290,6 +2498,11 @@ async function init() {
       closeSearchDropdown();
       location.hash = "/";
     }
+  });
+
+  document.querySelector(".topbar-brand")?.addEventListener("click", () => {
+    if (searchInput) searchInput.value = "";
+    closeSearchDropdown();
   });
 
   document.addEventListener("click", (e) => {

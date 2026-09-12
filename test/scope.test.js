@@ -13,6 +13,7 @@ const {
   isDescendantPath,
   flattenVideos,
   collectCoursesInScope,
+  collectTopicsInScope,
   collectDirectCourses,
   buildContinueItems,
   getNodeProgressStats,
@@ -205,6 +206,29 @@ test("escopo: módulos (pasta dentro de curso) ficam fora da coleção", () => {
   };
   // "Curso" é o único curso; "Curso/Módulo 1" é módulo (não conta como curso).
   assert.deepStrictEqual(collectCoursesInScope(tree).map((n) => n.path), ["Curso"]);
+});
+
+test("escopo: collectTopicsInScope devolve todos os tópicos da árvore ou subárvore", () => {
+  const tree = buildTree();
+  const allTopics = collectTopicsInScope(tree).map((n) => n.path);
+  assert.deepStrictEqual(allTopics, [
+    "TI",
+    "TI/Programação",
+    "TI/Programação/Python",
+    "TI/Programação/Java",
+    "TI/Linux",
+    "Design",
+    "Design/Photoshop",
+  ]);
+
+  const tiNode = findNodeByPath(tree, "TI");
+  const tiTopics = collectTopicsInScope(tiNode).map((n) => n.path);
+  assert.deepStrictEqual(tiTopics, [
+    "TI/Programação",
+    "TI/Programação/Python",
+    "TI/Programação/Java",
+    "TI/Linux",
+  ]);
 });
 
 // ---- buildContinueItems: regras preservadas ---------------------------------

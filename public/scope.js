@@ -68,6 +68,25 @@
     return out;
   }
 
+  // Tópicos no escopo de um nó (raiz da biblioteca ou tópico): pastas com
+  // type === "topic". Recursivo sobre tópicos e pastas que contenham tópicos.
+  function collectTopicsInScope(scopeNode) {
+    const out = [];
+    if (!scopeNode || !Array.isArray(scopeNode.children)) return out;
+    const walk = (parent) => {
+      for (const c of parent.children || []) {
+        if (c.type === "topic") {
+          out.push(c);
+          walk(c);
+        } else if (c.type === "folder") {
+          walk(c);
+        }
+      }
+    };
+    walk(scopeNode);
+    return out;
+  }
+
   // Cursos DIRETOS da raiz de uma biblioteca (filhos "folder" da raiz). Usado
   // pela Home: "Seu progresso" só conta o que pertence diretamente à Home —
   // cursos dentro de tópicos ficam de fora deste bloco.
@@ -863,6 +882,7 @@
     isSidebarNavigableNode,
     flattenVideos,
     collectCoursesInScope,
+    collectTopicsInScope,
     collectDirectCourses,
     buildContinueItems,
     getNodeProgressStats,
