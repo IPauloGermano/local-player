@@ -165,7 +165,7 @@ function renderTutorQuiz(video) {
   container.innerHTML = `
     <div class="tutor-quiz-header">
       <div class="tutor-quiz-progress-track">
-        <div class="tutor-quiz-progress-fill" style="width: ${progressPct}%;"></div>
+        <div class="tutor-quiz-progress-fill" style="--p: ${(progressPct / 100).toFixed(4)};"></div>
       </div>
       <span class="tutor-quiz-counter">Questão ${st.currentIndex + 1} de ${total}</span>
     </div>

@@ -185,9 +185,6 @@ function renderSettingsGeral() {
     <section class="settings-card" aria-label="Aplicação">
       <div class="settings-card-head">
         <div class="settings-card-head-main">
-          <div class="settings-card-badge">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-          </div>
           <div>
             <h2 class="settings-section-heading">Navegação e Interface</h2>
             <p class="settings-section-desc">Personalize o comportamento geral de visualização e navegação na aplicação.</p>
@@ -210,9 +207,6 @@ function renderSettingsGeral() {
     <section class="settings-card" aria-label="Atalhos do Sistema">
       <div class="settings-card-head">
         <div class="settings-card-head-main">
-          <div class="settings-card-badge">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-          </div>
           <div>
             <h2 class="settings-section-heading">Atalho no Sistema Operacional</h2>
             <p class="settings-section-desc">Crie ou remova opcionalmente o atalho de 1 clique do Local Player na sua Área de Trabalho e no menu de aplicativos deste computador.</p>
@@ -235,9 +229,6 @@ function renderSettingsGeral() {
     <section class="settings-card" aria-label="Economia de Energia">
       <div class="settings-card-head">
         <div class="settings-card-head-main">
-          <div class="settings-card-badge">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line><line x1="6" y1="11" x2="6" y2="13"></line><line x1="10" y1="11" x2="10" y2="13"></line></svg>
-          </div>
           <div>
             <h2 class="settings-section-heading">Economia de Bateria e Energia</h2>
             <p class="settings-section-desc">Encerra o servidor automaticamente após um período sem nenhuma aba aberta nem jobs ativos em segundo plano.</p>
@@ -383,9 +374,6 @@ function renderSettingsReproducao() {
     <section class="settings-card" aria-label="Reprodução">
       <div class="settings-card-head">
         <div class="settings-card-head-main">
-          <div class="settings-card-badge">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
-          </div>
           <div>
             <h2 class="settings-section-heading">Preferências do Player</h2>
             <p class="settings-section-desc">Defina as opções padrão para a reprodução de aulas em vídeo.</p>
@@ -424,9 +412,6 @@ function renderSettingsAtalhos() {
     <section class="settings-card" aria-label="Atalhos de teclado">
       <div class="settings-card-head">
         <div class="settings-card-head-main">
-          <div class="settings-card-badge">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><line x1="6" y1="8" x2="6.01" y2="8"></line><line x1="10" y1="8" x2="10.01" y2="8"></line><line x1="14" y1="8" x2="14.01" y2="8"></line><line x1="18" y1="8" x2="18.01" y2="8"></line><line x1="8" y1="12" x2="8.01" y2="12"></line><line x1="12" y1="12" x2="12.01" y2="12"></line><line x1="16" y1="12" x2="16.01" y2="12"></line><line x1="7" y1="16" x2="17" y2="16"></line></svg>
-          </div>
           <div>
             <h2 class="settings-section-heading">Atalhos de Teclado</h2>
             <p class="settings-section-desc">Clique em qualquer ação abaixo e pressione uma nova tecla para remapear.</p>
@@ -482,9 +467,6 @@ function renderSettingsDados() {
     <section class="settings-card" aria-label="Dados e armazenamento">
       <div class="settings-card-head">
         <div class="settings-card-head-main">
-          <div class="settings-card-badge">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
-          </div>
           <div>
             <h2 class="settings-section-heading">Uso de Armazenamento</h2>
             <p class="settings-section-desc">Estatísticas de espaço em disco e diretório de processamento temporário.</p>
@@ -511,9 +493,6 @@ function renderSettingsDados() {
     <section class="settings-card settings-danger-card" aria-label="Zona de Perigo">
       <div class="settings-card-head">
         <div class="settings-card-head-main">
-          <div class="settings-card-badge">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-          </div>
           <div>
             <h2 class="settings-section-heading" style="color: #fca5a5;">Zona Crítica</h2>
             <p class="settings-section-desc">Ações destrutivas e irreversíveis sobre os registros salvos.</p>
@@ -616,9 +595,6 @@ function renderSettingsBibliotecas() {
     <section class="settings-card" aria-label="Bibliotecas">
       <div class="settings-card-head">
         <div class="settings-card-head-main">
-          <div class="settings-card-badge">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-          </div>
           <div>
             <h2 class="settings-section-heading">Bibliotecas de Mídia</h2>
             <p class="settings-section-desc">Gerencie pastas de conteúdo além da biblioteca padrão. Cada biblioteca tem seus próprios cursos, progresso e caches isolados.</p>
@@ -836,9 +812,6 @@ function renderSettingsDiagnostico() {
     <section class="settings-card" aria-label="Diagnóstico">
       <div class="settings-card-head">
         <div class="settings-card-head-main">
-          <div class="settings-card-badge">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-          </div>
           <div>
             <h2 class="settings-section-heading">Diagnóstico do Sistema</h2>
             <p class="settings-section-desc">Status da instalação, ambiente do servidor e fila de processamento de IA em tempo real.</p>
@@ -1170,9 +1143,6 @@ function renderAiSection() {
     <section class="settings-card ai-section">
       <div class="settings-card-head">
         <div class="settings-card-head-main">
-          <div class="settings-card-badge">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2z"></path></svg>
-          </div>
           <div>
             <h2 class="settings-section-heading">Central de Inteligência Artificial</h2>
             <p class="settings-section-desc">Gerencie transcrição local (Whisper), Tutor IA, skills de otimização e conexões com modelos locais ou em nuvem.</p>

@@ -22,7 +22,8 @@ function getLibById(id) {
 
 // Helpers puros de escopo contextual (scope.js, carregado antes de app.js):
 // isDescendantPath, isSidebarNavigableNode, flattenVideos,
-// collectCoursesInScope, collectDirectCourses, buildContinueItems. Nada de
+// collectCoursesInScope, collectDirectCourses, buildContinueItems,
+// humanizeLibraryName. Nada de
 // DOM/estado — compartilhados por Home, tópicos e sidebar.
 const {
   isDescendantPath,
@@ -35,6 +36,7 @@ const {
   getNodeProgressStats,
   getLibraryProgressSummary,
   collectOrphanRecords,
+  humanizeLibraryName,
 } = window.LocalPlayerScope;
 
 // Limite de cards de "Continuar assistindo": limitado a no máximo 4 cards.
@@ -1352,7 +1354,7 @@ function renderHome(app) {
     for (const s of sections) {
       if (!s.topNodes.length) continue;
       if (grouped) {
-        html += `<div class="section-title">${escapeHtml(s.lib.name)} <span class="count">(${s.topNodes.length})</span></div>`;
+        html += `<div class="section-title">${escapeHtml(humanizeLibraryName(s.lib.name))} <span class="count">(${s.topNodes.length})</span></div>`;
       }
       const ordered = s.topNodes.slice().sort(
         (a, b) =>

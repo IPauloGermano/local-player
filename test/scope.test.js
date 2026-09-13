@@ -19,6 +19,7 @@ const {
   getNodeProgressStats,
   getLibraryProgressSummary,
   collectOrphanRecords,
+  humanizeLibraryName,
 } = require("../public/scope.js");
 
 // ---- Fixtures ---------------------------------------------------------------
@@ -572,4 +573,15 @@ test("progresso: agregação por escopo — startedCourses e isolamento entre cu
   assert.strictEqual(global.doneLessons, 2);
   assert.strictEqual(global.startedCourses, 3);
   assert.strictEqual(global.watchedSeconds, 360);
+});
+
+test("bibliotecas: humanizeLibraryName remove numeração e traduz pastas genéricas", () => {
+  assert.strictEqual(humanizeLibraryName("1. Cursos"), "Cursos");
+  assert.strictEqual(humanizeLibraryName("02 - Exatas"), "Exatas");
+  assert.strictEqual(humanizeLibraryName("Videos"), "Seus vídeos");
+  assert.strictEqual(humanizeLibraryName("  VIDEOS  "), "Seus vídeos");
+  assert.strictEqual(humanizeLibraryName("Formacao Cientista de Dados 4.0 - Data Science Academy"), "Formacao Cientista de Dados 4.0 - Data Science Academy");
+  assert.strictEqual(humanizeLibraryName("Meus cursos"), "Meus cursos");
+  assert.strictEqual(humanizeLibraryName(""), "");
+  assert.strictEqual(humanizeLibraryName(null), "");
 });
