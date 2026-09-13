@@ -187,6 +187,9 @@ function registerShortcuts() {
     if (action === "theater") {
       if (!document.querySelector(".course-view")) return;
       event.preventDefault();
+      if (document.activeElement && typeof document.activeElement.blur === "function") {
+        document.activeElement.blur();
+      }
       toggleTheaterMode();
       return;
     }

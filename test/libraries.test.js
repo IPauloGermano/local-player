@@ -305,5 +305,41 @@ test("librarySummary: biblioteca ativada preserva status e cursos do cache", () 
   assert.strictEqual(summary.enabled, true);
   assert.strictEqual(summary.status, "ok");
   assert.strictEqual(summary.courseCount, 1);
+  assert.strictEqual(summary.topicCount, 0);
   assert.strictEqual(summary.tree, mockCache.tree);
 });
+
+test("librarySummary: diferencia tópicos e não infla módulos aninhados como cursos", () => {
+  const lib = { id: "lib-tree", name: "Tree Lib", path: "/mnt/tree", enabled: true };
+  const mockCache = {
+    status: "ok",
+    tree: {
+      type: "folder",
+      children: [
+        {
+          type: "topic",
+          name: "Topico 1",
+          children: [
+            {
+              type: "folder",
+              name: "Curso A",
+              children: [
+                { type: "folder", name: "Modulo 1", children: [{ type: "video", name: "Aula 1.mp4" }] },
+                { type: "folder", name: "Modulo 2", children: [{ type: "video", name: "Aula 2.mp4" }] },
+              ],
+            },
+          ],
+        },
+        {
+          type: "folder",
+          name: "Curso B",
+          children: [{ type: "video", name: "Aula B1.mp4" }],
+        },
+      ],
+    },
+  };
+  const summary = librarySummary(lib, mockCache);
+  assert.strictEqual(summary.courseCount, 2); // Curso A e Curso B
+  assert.strictEqual(summary.topicCount, 1);  // Topico 1
+});
+

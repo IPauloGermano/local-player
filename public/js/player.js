@@ -592,66 +592,50 @@ function renderPlayerAndLesson() {
         <h2 title="${escapeHtml(lessonTitle(video))}">${escapeHtml(lessonTitle(video))}</h2>
         <div class="breadcrumb" title="${escapeHtml(breadcrumb)}">${breadcrumbHtml}</div>
       </div>
-      <button id="lesson-sidebar-toggle" class="secondary-btn lesson-sidebar-toggle" type="button" aria-expanded="false" title="Abrir a lista de aulas" aria-label="Abrir a lista de aulas">☰ Aulas</button>
+      <button id="lesson-sidebar-toggle" class="lesson-sidebar-toggle" type="button" aria-expanded="false" title="Abrir a lista de aulas" aria-label="Abrir a lista de aulas">
+        <svg class="sidebar-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="3"/>
+          <path d="M15 3v18"/>
+          <path d="M7 8h4M7 12h4M7 16h4"/>
+        </svg>
+        <span class="sidebar-toggle-text">Aulas</span>
+        <span class="sidebar-toggle-indicator" aria-hidden="true"></span>
+      </button>
     </div>
     <div class="player-controls">
       <div class="nav-buttons">
-        <button id="prev-btn" class="btn-nav" ${prev ? "" : "disabled"} title="Aula anterior">‹ Anterior</button>
+        <button id="prev-btn" class="btn-nav btn-nav-prev" ${prev ? "" : "disabled"} title="Aula anterior" aria-label="Aula anterior">
+          <svg class="nav-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+          <span class="nav-text">Anterior</span>
+        </button>
+        <div class="nav-sep" aria-hidden="true"></div>
         <button id="toggle-lesson-complete-btn" class="btn-nav btn-complete ${isDone ? "is-completed" : ""}" type="button" aria-label="${isDone ? "Desmarcar aula como concluída" : "Marcar aula como concluída"}" title="${isDone ? "Desmarcar aula como concluída" : "Marcar aula como concluída"}">
           <span class="complete-icon" aria-hidden="true">${isDone ? "✓" : "○"}</span>
           <span class="complete-text">${isDone ? "Concluída" : "Concluir"}</span>
         </button>
-        <button id="next-btn" class="btn-nav" ${next ? "" : "disabled"} title="Próxima aula">Próxima ›</button>
+        <div class="nav-sep" aria-hidden="true"></div>
+        <button id="next-btn" class="btn-nav btn-nav-next" ${next ? "" : "disabled"} title="Próxima aula" aria-label="Próxima aula">
+          <span class="nav-text">Próxima</span>
+          <svg class="nav-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
       </div>
-      <button id="tutor-btn" class="secondary-btn tutor-btn" title="Tirar dúvidas com o Tutor IA">✨ Tutor IA</button>
-      <button id="subtitle-style-btn" class="secondary-btn" title="Personalizar a aparência da legenda">Aa Aparência</button>
+      <div class="player-tools">
+        <button id="tutor-btn" class="tutor-btn" type="button" title="Tirar dúvidas com o Tutor IA" aria-label="Tirar dúvidas com o Tutor IA">
+          <svg class="tutor-sparkle-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2z"/>
+          </svg>
+          <span>Tutor IA</span>
+        </button>
+        <button id="subtitle-style-btn" class="subtitle-style-btn" type="button" title="Personalizar a aparência da legenda" aria-label="Personalizar a aparência da legenda">
+          <svg class="sub-style-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="4" width="20" height="16" rx="3"/>
+            <path d="M7 15h10M7 11h5M15 11h2"/>
+          </svg>
+          <span>Legendas</span>
+        </button>
+      </div>
     </div>
-    <div class="subtitle-style-panel" id="subtitle-style-panel" hidden>
-      <h4>Aparência da legenda</h4>
-      <div class="ssp-row">
-        <label>Tamanho</label>
-        <span class="ssp-size">
-          <button type="button" data-size="sm">P</button>
-          <button type="button" data-size="md">M</button>
-          <button type="button" data-size="lg">G</button>
-        </span>
-      </div>
-      <div class="ssp-row">
-        <label>Cor do texto</label>
-        <input type="color" id="ssp-text" value="#ffffff">
-      </div>
-      <div class="ssp-row">
-        <label>Fundo</label>
-        <span style="display:flex;gap:6px;align-items:center">
-          <select id="ssp-bg">
-            <option value="none">Sem fundo</option>
-            <option value="black">Preto 60%</option>
-            <option value="white">Branco 65%</option>
-            <option value="custom">Personalizado…</option>
-          </select>
-          <input type="color" id="ssp-bg-custom" value="#000000" title="Cor personalizada do fundo" hidden>
-        </span>
-      </div>
-      <div class="ssp-row">
-        <label>Espaçamento</label>
-        <span style="display:flex;gap:8px;align-items:center">
-          <input type="range" id="ssp-spacing" min="1" max="1.8" step="0.05" value="1.3">
-          <span id="ssp-spacing-val" style="min-width:28px;text-align:right">1.3</span>
-        </span>
-      </div>
-      <div class="ssp-row">
-        <label>Contorno</label>
-        <input type="checkbox" id="ssp-shadow" checked>
-      </div>
-      <div class="ssp-row ssp-row-pos">
-        <label>Posição</label>
-        <button type="button" id="ssp-reset-pos">Restaurar posição padrão</button>
-      </div>
-      <p class="ssp-hint">Arraste a legenda dentro do vídeo para reposicionar (como no YouTube).</p>
-      <div class="ssp-actions">
-        <button type="button" id="ssp-reset">Restaurar padrão</button>
-      </div>
-    </div>`;
+    <div class="subtitle-style-panel" id="subtitle-style-panel" hidden></div>`;
 
   wireSubtitleStylePanel(wrap);
 
@@ -669,27 +653,48 @@ function renderPlayerAndLesson() {
 
   document
     .getElementById("prev-btn")
-    ?.addEventListener("click", () => prev && navigateToLesson(prev.path));
+    ?.addEventListener("click", (e) => {
+      e.currentTarget?.blur?.();
+      prev && navigateToLesson(prev.path);
+    });
   document
     .getElementById("toggle-lesson-complete-btn")
-    ?.addEventListener("click", () => toggleLessonCompleted(video.path));
+    ?.addEventListener("click", (e) => {
+      e.currentTarget?.blur?.();
+      toggleLessonCompleted(video.path);
+    });
   document
     .getElementById("next-btn")
-    ?.addEventListener("click", () => next && navigateToLesson(next.path));
+    ?.addEventListener("click", (e) => {
+      e.currentTarget?.blur?.();
+      next && navigateToLesson(next.path);
+    });
   document
     .getElementById("tutor-btn")
-    ?.addEventListener("click", () => toggleTutorDrawer(video));
+    ?.addEventListener("click", (e) => {
+      e.currentTarget?.blur?.();
+      toggleTutorDrawer(video);
+    });
+  document
+    .getElementById("subtitle-style-btn")
+    ?.addEventListener("click", (e) => {
+      e.currentTarget?.blur?.();
+    });
 
   // Alterna a lista de aulas: drawer no mobile ou painel lateral no desktop.
-  document
-    .getElementById("lesson-sidebar-toggle")
-    ?.addEventListener("click", () => {
-      if (typeof toggleSummaryPanel === "function") {
-        toggleSummaryPanel();
-      } else if (typeof toggleDrawer === "function") {
-        toggleDrawer();
-      }
-    });
+  // Remove o foco do botão para evitar travar atalhos de teclado como "T".
+  const lessonToggleBtn = document.getElementById("lesson-sidebar-toggle");
+  lessonToggleBtn?.addEventListener("click", (e) => {
+    e.currentTarget?.blur?.();
+    if (typeof toggleSummaryPanel === "function") {
+      toggleSummaryPanel();
+    } else if (typeof toggleDrawer === "function") {
+      toggleDrawer();
+    }
+  });
+  lessonToggleBtn?.addEventListener("mouseup", (e) => {
+    e.currentTarget?.blur?.();
+  });
   document
     .getElementById("sidebar-backdrop")
     ?.addEventListener("click", () => closeMobileDrawer());

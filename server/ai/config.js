@@ -1,4 +1,7 @@
 // Configuração persistente e sanitização de Inteligência Artificial (Whisper / LLM / Skills)
+const path = require("path");
+const state = require("../state");
+const { readJsonFile, writeFileAtomic } = require("../core/fs-atomic");
 
 const AI_TRANSCRIPTION_PROVIDERS = [
   {
@@ -450,15 +453,53 @@ function maskAiConfig(config) {
   };
 }
 
+function getAiConfigFile() {
+  return state.AI_CONFIG_FILE || path.join(state.DATA_DIR, "ai-config.json");
+}
+
+async function loadAiConfig() {
+  const read = await readJsonFile(getAiConfigFile());
+  const cfg = read.ok ? sanitizeAiConfig(read.parsed) : defaultAiConfig();
+  // Override de ambiente (spec): só aplica quando a variável existe — senão o
+  // config persistido (e editável pela Central de IA) vale.
+  if (process.env.BACKGROUND_SUBTITLE_GENERATION !== undefined) {
+    cfg.transcription.background =
+      process.env.BACKGROUND_SUBTITLE_GENERATION === "true" ||
+      process.env.BACKGROUND_SUBTITLE_GENERATION === "1";
+  }
+  return cfg;
+}
+
+// Escritas serializadas (mesmo padrão do progresso): read-modify-write atômico
+// e sem colisão no arquivo temporário.
+let aiConfigWriteQueue = Promise.resolve();
+function saveAiConfig(mutator) {
+  const run = aiConfigWriteQueue.then(async () => {
+    const cfg = await loadAiConfig();
+    const next = await mutator(cfg);
+    state.refreshHeavyMax(next.advanced.maxConcurrentAiJobs);
+    await writeFileAtomic(getAiConfigFile(), JSON.stringify(next, null, 2));
+    return next;
+  });
+  aiConfigWriteQueue = run.catch(() => {});
+  return run;
+}
+
 module.exports = {
   AI_TRANSCRIPTION_PROVIDERS,
   AI_LLM_PROVIDER_TYPES,
   AI_LLM_PRESETS,
   AI_STR_LIMITS,
+  objOr,
+  clampStr,
   defaultAiConfig,
   findTranscriptionProvider,
   sanitizeAiConfig,
   sanitizePatchProvider,
   applyAiPatch,
   maskAiConfig,
+  getAiConfigFile,
+  loadAiConfig,
+  saveAiConfig,
 };
+

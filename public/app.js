@@ -22,7 +22,8 @@ function getLibById(id) {
 
 // Helpers puros de escopo contextual (scope.js, carregado antes de app.js):
 // isDescendantPath, isSidebarNavigableNode, flattenVideos,
-// collectCoursesInScope, collectDirectCourses, buildContinueItems. Nada de
+// collectCoursesInScope, collectDirectCourses, buildContinueItems,
+// humanizeLibraryName. Nada de
 // DOM/estado — compartilhados por Home, tópicos e sidebar.
 const {
   isDescendantPath,
@@ -35,6 +36,7 @@ const {
   getNodeProgressStats,
   getLibraryProgressSummary,
   collectOrphanRecords,
+  humanizeLibraryName,
 } = window.LocalPlayerScope;
 
 // Limite de cards de "Continuar assistindo": limitado a no máximo 4 cards.
@@ -966,6 +968,7 @@ function applyViewModeToDOM() {
     const isMobile = isMobileDrawer();
     const open = isMobile ? !!(view && view.classList.contains("drawer-open")) : (theater && getSummaryOpen());
     lessonToggle.setAttribute("aria-expanded", String(open));
+    lessonToggle.classList.toggle("is-active", open);
     lessonToggle.title = open ? "Fechar lista de aulas" : "Abrir lista de aulas";
   }
 }
@@ -998,7 +1001,11 @@ function setDrawerOpen(open) {
   if (!view) return;
   view.classList.toggle("drawer-open", open);
   const btn = document.getElementById("lesson-sidebar-toggle");
-  if (btn) btn.setAttribute("aria-expanded", String(open));
+  if (btn) {
+    btn.setAttribute("aria-expanded", String(open));
+    btn.classList.toggle("is-active", open);
+    btn.title = open ? "Fechar lista de aulas" : "Abrir lista de aulas";
+  }
   // Reflete o estado no item ⋮ > Resumo da aula (o mesmo controle no mobile).
   const summaryItem = document.querySelector('[data-more="summary"]');
   if (summaryItem) {
@@ -1211,23 +1218,25 @@ function renderHome(app) {
   // Escopos (paths REAIS, nunca título):
   //   allCourses  = TODOS os cursos de TODAS as bibliotecas (global) → alimenta
   //                 "Continuar assistindo" (global na Home, como sempre).
-  //   directCourses = cursos DIRETOS da raiz de cada biblioteca (filhos
-  //                 "folder") → "Seu progresso" só conta o que pertence à Home;
-  //                 sem cursos diretos, a seção é ocultada.
+  //   progressScope = cursos do escopo da Home: para cada biblioteca, prefere
+  //                 os cursos DIRETOS da raiz; se a biblioteca for toda
+  //                 organizada em tópicos (sem curso direto), inclui seus cursos
+  //                 em escopo para seu progresso não ficar invisível na Home.
   const allCourses = [];
-  const directCourses = [];
+  const progressScope = [];
   for (const lib of libs) {
-    allCourses.push(...collectCoursesInScope(lib.tree));
-    directCourses.push(...collectDirectCourses(lib.tree));
+    const libCourses = collectCoursesInScope(lib.tree);
+    allCourses.push(...libCourses);
+    const direct = collectDirectCourses(lib.tree);
+    if (direct.length > 0) {
+      progressScope.push(...direct);
+    } else {
+      progressScope.push(...libCourses);
+    }
   }
   const search = (document.getElementById("search-input").value || "").trim();
   const results = performSearch(search);
   // Resumo GLOBAL (todas as bibliotecas) → rodapé de "Continuar assistindo".
-  // Resumo de "Seu progresso" na Home: PREFERE o escopo DIRETO (cursos filhos
-  // da raiz — comportamento contextual documentado); se a raiz não tem curso
-  // direto (ex.: biblioteca toda organizada em tópicos), cai para o GLOBAL,
-  // para o progresso existente não ficar invisível na Home (persistência é a
-  // fonte de verdade; o bloco nunca some por organização em tópicos).
   // Órfãos (histórico de arquivos movidos/renomeados/removidos, sem nó na
   // árvore — ex.: pasta renomeada) entram nos dois resumos: nada estudado
   // fica invisível.
@@ -1241,7 +1250,6 @@ function renderHome(app) {
     libs.map((l) => l.id),
   );
   const continueSummary = getLibraryProgressSummary(allCourses, progFor, orphans);
-  const progressScope = directCourses.length ? directCourses : allCourses;
   const librarySummary = getLibraryProgressSummary(progressScope, progFor, orphans);
   state.lastSearchResults = results;
   const grouped = libs.length > 1 && !search;
@@ -1346,7 +1354,7 @@ function renderHome(app) {
     for (const s of sections) {
       if (!s.topNodes.length) continue;
       if (grouped) {
-        html += `<div class="section-title">${escapeHtml(s.lib.name)} <span class="count">(${s.topNodes.length})</span></div>`;
+        html += `<div class="section-title">${escapeHtml(humanizeLibraryName(s.lib.name))} <span class="count">(${s.topNodes.length})</span></div>`;
       }
       const ordered = s.topNodes.slice().sort(
         (a, b) =>

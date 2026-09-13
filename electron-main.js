@@ -32,7 +32,7 @@ function resolveDataDir() {
         return portableDataDir;
       } catch {}
     }
-    // Armazenamento padrão persistente do usuário (~/.config/local-player/data)
+    // Armazenamento padrão persistente do usuário (~/.config/Local Player/data)
     const fallbackDir = path.join(app.getPath("userData"), "data");
     fs.mkdirSync(fallbackDir, { recursive: true });
     return fallbackDir;
@@ -212,7 +212,6 @@ async function startApp() {
   // 3. Pasta models/ no diretório pai (quando executado de dist/)
   // 4. Pasta models/ no perfil de dados do usuário (~/.config/Local Player/data/models)
   // 5. Pasta models/ integrada se existir
-  const parentModels = path.join(appImageDir, "..", "models");
   let activeModelsDir = null;
   if (process.env.WHISPER_MODEL_DIR && fs.existsSync(process.env.WHISPER_MODEL_DIR)) {
     activeModelsDir = process.env.WHISPER_MODEL_DIR;
@@ -220,9 +219,6 @@ async function startApp() {
   } else if (hasModelFiles(portableModels)) {
     activeModelsDir = portableModels;
     console.log(`[DESKTOP] Modelos Whisper detectados ao lado do executável: ${portableModels}`);
-  } else if (hasModelFiles(parentModels)) {
-    activeModelsDir = parentModels;
-    console.log(`[DESKTOP] Modelos Whisper detectados na raiz pai: ${parentModels}`);
   } else if (hasModelFiles(userDataModels)) {
     activeModelsDir = userDataModels;
     console.log(`[DESKTOP] Modelos Whisper detectados no perfil do usuário: ${userDataModels}`);
@@ -495,7 +491,23 @@ function gracefulShutdown() {
   }
 }
 
-app.whenReady().then(startApp);
+// Instância única: segundo clique no atalho foca a janela existente em vez de
+// abrir outra janela + outro servidor em outra porta (mesma expectativa do
+// modo web, onde o launcher foca a aba existente em vez de abrir nova aba).
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
+    } catch {}
+  });
+  app.whenReady().then(startApp);
+}
 
 app.on("before-quit", gracefulShutdown);
 

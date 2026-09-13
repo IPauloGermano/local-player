@@ -283,26 +283,128 @@ function requestSubtitleGenerate() {
 // ---------------------------------------------------------------------------
 // Aparência da legenda (personalização, mantendo o visual padrão por default).
 // Preferência local (localStorage), mesmo padrão dos demais controles do player.
+// Estrutura hierárquica e limpa inspirada no menu de opções do YouTube.
 // ---------------------------------------------------------------------------
 const SUBTITLE_STYLE_KEY = "course-player-subtitle-style";
 const SUBTITLE_STYLE_DEFAULT = {
-  size: "md", // 'sm' | 'md' | 'lg' — escala sobre a fonte base proporcional ao quadro
+  fontFamily: "default",
   textColor: "#ffffff",
-  bg: "none", // 'none' | 'black' | 'white' | 'custom'
+  size: "100%",
+  bg: "none",
   bgCustom: "#000000",
-  spacing: 1.3, // line-height (espaço entre linhas)
-  shadow: true, // contorno preto (legibilidade)
+  edge: "drop-shadow",
+  spacing: 1.3,
+  shadow: true,
 };
-const SUBTITLE_STYLE_SCALE = { sm: 0.85, md: 1, lg: 1.25 };
+
+const SUBTITLE_STYLE_SCALE = {
+  "50%": 0.5,
+  "75%": 0.75,
+  "100%": 1.0,
+  "150%": 1.5,
+  "200%": 2.0,
+  "300%": 3.0,
+  sm: 0.85,
+  md: 1.0,
+  lg: 1.25,
+};
+
+const SUBTITLE_FONTS = [
+  { id: "default", label: "Padrão (Sem serifa proporcional)", shortLabel: "Padrão", sampleFont: "system-ui, -apple-system, sans-serif" },
+  { id: "monospace-sans", label: "Sem serifa monoespaçada", shortLabel: "Monoespaçada", sampleFont: "ui-monospace, monospace" },
+  { id: "serif", label: "Proporcional com serifa", shortLabel: "Com serifa", sampleFont: "Georgia, 'Times New Roman', serif" },
+  { id: "monospace-serif", label: "Monoespaçada com serifa", shortLabel: "Mono com serifa", sampleFont: "'Courier New', monospace" },
+  { id: "casual", label: "Casual", shortLabel: "Casual", sampleFont: "'Comic Sans MS', cursive, sans-serif" },
+  { id: "cursive", label: "Cursiva", shortLabel: "Cursiva", sampleFont: "'Brush Script MT', cursive" },
+  { id: "small-caps", label: "Pequenas maiúsculas", shortLabel: "Pequenas maiúsc.", sampleFont: "sans-serif", smallCaps: true },
+];
+
+const SUBTITLE_TEXT_COLORS = [
+  { id: "#ffffff", label: "Branco", color: "#ffffff" },
+  { id: "#ffff00", label: "Amarelo", color: "#ffff00" },
+  { id: "#00ff00", label: "Verde", color: "#00ff00" },
+  { id: "#00ffff", label: "Ciano", color: "#00ffff" },
+  { id: "#3b82f6", label: "Azul", color: "#3b82f6" },
+  { id: "#ff00ff", label: "Magenta", color: "#ff00ff" },
+  { id: "#ff3b30", label: "Vermelho", color: "#ff3b30" },
+  { id: "#000000", label: "Preto", color: "#000000" },
+];
+
+const SUBTITLE_SIZES = [
+  { id: "50%", label: "50%" },
+  { id: "75%", label: "75%" },
+  { id: "100%", label: "100% (Padrão)", shortLabel: "100%" },
+  { id: "150%", label: "150%" },
+  { id: "200%", label: "200%" },
+  { id: "300%", label: "300%" },
+];
+
+const SUBTITLE_BGS = [
+  { id: "none", label: "Sem fundo (0%)", shortLabel: "Sem fundo", color: "transparent" },
+  { id: "black-60", label: "Preto 60% (Padrão)", shortLabel: "Preto 60%", color: "rgba(0, 0, 0, 0.6)" },
+  { id: "black-80", label: "Preto 80%", shortLabel: "Preto 80%", color: "rgba(0, 0, 0, 0.8)" },
+  { id: "black-100", label: "Preto 100%", shortLabel: "Preto 100%", color: "#000000" },
+  { id: "white-65", label: "Branco 65%", shortLabel: "Branco 65%", color: "rgba(255, 255, 255, 0.65)" },
+  { id: "blue-75", label: "Azul escuro 75%", shortLabel: "Azul escuro 75%", color: "rgba(15, 23, 42, 0.75)" },
+];
+
+const SUBTITLE_EDGES = [
+  { id: "drop-shadow", label: "Sombra projetada (Padrão)", shortLabel: "Sombra projetada" },
+  { id: "outline", label: "Contorno preto nítido", shortLabel: "Contorno nítido" },
+  { id: "raised", label: "Borda chanfrada / Elevada", shortLabel: "Borda elevada" },
+  { id: "depressed", label: "Borda rebaixada", shortLabel: "Borda rebaixada" },
+  { id: "window", label: "Janela translúcida", shortLabel: "Janela translúcida" },
+  { id: "none", label: "Nenhum", shortLabel: "Nenhum" },
+];
+
+function getSubtitleFontLabel(id) {
+  const f = SUBTITLE_FONTS.find((x) => x.id === id);
+  return f ? (f.shortLabel || f.label) : "Padrão";
+}
+
+function getSubtitleTextColorInfo(color) {
+  const c = SUBTITLE_TEXT_COLORS.find((x) => x.id.toLowerCase() === (color || "").toLowerCase());
+  if (c) return { label: c.label, swatch: c.color };
+  return { label: "Personalizado", swatch: color || "#ffffff" };
+}
+
+function getSubtitleSizeLabel(size) {
+  const s = SUBTITLE_SIZES.find((x) => x.id === size);
+  return s ? (s.shortLabel || s.label) : (size || "100%");
+}
+
+function getSubtitleBgInfo(bg, bgCustom) {
+  const b = SUBTITLE_BGS.find((x) => x.id === bg);
+  if (b) return { label: b.shortLabel || b.label, swatch: b.color, transparent: b.id === "none" };
+  if (bg === "custom") return { label: "Personalizado", swatch: bgCustom || "#000000", transparent: false };
+  return { label: "Sem fundo", swatch: "transparent", transparent: true };
+}
+
+function getSubtitleEdgeLabel(edge) {
+  const e = SUBTITLE_EDGES.find((x) => x.id === edge);
+  return e ? (e.shortLabel || e.label) : "Sombra projetada";
+}
 
 function loadSubtitleStyle() {
   try {
     const saved = JSON.parse(localStorage.getItem(SUBTITLE_STYLE_KEY) || "null");
-    return { ...SUBTITLE_STYLE_DEFAULT, ...(saved && typeof saved === "object" ? saved : {}) };
+    const merged = { ...SUBTITLE_STYLE_DEFAULT, ...(saved && typeof saved === "object" ? saved : {}) };
+    if (merged.size === "sm") merged.size = "75%";
+    else if (merged.size === "md") merged.size = "100%";
+    else if (merged.size === "lg") merged.size = "150%";
+
+    if (merged.bg === "black") merged.bg = "black-60";
+    else if (merged.bg === "white") merged.bg = "white-65";
+
+    if (!merged.edge) {
+      merged.edge = merged.shadow === false ? "none" : "drop-shadow";
+    }
+    return merged;
   } catch {
     return { ...SUBTITLE_STYLE_DEFAULT };
   }
 }
+
 function saveSubtitleStyle(style) {
   try {
     localStorage.setItem(SUBTITLE_STYLE_KEY, JSON.stringify(style));
@@ -314,67 +416,292 @@ function saveSubtitleStyle(style) {
 function applySubtitleStyle(overlay) {
   if (!overlay) return;
   const s = loadSubtitleStyle();
-  const bg =
-    s.bg === "black"
-      ? "rgba(0,0,0,0.6)"
-      : s.bg === "white"
-        ? "rgba(255,255,255,0.65)"
-        : s.bg === "custom"
-          ? s.bgCustom
-          : "transparent";
-  overlay.style.setProperty("--st-text-color", s.textColor);
+
+  // 1. Cor do texto
+  overlay.style.setProperty("--st-text-color", s.textColor || "#ffffff");
+
+  // 2. Cor e opacidade do fundo
+  let bg = "transparent";
+  if (s.bg === "black-60" || s.bg === "black") bg = "rgba(0, 0, 0, 0.6)";
+  else if (s.bg === "black-80") bg = "rgba(0, 0, 0, 0.8)";
+  else if (s.bg === "black-100") bg = "#000000";
+  else if (s.bg === "white-65" || s.bg === "white") bg = "rgba(255, 255, 255, 0.65)";
+  else if (s.bg === "blue-75") bg = "rgba(15, 23, 42, 0.75)";
+  else if (s.bg === "custom") bg = s.bgCustom || "#000000";
   overlay.style.setProperty("--st-bg-color", bg);
-  overlay.style.setProperty("--st-line-height", String(s.spacing));
-  overlay.style.setProperty(
-    "--st-shadow",
-    s.shadow ? "0 1px 3px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.55)" : "none",
-  );
+
+  // 3. Estilo de fonte
+  let fontFam = "inherit";
+  if (s.fontFamily === "monospace-sans") fontFam = "ui-monospace, 'Cascadia Code', 'SF Mono', monospace";
+  else if (s.fontFamily === "serif") fontFam = "Georgia, 'Times New Roman', Times, serif";
+  else if (s.fontFamily === "monospace-serif") fontFam = "'Courier New', Courier, monospace";
+  else if (s.fontFamily === "casual") fontFam = "'Comic Sans MS', 'Segoe Print', cursive, sans-serif";
+  else if (s.fontFamily === "cursive") fontFam = "'Brush Script MT', 'Segoe Script', cursive";
+  else if (s.fontFamily === "default") fontFam = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+  overlay.style.setProperty("--st-font-family", fontFam);
+  overlay.style.setProperty("--st-font-variant", s.fontFamily === "small-caps" ? "small-caps" : "normal");
+
+  // 4. Opacidade da janela / Contorno
+  let shadow = "none";
+  let windowBox = "none";
+  const edge = s.edge || (s.shadow ? "drop-shadow" : "none");
+  if (edge === "drop-shadow") {
+    shadow = "0 1px 3px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.55)";
+  } else if (edge === "outline") {
+    shadow = "-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 4px rgba(0, 0, 0, 0.85)";
+  } else if (edge === "raised") {
+    shadow = "1px 1px 0 rgba(0, 0, 0, 0.85), -1px -1px 0 rgba(255, 255, 255, 0.35)";
+  } else if (edge === "depressed") {
+    shadow = "-1px -1px 0 rgba(0, 0, 0, 0.85), 1px 1px 0 rgba(255, 255, 255, 0.35)";
+  } else if (edge === "window") {
+    shadow = "0 1px 2px rgba(0, 0, 0, 0.6)";
+    windowBox = "0 0 0 6px rgba(0, 0, 0, 0.55)";
+  }
+  overlay.style.setProperty("--st-shadow", shadow);
+  overlay.style.setProperty("--st-window-box", windowBox);
+
+  // 5. Espaçamento
+  overlay.style.setProperty("--st-line-height", String(s.spacing || 1.3));
+}
+
+let sspCurrentView = "root";
+
+function renderSubtitleStyleView(panel, view) {
+  if (!panel) return;
+  sspCurrentView = view || "root";
+  const s = loadSubtitleStyle();
+  const esc = typeof escapeHtml === "function" ? escapeHtml : (str) => String(str || "");
+
+  if (sspCurrentView === "root") {
+    const fontLabel = getSubtitleFontLabel(s.fontFamily);
+    const textColorInfo = getSubtitleTextColorInfo(s.textColor);
+    const sizeLabel = getSubtitleSizeLabel(s.size);
+    const bgInfo = getSubtitleBgInfo(s.bg, s.bgCustom);
+    const edgeLabel = getSubtitleEdgeLabel(s.edge);
+    const hasCustomPos = subtitleState.pos != null;
+
+    panel.innerHTML = `
+      <div class="ssp-header">
+        <button type="button" class="ssp-back-btn" id="ssp-close-btn" title="Fechar configurações de legendas" aria-label="Voltar e fechar configurações de legendas">
+          <span class="ssp-back-arrow" aria-hidden="true">‹</span>
+          <span class="ssp-header-title">Configurações de legendas</span>
+        </button>
+        <button type="button" class="ssp-close-icon-btn" id="ssp-x-btn" title="Fechar" aria-label="Fechar">✕</button>
+      </div>
+
+      <div class="ssp-menu-list">
+        <button type="button" class="ssp-item" data-view="font" title="Alterar estilo de fonte">
+          <span class="ssp-item-label">Estilo de fonte</span>
+          <span class="ssp-item-value">
+            <span class="ssp-value-text">${esc(fontLabel)}</span>
+            <span class="ssp-chevron" aria-hidden="true">›</span>
+          </span>
+        </button>
+
+        <button type="button" class="ssp-item" data-view="textColor" title="Alterar cor do texto">
+          <span class="ssp-item-label">Cor do texto</span>
+          <span class="ssp-item-value">
+            <span class="ssp-swatch" style="background:${textColorInfo.swatch}"></span>
+            <span class="ssp-value-text">${esc(textColorInfo.label)}</span>
+            <span class="ssp-chevron" aria-hidden="true">›</span>
+          </span>
+        </button>
+
+        <button type="button" class="ssp-item" data-view="size" title="Alterar tamanho da fonte">
+          <span class="ssp-item-label">Tamanho da fonte</span>
+          <span class="ssp-item-value">
+            <span class="ssp-value-text">${esc(sizeLabel)}</span>
+            <span class="ssp-chevron" aria-hidden="true">›</span>
+          </span>
+        </button>
+
+        <button type="button" class="ssp-item" data-view="bg" title="Alterar cor e opacidade do fundo">
+          <span class="ssp-item-label">Cor e Opacidade do fundo</span>
+          <span class="ssp-item-value">
+            <span class="ssp-swatch ${bgInfo.transparent ? "is-transparent" : ""}" style="${bgInfo.transparent ? "" : `background:${bgInfo.swatch}`}"></span>
+            <span class="ssp-value-text">${esc(bgInfo.label)}</span>
+            <span class="ssp-chevron" aria-hidden="true">›</span>
+          </span>
+        </button>
+
+        <button type="button" class="ssp-item" data-view="edge" title="Alterar opacidade da janela e contorno">
+          <span class="ssp-item-label">Opacidade da janela / Contorno</span>
+          <span class="ssp-item-value">
+            <span class="ssp-value-text">${esc(edgeLabel)}</span>
+            <span class="ssp-chevron" aria-hidden="true">›</span>
+          </span>
+        </button>
+      </div>
+
+      <hr class="ssp-divider">
+
+      <div class="ssp-footer">
+        <div class="ssp-footer-actions">
+          <button type="button" class="ssp-link-btn" id="ssp-reset-all" title="Restaurar opções padrão">Restaurar padrões</button>
+          ${hasCustomPos ? `<button type="button" class="ssp-link-btn" id="ssp-reset-pos" title="Restaurar posição original da legenda">Restaurar posição</button>` : ""}
+        </div>
+        <p class="ssp-hint">Arraste a legenda dentro do vídeo para reposicionar.</p>
+      </div>
+    `;
+    return;
+  }
+
+  if (sspCurrentView === "font") {
+    panel.innerHTML = `
+      <div class="ssp-header">
+        <button type="button" class="ssp-back-btn" id="ssp-back-btn" title="Voltar para configurações de legendas" aria-label="Voltar">
+          <span class="ssp-back-arrow" aria-hidden="true">‹</span>
+          <span class="ssp-header-title">Estilo de fonte</span>
+        </button>
+        <button type="button" class="ssp-close-icon-btn" id="ssp-x-btn" title="Fechar" aria-label="Fechar">✕</button>
+      </div>
+      <div class="ssp-options-list">
+        ${SUBTITLE_FONTS.map((item) => {
+          const isSel = s.fontFamily === item.id;
+          return `
+            <button type="button" class="ssp-option-item ${isSel ? "is-selected" : ""}" data-font="${item.id}">
+              <span class="ssp-option-left" style="font-family:${item.sampleFont}; ${item.smallCaps ? "font-variant:small-caps;" : ""}">
+                <span class="ssp-option-label">${esc(item.label)}</span>
+              </span>
+              <span class="ssp-check" aria-hidden="true">${isSel ? "✓" : ""}</span>
+            </button>
+          `;
+        }).join("")}
+      </div>
+    `;
+    return;
+  }
+
+  if (sspCurrentView === "textColor") {
+    const isCustom = !SUBTITLE_TEXT_COLORS.some((c) => c.id.toLowerCase() === s.textColor.toLowerCase());
+    panel.innerHTML = `
+      <div class="ssp-header">
+        <button type="button" class="ssp-back-btn" id="ssp-back-btn" title="Voltar para configurações de legendas" aria-label="Voltar">
+          <span class="ssp-back-arrow" aria-hidden="true">‹</span>
+          <span class="ssp-header-title">Cor do texto</span>
+        </button>
+        <button type="button" class="ssp-close-icon-btn" id="ssp-x-btn" title="Fechar" aria-label="Fechar">✕</button>
+      </div>
+      <div class="ssp-options-list">
+        ${SUBTITLE_TEXT_COLORS.map((item) => {
+          const isSel = !isCustom && s.textColor.toLowerCase() === item.id.toLowerCase();
+          return `
+            <button type="button" class="ssp-option-item ${isSel ? "is-selected" : ""}" data-color="${item.id}">
+              <span class="ssp-option-left">
+                <span class="ssp-swatch" style="background:${item.color}"></span>
+                <span class="ssp-option-label">${esc(item.label)}</span>
+              </span>
+              <span class="ssp-check" aria-hidden="true">${isSel ? "✓" : ""}</span>
+            </button>
+          `;
+        }).join("")}
+        <div class="ssp-custom-color-item">
+          <button type="button" class="ssp-option-item ${isCustom ? "is-selected" : ""}" id="ssp-custom-text-btn">
+            <span class="ssp-option-left">
+              <span class="ssp-swatch" style="background:${isCustom ? s.textColor : "#ffffff"}"></span>
+              <span class="ssp-option-label">Personalizado…</span>
+            </span>
+            <span class="ssp-check" aria-hidden="true">${isCustom ? "✓" : ""}</span>
+          </button>
+          <input type="color" id="ssp-text-color-input" value="${isCustom && /^#[0-9a-f]{6}$/i.test(s.textColor) ? s.textColor : "#ffffff"}" class="ssp-hidden-color-input">
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  if (sspCurrentView === "size") {
+    panel.innerHTML = `
+      <div class="ssp-header">
+        <button type="button" class="ssp-back-btn" id="ssp-back-btn" title="Voltar para configurações de legendas" aria-label="Voltar">
+          <span class="ssp-back-arrow" aria-hidden="true">‹</span>
+          <span class="ssp-header-title">Tamanho da fonte</span>
+        </button>
+        <button type="button" class="ssp-close-icon-btn" id="ssp-x-btn" title="Fechar" aria-label="Fechar">✕</button>
+      </div>
+      <div class="ssp-options-list">
+        ${SUBTITLE_SIZES.map((item) => {
+          const isSel = s.size === item.id;
+          return `
+            <button type="button" class="ssp-option-item ${isSel ? "is-selected" : ""}" data-size="${item.id}">
+              <span class="ssp-option-label">${esc(item.label)}</span>
+              <span class="ssp-check" aria-hidden="true">${isSel ? "✓" : ""}</span>
+            </button>
+          `;
+        }).join("")}
+      </div>
+    `;
+    return;
+  }
+
+  if (sspCurrentView === "bg") {
+    const isCustom = s.bg === "custom";
+    panel.innerHTML = `
+      <div class="ssp-header">
+        <button type="button" class="ssp-back-btn" id="ssp-back-btn" title="Voltar para configurações de legendas" aria-label="Voltar">
+          <span class="ssp-back-arrow" aria-hidden="true">‹</span>
+          <span class="ssp-header-title">Cor e Opacidade do fundo</span>
+        </button>
+        <button type="button" class="ssp-close-icon-btn" id="ssp-x-btn" title="Fechar" aria-label="Fechar">✕</button>
+      </div>
+      <div class="ssp-options-list">
+        ${SUBTITLE_BGS.map((item) => {
+          const isSel = !isCustom && s.bg === item.id;
+          const isTrans = item.id === "none";
+          return `
+            <button type="button" class="ssp-option-item ${isSel ? "is-selected" : ""}" data-bg="${item.id}">
+              <span class="ssp-option-left">
+                <span class="ssp-swatch ${isTrans ? "is-transparent" : ""}" style="${isTrans ? "" : `background:${item.color}`}"></span>
+                <span class="ssp-option-label">${esc(item.label)}</span>
+              </span>
+              <span class="ssp-check" aria-hidden="true">${isSel ? "✓" : ""}</span>
+            </button>
+          `;
+        }).join("")}
+        <div class="ssp-custom-color-item">
+          <button type="button" class="ssp-option-item ${isCustom ? "is-selected" : ""}" id="ssp-custom-bg-btn">
+            <span class="ssp-option-left">
+              <span class="ssp-swatch" style="background:${isCustom ? s.bgCustom : "#000000"}"></span>
+              <span class="ssp-option-label">Personalizado…</span>
+            </span>
+            <span class="ssp-check" aria-hidden="true">${isCustom ? "✓" : ""}</span>
+          </button>
+          <input type="color" id="ssp-bg-color-input" value="${/^#[0-9a-f]{6}$/i.test(s.bgCustom) ? s.bgCustom : "#000000"}" class="ssp-hidden-color-input">
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  if (sspCurrentView === "edge") {
+    panel.innerHTML = `
+      <div class="ssp-header">
+        <button type="button" class="ssp-back-btn" id="ssp-back-btn" title="Voltar para configurações de legendas" aria-label="Voltar">
+          <span class="ssp-back-arrow" aria-hidden="true">‹</span>
+          <span class="ssp-header-title">Opacidade da janela / Contorno</span>
+        </button>
+        <button type="button" class="ssp-close-icon-btn" id="ssp-x-btn" title="Fechar" aria-label="Fechar">✕</button>
+      </div>
+      <div class="ssp-options-list">
+        ${SUBTITLE_EDGES.map((item) => {
+          const isSel = s.edge === item.id;
+          return `
+            <button type="button" class="ssp-option-item ${isSel ? "is-selected" : ""}" data-edge="${item.id}">
+              <span class="ssp-option-label">${esc(item.label)}</span>
+              <span class="ssp-check" aria-hidden="true">${isSel ? "✓" : ""}</span>
+            </button>
+          `;
+        }).join("")}
+      </div>
+    `;
+    return;
+  }
 }
 
 // Sincroniza o painel de aparência com o estilo salvo.
 function syncSubtitleStylePanel(panel) {
   if (!panel) return;
-  const s = loadSubtitleStyle();
-  panel.querySelectorAll(".ssp-size button").forEach((b) => {
-    if (b.dataset.size === s.size) b.setAttribute("data-active", "");
-    else b.removeAttribute("data-active");
-  });
-  const text = panel.querySelector("#ssp-text");
-  if (text) text.value = /^#[0-9a-f]{6}$/i.test(s.textColor) ? s.textColor : "#ffffff";
-  const bg = panel.querySelector("#ssp-bg");
-  if (bg) bg.value = s.bg;
-  const bgCustom = panel.querySelector("#ssp-bg-custom");
-  if (bgCustom) {
-    bgCustom.hidden = s.bg !== "custom";
-    bgCustom.value = /^#[0-9a-f]{6}$/i.test(s.bgCustom) ? s.bgCustom : "#000000";
-  }
-  const spacing = panel.querySelector("#ssp-spacing");
-  if (spacing) spacing.value = String(s.spacing);
-  const spacingVal = panel.querySelector("#ssp-spacing-val");
-  if (spacingVal) spacingVal.textContent = String(s.spacing);
-  const shadow = panel.querySelector("#ssp-shadow");
-  if (shadow) shadow.checked = !!s.shadow;
-}
-
-// Aplica uma mudança de aparência ao vivo (overlay + painel + preferência).
-function applySubtitleStyleChange(panel) {
-  const s = loadSubtitleStyle();
-  const sizeBtn = panel.querySelector(".ssp-size button[data-active]");
-  if (sizeBtn) s.size = sizeBtn.dataset.size;
-  const text = panel.querySelector("#ssp-text");
-  if (text) s.textColor = text.value;
-  const bg = panel.querySelector("#ssp-bg");
-  if (bg) s.bg = bg.value;
-  const bgCustom = panel.querySelector("#ssp-bg-custom");
-  if (bgCustom) s.bgCustom = bgCustom.value;
-  const spacing = panel.querySelector("#ssp-spacing");
-  if (spacing) s.spacing = Number(spacing.value);
-  const shadow = panel.querySelector("#ssp-shadow");
-  if (shadow) s.shadow = shadow.checked;
-  saveSubtitleStyle(s);
-  applySubtitleStyle(document.getElementById("subtitle-overlay"));
-  applySubtitleGeometry();
-  syncSubtitleStylePanel(panel);
+  renderSubtitleStyleView(panel, sspCurrentView || "root");
 }
 
 // Abre o painel de aparência da legenda. No desktop ele ancora no botão
@@ -385,30 +712,25 @@ function subtitleStyleOpen() {
   const panel = document.getElementById("subtitle-style-panel");
   const btn = document.getElementById("subtitle-style-btn");
   if (!panel) return;
+  sspCurrentView = "root";
+  renderSubtitleStyleView(panel, "root");
   if (window.matchMedia("(max-width: 600px)").matches) {
-    // Centralizado fixo: o CSS posiciona; limpa o top/left inline para o
-    // position:fixed da media query valer.
     panel.style.top = "";
     panel.style.left = "";
     panel.hidden = false;
     return;
   }
-  const br = btn.getBoundingClientRect();
-  // offsetWidth/offsetHeight são 0 enquanto o painel está [hidden]
-  // (display:none) — sem esse fallback a largura 0 fazia o painel abrir com
-  // a borda esquerda na borda direita do botão e transbordar a viewport.
-  const pw = panel.offsetWidth || 250;
-  const ph = panel.offsetHeight || 240;
-  // Posição desejada no viewport, clampada para nunca gerar overflow
-  // horizontal/vertical, qualquer que seja a largura da janela.
-  const topVp = Math.max(8, Math.min(br.bottom + 6, window.innerHeight - ph - 8));
-  const leftVp = Math.max(8, Math.min(br.right - pw, window.innerWidth - pw - 8));
-  // O painel é absolute dentro do .lesson-header (position: relative): a
-  // posição viewport é convertida para o sistema de coordenadas do anchor.
-  const ar = panel.parentElement.getBoundingClientRect();
-  panel.style.top = Math.round(topVp - ar.top) + "px";
-  panel.style.left = Math.round(leftVp - ar.left) + "px";
   panel.hidden = false;
+  const br = btn ? btn.getBoundingClientRect() : null;
+  const pw = panel.offsetWidth || 300;
+  const ph = panel.offsetHeight || 320;
+  if (br && panel.parentElement) {
+    const topVp = Math.max(8, Math.min(br.bottom + 6, window.innerHeight - ph - 8));
+    const leftVp = Math.max(8, Math.min(br.right - pw, window.innerWidth - pw - 8));
+    const ar = panel.parentElement.getBoundingClientRect();
+    panel.style.top = Math.round(topVp - ar.top) + "px";
+    panel.style.left = Math.round(leftVp - ar.left) + "px";
+  }
 }
 
 function subtitleStyleClose() {
@@ -423,57 +745,189 @@ function toggleSubtitleStylePanel() {
   else subtitleStyleClose();
 }
 
+let sspDocListenersAttached = false;
+
 // Botão "Aa Aparência" no player (desktop) + item ⋮ > Aparência da legenda
 // (mobile): abrem um popover com as opções de personalização da legenda
-// (tamanho, cor do texto, fundo, espaçamento, contorno). Persistido em
-// localStorage; aplicado ao vivo no player e no preview do editor. Fecha com
-// clique fora ou Esc.
+// estilo YouTube (fonte, cor, tamanho, fundo/opacidade, contorno). Persistido
+// em localStorage; aplicado ao vivo no player. Fecha com clique fora ou Esc.
 function wireSubtitleStylePanel(wrap) {
   const btn = document.getElementById("subtitle-style-btn");
   const panel = document.getElementById("subtitle-style-panel");
-  if (!btn || !panel) return;
-  syncSubtitleStylePanel(panel);
-  btn.addEventListener("click", (e) => {
+  if (!panel) return;
+
+  renderSubtitleStyleView(panel, "root");
+
+  if (btn) {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      toggleSubtitleStylePanel();
+    };
+  }
+
+  // Cliques delegados no painel
+  panel.onclick = (e) => {
     e.stopPropagation();
-    toggleSubtitleStylePanel();
-  });
-  // Controles do painel
-  panel.querySelectorAll(".ssp-size button").forEach((b) => {
-    b.addEventListener("click", () => {
-      panel.querySelectorAll(".ssp-size button").forEach((x) => x.removeAttribute("data-active"));
-      b.setAttribute("data-active", "");
-      applySubtitleStyleChange(panel);
+
+    // 1. Fechar menu (botão de voltar no menu raiz ou botão ✕)
+    if (e.target.closest("#ssp-close-btn") || e.target.closest("#ssp-x-btn")) {
+      subtitleStyleClose();
+      return;
+    }
+
+    // 2. Botão de voltar do submenu -> retorna ao menu raiz
+    if (e.target.closest("#ssp-back-btn")) {
+      renderSubtitleStyleView(panel, "root");
+      return;
+    }
+
+    // 3. Abrir submenu
+    const menuItem = e.target.closest(".ssp-item[data-view]");
+    if (menuItem) {
+      renderSubtitleStyleView(panel, menuItem.dataset.view);
+      return;
+    }
+
+    // 4. Selecionar fonte
+    const fontItem = e.target.closest("[data-font]");
+    if (fontItem) {
+      const s = loadSubtitleStyle();
+      s.fontFamily = fontItem.dataset.font;
+      saveSubtitleStyle(s);
+      applySubtitleStyle(document.getElementById("subtitle-overlay"));
+      applySubtitleGeometry();
+      renderSubtitleStyleView(panel, "root");
+      return;
+    }
+
+    // 5. Selecionar cor pré-definida do texto
+    const colorItem = e.target.closest("[data-color]");
+    if (colorItem) {
+      const s = loadSubtitleStyle();
+      s.textColor = colorItem.dataset.color;
+      saveSubtitleStyle(s);
+      applySubtitleStyle(document.getElementById("subtitle-overlay"));
+      applySubtitleGeometry();
+      renderSubtitleStyleView(panel, "root");
+      return;
+    }
+
+    // 6. Botão de cor personalizada do texto
+    if (e.target.closest("#ssp-custom-text-btn")) {
+      const input = panel.querySelector("#ssp-text-color-input");
+      if (input) input.click();
+      return;
+    }
+
+    // 7. Selecionar tamanho da fonte
+    const sizeItem = e.target.closest("[data-size]");
+    if (sizeItem) {
+      const s = loadSubtitleStyle();
+      s.size = sizeItem.dataset.size;
+      saveSubtitleStyle(s);
+      applySubtitleStyle(document.getElementById("subtitle-overlay"));
+      applySubtitleGeometry();
+      renderSubtitleStyleView(panel, "root");
+      return;
+    }
+
+    // 8. Selecionar cor/opacidade pré-definida do fundo
+    const bgItem = e.target.closest("[data-bg]");
+    if (bgItem) {
+      const s = loadSubtitleStyle();
+      s.bg = bgItem.dataset.bg;
+      saveSubtitleStyle(s);
+      applySubtitleStyle(document.getElementById("subtitle-overlay"));
+      applySubtitleGeometry();
+      renderSubtitleStyleView(panel, "root");
+      return;
+    }
+
+    // 9. Botão de cor personalizada do fundo
+    if (e.target.closest("#ssp-custom-bg-btn")) {
+      const input = panel.querySelector("#ssp-bg-color-input");
+      if (input) input.click();
+      return;
+    }
+
+    // 10. Selecionar opacidade da janela / contorno
+    const edgeItem = e.target.closest("[data-edge]");
+    if (edgeItem) {
+      const s = loadSubtitleStyle();
+      s.edge = edgeItem.dataset.edge;
+      s.shadow = s.edge !== "none";
+      saveSubtitleStyle(s);
+      applySubtitleStyle(document.getElementById("subtitle-overlay"));
+      applySubtitleGeometry();
+      renderSubtitleStyleView(panel, "root");
+      return;
+    }
+
+    // 11. Restaurar padrões
+    if (e.target.closest("#ssp-reset-all")) {
+      try { localStorage.removeItem(SUBTITLE_STYLE_KEY); } catch {}
+      applySubtitleStyle(document.getElementById("subtitle-overlay"));
+      applySubtitleGeometry();
+      renderSubtitleStyleView(panel, "root");
+      return;
+    }
+
+    // 12. Restaurar posição padrão
+    if (e.target.closest("#ssp-reset-pos")) {
+      subtitleState.pos = null;
+      applySubtitleGeometry();
+      renderSubtitleStyleView(panel, "root");
+      return;
+    }
+  };
+
+  // Inputs nativos de cor
+  panel.oninput = (e) => {
+    e.stopPropagation();
+    if (e.target.id === "ssp-text-color-input") {
+      const s = loadSubtitleStyle();
+      s.textColor = e.target.value;
+      saveSubtitleStyle(s);
+      applySubtitleStyle(document.getElementById("subtitle-overlay"));
+      applySubtitleGeometry();
+    } else if (e.target.id === "ssp-bg-color-input") {
+      const s = loadSubtitleStyle();
+      s.bg = "custom";
+      s.bgCustom = e.target.value;
+      saveSubtitleStyle(s);
+      applySubtitleStyle(document.getElementById("subtitle-overlay"));
+      applySubtitleGeometry();
+    }
+  };
+  panel.onchange = (e) => {
+    e.stopPropagation();
+    if (e.target.id === "ssp-text-color-input" || e.target.id === "ssp-bg-color-input") {
+      renderSubtitleStyleView(panel, "root");
+    }
+  };
+
+  if (!sspDocListenersAttached) {
+    sspDocListenersAttached = true;
+    document.addEventListener("click", (e) => {
+      const p = document.getElementById("subtitle-style-panel");
+      const b = document.getElementById("subtitle-style-btn");
+      if (!p || p.hidden) return;
+      const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+      if (path.includes(p) || (b && path.includes(b))) return;
+      if (p.contains(e.target) || (b && b.contains(e.target))) return;
+      subtitleStyleClose();
     });
-  });
-  panel.querySelector("#ssp-text")?.addEventListener("input", () => applySubtitleStyleChange(panel));
-  panel.querySelector("#ssp-bg")?.addEventListener("change", () => {
-    panel.querySelector("#ssp-bg-custom").hidden =
-      panel.querySelector("#ssp-bg").value !== "custom";
-    applySubtitleStyleChange(panel);
-  });
-  panel.querySelector("#ssp-bg-custom")?.addEventListener("input", () => applySubtitleStyleChange(panel));
-  panel.querySelector("#ssp-spacing")?.addEventListener("input", () => {
-    const val = panel.querySelector("#ssp-spacing-val");
-    if (val) val.textContent = panel.querySelector("#ssp-spacing").value;
-    applySubtitleStyleChange(panel);
-  });
-  panel.querySelector("#ssp-shadow")?.addEventListener("change", () => applySubtitleStyleChange(panel));
-  panel.querySelector("#ssp-reset")?.addEventListener("click", () => {
-    localStorage.removeItem(SUBTITLE_STYLE_KEY);
-    syncSubtitleStylePanel(panel);
-    applySubtitleStyle(document.getElementById("subtitle-overlay"));
-    applySubtitleGeometry();
-  });
-  panel.querySelector("#ssp-reset-pos")?.addEventListener("click", () => {
-    subtitleState.pos = null;
-    applySubtitleGeometry();
-  });
-  document.addEventListener("click", (e) => {
-    if (!panel.hidden && !panel.contains(e.target) && e.target !== btn) subtitleStyleClose();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") subtitleStyleClose();
-  });
+    document.addEventListener("keydown", (e) => {
+      const p = document.getElementById("subtitle-style-panel");
+      if (e.key === "Escape" && p && !p.hidden) {
+        if (sspCurrentView !== "root") {
+          renderSubtitleStyleView(p, "root");
+        } else {
+          subtitleStyleClose();
+        }
+      }
+    });
+  }
 }
 
 // Instâncias de observadores do overlay (uma por montagem do player).

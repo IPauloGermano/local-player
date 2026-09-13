@@ -1,7 +1,7 @@
 {
   "name": "local-player",
   "desktopName": "local-player.desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Player local/offline para organizar e reproduzir conteúdo de mídia em disco",
   "author": "Local Player",
   "private": true,
@@ -50,7 +50,9 @@
       "!models/**",
       "!bin/**",
       "!*.sh",
-      "!dist/**"
+      "!dist/**",
+      "!.playwright-mcp/**",
+      "!*.log"
     ],
     "extraResources": [
       {

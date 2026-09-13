@@ -254,6 +254,23 @@
     return null;
   }
 
+  // Nome de biblioteca para exibição na Home: remove numeração inicial de
+  // pasta ("1. Cursos" → "Cursos") e traduz pastas de mídia genéricas do SO
+  // ("Videos" → "Seus vídeos"). O `name` original nunca muda (é identidade em
+  // chaves de progresso/favoritos e no PATCH de bibliotecas) — só o título
+  // exibido. Nomes personalizados passam intactos.
+  function humanizeLibraryName(name) {
+    const raw = String(name || "").trim();
+    if (!raw) return "";
+    const unnumbered = raw.replace(/^\d{1,4}\s*[.\-–—]\s*/, "");
+    const base = unnumbered || raw;
+    const known = {
+      videos: "Seus vídeos",
+      music: "Suas músicas",
+    };
+    return known[base.toLowerCase()] || base;
+  }
+
   // Sanitização segura de URLs para links em Markdown (anti-XSS).
   function sanitizeLinkUrl(url) {
     if (typeof url !== "string") return "";
@@ -890,6 +907,7 @@
     collectOrphanRecords,
     findNodeByPath,
     findParentFolder,
+    humanizeLibraryName,
     sanitizeLinkUrl,
     parseMarkdownTable,
     parseTimestampToSeconds,
