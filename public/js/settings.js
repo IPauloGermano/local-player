@@ -593,6 +593,13 @@ function renderSettingsBibliotecas() {
         }</button>`,
         `<button type="button" class="lib-btn lib-btn-danger" data-action="remove">Remover</button>`,
       ];
+      const countParts = [];
+      const courses = Number.isFinite(lib.courseCount) ? lib.courseCount : 0;
+      const topics = Number.isFinite(lib.topicCount) ? lib.topicCount : 0;
+      countParts.push(`${courses} curso${courses === 1 ? "" : "s"}`);
+      if (topics > 0) {
+        countParts.push(`${topics} tópico${topics === 1 ? "" : "s"}`);
+      }
       return `
     <div class="lib-row" data-lib-id="${encodeURIComponent(lib.id)}">
       <div class="lib-row-main">
@@ -600,7 +607,7 @@ function renderSettingsBibliotecas() {
         <div class="lib-row-path" title="${escapeHtml(pathText)}">${escapeHtml(pathText)}</div>
       </div>
       ${badge}
-      <span class="lib-row-count">${lib.courseCount} curso${lib.courseCount === 1 ? "" : "s"}</span>
+      <span class="lib-row-count">${countParts.join(" · ")}</span>
       <span class="lib-row-actions">${actions.join("")}</span>
     </div>`;
     })

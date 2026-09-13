@@ -10,6 +10,7 @@ const {
   scanningLibraryIds,
   tutorContextCache,
 } = require("../state");
+const { collectCoursesInScope, collectTopicsInScope } = require("../../public/scope.js");
 
 let _loadLibraries = null;
 let _getLibraries = null;
@@ -71,15 +72,10 @@ async function loadLibraryTreeCache(lib) {
 function librarySummary(lib, cached) {
   const tree = cached && cached.tree;
   let courseCount = 0;
-  if (tree && Array.isArray(tree.children)) {
-    const count = (nodes) =>
-      nodes.reduce(
-        (acc, n) =>
-          acc +
-          (n.type === "folder" ? 1 + count(n.children || []) : 0),
-        0,
-      );
-    courseCount = count(tree.children);
+  let topicCount = 0;
+  if (tree) {
+    courseCount = collectCoursesInScope(tree).length;
+    topicCount = collectTopicsInScope(tree).length;
   }
   const isEnabled = lib.enabled !== false;
   const isDefault = lib.isDefault === true;
@@ -93,6 +89,7 @@ function librarySummary(lib, cached) {
     error: cached ? cached.error : null,
     lastScanAt: cached ? cached.lastScanAt : null,
     courseCount,
+    topicCount,
     tree,
   };
 }

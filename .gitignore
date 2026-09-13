@@ -46,3 +46,4 @@ bin/
 dist/
 builder-debug.yml
 builder-effective-config.yaml
+.playwright-mcp/
