@@ -50,7 +50,9 @@
       "!models/**",
       "!bin/**",
       "!*.sh",
-      "!dist/**"
+      "!dist/**",
+      "!.playwright-mcp/**",
+      "!*.log"
     ],
     "extraResources": [
       {
