@@ -6195,7 +6195,18 @@ body {
   line-height: 1.65;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   word-break: break-word;
-  white-space: pre-wrap;
+}
+
+.tutor-msg-user .tutor-msg-bubble p {
+  margin: 0 0 8px 0;
+}
+.tutor-msg-user .tutor-msg-bubble p:last-child {
+  margin-bottom: 0;
+}
+.tutor-msg-user .tutor-msg-bubble .tutor-num-list,
+.tutor-msg-user .tutor-msg-bubble .tutor-list {
+  text-align: left;
+  margin: 8px 0 8px 24px;
 }
 
 .tutor-msg-assistant {

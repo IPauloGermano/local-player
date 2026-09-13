@@ -540,7 +540,19 @@
       mathItems.push({ block: false, content: math.trim() });
       return placeholder;
     });
-    // Inline: $...$ (com proteção anti-espaço no início e fim)
+    // Inline: $...$ com comandos LaTeX explícitos (ex: \div, \times, \frac), tolerando espaços nas pontas
+    processed = processed.replace(/(?<!\\)\$\s*([^\$\n]*?\\[a-zA-Z]+[^\$\n]*?)\s*\$/g, (_, math) => {
+      const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
+      mathItems.push({ block: false, content: math.trim() });
+      return placeholder;
+    });
+    // Inline: $...$ com operador final (ex: $x = $ ou $4,32 \div 0,8 = $), permitindo espaço antes do $
+    processed = processed.replace(/(?<!\\)\$(?!\s)([^\$\n]*?[=+*/-]\s*)\$/g, (_, math) => {
+      const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
+      mathItems.push({ block: false, content: math.trim() });
+      return placeholder;
+    });
+    // Inline: $...$ padrão (com proteção anti-espaço no início e fim para não confundir com moedas como $10 e $20)
     processed = processed.replace(/(?<!\\)\$(?!\s)([^\$\n]+?)(?<!\s)\$/g, (_, math) => {
       const placeholder = `\x00LPMATH${mathItems.length}END\x00`;
       mathItems.push({ block: false, content: math.trim() });
@@ -681,10 +693,14 @@
         const tag = currentList.type === "ul" ? "ul" : "ol";
         const cls = currentList.type === "ul" ? "tutor-list" : "tutor-num-list";
         const itemCls = currentList.type === "ul" ? "tutor-list-item" : "tutor-num-item";
+        const startAttr =
+          currentList.type === "ol" && currentList.start && currentList.start !== 1
+            ? ` start="${currentList.start}"`
+            : "";
         const itemsHtml = currentList.items
           .map((it) => `<li class="${itemCls}${it.nested ? " tutor-list-nested" : ""}">${renderInlineMarkdown(it.text)}</li>`)
           .join("");
-        blocks.push(`<${tag} class="${cls}">${itemsHtml}</${tag}>`);
+        blocks.push(`<${tag}${startAttr} class="${cls}">${itemsHtml}</${tag}>`);
         for (const it of currentList.items) {
           attachVideoCards(it.text);
         }
@@ -767,14 +783,15 @@
         continue;
       }
 
-      // Listas numeradas (1. item, 2) item)
-      const olMatch = line.match(/^(\s*)\d+[\.\)]\s+(.+)$/);
+      // Listas numeradas (1. item, 2) item) - preserva o número inicial (ex: 16. -> start="16")
+      const olMatch = line.match(/^(\s*)(\d+)[\.\)]\s+(.+)$/);
       if (olMatch) {
         flushPara();
         if (currentList && currentList.type !== "ol") flushList();
-        if (!currentList) currentList = { type: "ol", items: [] };
+        const startNum = parseInt(olMatch[2], 10) || 1;
+        if (!currentList) currentList = { type: "ol", start: startNum, items: [] };
         const indent = olMatch[1].length;
-        currentList.items.push({ text: olMatch[2], nested: indent >= 2 });
+        currentList.items.push({ text: olMatch[3], nested: indent >= 2 });
         continue;
       }
 

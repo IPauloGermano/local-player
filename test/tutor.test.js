@@ -242,6 +242,45 @@ test("Tutor IA: renderização rica de fórmulas matemáticas LaTeX com KaTeX", 
   assert.ok(!nakedArrayHtml.includes("code class=\"tutor-math\""), "Não deve falhar para código cru");
 });
 
+test("Tutor IA: renderização de listas numeradas com início arbitrário e cálculos matemáticos com vírgula decimal", () => {
+  const md = `16. $4,32 \\div 0,8 =$
+17. $1,68 \\div 0,7 =$
+18. $4,76 \\div 0,068 =$
+19. $243 \\div 7,5 =$
+20. $63,7 \\div 12,25 =$
+21. $4,8 \\div 6 =$
+22. $0,35 \\div 0,4 =$
+23. $90,144 \\div 45 =$
+24. $35,53416 \\div 0,504 =$
+25. $92,88 \\div 0,215 =$`;
+
+  const html = renderMarkdownToHtml(md);
+
+  // 1. Deve preservar o número inicial da lista numerada no HTML (<ol start="16">)
+  assert.ok(html.includes('<ol start="16" class="tutor-num-list">'), "Deve gerar <ol start=\"16\"> para preservar a numeração original da lista");
+  assert.ok(html.includes("tutor-num-item"), "Deve gerar itens com a classe tutor-num-item");
+
+  // 2. Deve renderizar todas as fórmulas matemáticas com KaTeX
+  assert.ok(html.includes("katex"), "Deve renderizar fórmulas com KaTeX");
+  assert.ok(!html.includes("katex-error"), "Não deve conter erros de renderização do KaTeX");
+
+  // 3. Valores dos cálculos matemáticos devem estar presentes e renderizados
+  assert.ok(html.includes("4,32") || html.includes("4{,}32"), "Valores da conta devem estar presentes");
+  assert.ok(html.includes("0,8") || html.includes("0{,}8"), "Valores da conta devem estar presentes");
+
+  // 4. Tolera espaço antes do fecha-dólar (ex: $4,32 \div 0,8 = $)
+  const withSpaces = "16. $4,32 \\div 0,8 = $\n17. $ 1,68 \\div 0,7 = $";
+  const withSpacesHtml = renderMarkdownToHtml(withSpaces);
+  assert.ok(withSpacesHtml.includes('<ol start="16" class="tutor-num-list">'));
+  assert.ok(withSpacesHtml.includes("katex"), "Deve reconhecer fórmula com espaço antes do $");
+
+  // 5. Preservação estrita de moedas ($10 e $20)
+  const currencyMd = "O almoço custou $10 e o jantar $20.";
+  const currencyHtml = renderMarkdownToHtml(currencyMd);
+  assert.ok(!currencyHtml.includes("katex"), "Valores monetários não devem virar KaTeX");
+  assert.ok(currencyHtml.includes("$10 e o jantar $20"));
+});
+
 test("Whisper: cálculo dinâmico de threads ideais (getOptimalTranscriptionThreads)", () => {
   assert.strictEqual(getOptimalTranscriptionThreads(4), 4);
   assert.strictEqual(getOptimalTranscriptionThreads(12), 12);
