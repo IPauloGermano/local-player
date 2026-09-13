@@ -1216,23 +1216,25 @@ function renderHome(app) {
   // Escopos (paths REAIS, nunca título):
   //   allCourses  = TODOS os cursos de TODAS as bibliotecas (global) → alimenta
   //                 "Continuar assistindo" (global na Home, como sempre).
-  //   directCourses = cursos DIRETOS da raiz de cada biblioteca (filhos
-  //                 "folder") → "Seu progresso" só conta o que pertence à Home;
-  //                 sem cursos diretos, a seção é ocultada.
+  //   progressScope = cursos do escopo da Home: para cada biblioteca, prefere
+  //                 os cursos DIRETOS da raiz; se a biblioteca for toda
+  //                 organizada em tópicos (sem curso direto), inclui seus cursos
+  //                 em escopo para seu progresso não ficar invisível na Home.
   const allCourses = [];
-  const directCourses = [];
+  const progressScope = [];
   for (const lib of libs) {
-    allCourses.push(...collectCoursesInScope(lib.tree));
-    directCourses.push(...collectDirectCourses(lib.tree));
+    const libCourses = collectCoursesInScope(lib.tree);
+    allCourses.push(...libCourses);
+    const direct = collectDirectCourses(lib.tree);
+    if (direct.length > 0) {
+      progressScope.push(...direct);
+    } else {
+      progressScope.push(...libCourses);
+    }
   }
   const search = (document.getElementById("search-input").value || "").trim();
   const results = performSearch(search);
   // Resumo GLOBAL (todas as bibliotecas) → rodapé de "Continuar assistindo".
-  // Resumo de "Seu progresso" na Home: PREFERE o escopo DIRETO (cursos filhos
-  // da raiz — comportamento contextual documentado); se a raiz não tem curso
-  // direto (ex.: biblioteca toda organizada em tópicos), cai para o GLOBAL,
-  // para o progresso existente não ficar invisível na Home (persistência é a
-  // fonte de verdade; o bloco nunca some por organização em tópicos).
   // Órfãos (histórico de arquivos movidos/renomeados/removidos, sem nó na
   // árvore — ex.: pasta renomeada) entram nos dois resumos: nada estudado
   // fica invisível.
@@ -1246,7 +1248,6 @@ function renderHome(app) {
     libs.map((l) => l.id),
   );
   const continueSummary = getLibraryProgressSummary(allCourses, progFor, orphans);
-  const progressScope = directCourses.length ? directCourses : allCourses;
   const librarySummary = getLibraryProgressSummary(progressScope, progFor, orphans);
   state.lastSearchResults = results;
   const grouped = libs.length > 1 && !search;

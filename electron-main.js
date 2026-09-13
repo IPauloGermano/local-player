@@ -14,6 +14,76 @@ let mainWindow = null;
 let serverProcess = null;
 let powerSaveId = null;
 
+function syncFallbackData(fallbackDir, appImageDir) {
+  try {
+    const candidates = [
+      path.join(appImageDir, "..", "data"),
+      path.join(path.dirname(app.getPath("userData")), "local-player", "data"),
+    ];
+    for (const cand of candidates) {
+      if (!fs.existsSync(cand) || cand === fallbackDir) continue;
+
+      // 1. Sincroniza libraries.json
+      const candLibsFile = path.join(cand, "libraries.json");
+      const targetLibsFile = path.join(fallbackDir, "libraries.json");
+      if (fs.existsSync(candLibsFile)) {
+        try {
+          const candLibs = JSON.parse(fs.readFileSync(candLibsFile, "utf8"));
+          const targetLibs = fs.existsSync(targetLibsFile)
+            ? JSON.parse(fs.readFileSync(targetLibsFile, "utf8"))
+            : { libraries: [] };
+          let changed = false;
+          for (const lib of candLibs.libraries || []) {
+            if (!lib || lib.id === "default") continue;
+            if (!targetLibs.libraries.some((l) => l.id === lib.id || l.path === lib.path)) {
+              targetLibs.libraries.push(lib);
+              changed = true;
+            }
+          }
+          if (changed) {
+            fs.writeFileSync(targetLibsFile, JSON.stringify(targetLibs, null, 2), "utf8");
+          }
+        } catch {}
+      }
+
+      // 2. Sincroniza progress.json
+      const candProgFile = path.join(cand, "progress.json");
+      const targetProgFile = path.join(fallbackDir, "progress.json");
+      if (fs.existsSync(candProgFile)) {
+        try {
+          const candProg = JSON.parse(fs.readFileSync(candProgFile, "utf8"));
+          const targetProg = fs.existsSync(targetProgFile)
+            ? JSON.parse(fs.readFileSync(targetProgFile, "utf8"))
+            : {};
+          let changed = false;
+          for (const [k, v] of Object.entries(candProg)) {
+            if (!targetProg[k] || ((v.updatedAt || 0) > (targetProg[k].updatedAt || 0))) {
+              targetProg[k] = v;
+              changed = true;
+            }
+          }
+          if (changed) {
+            fs.writeFileSync(targetProgFile, JSON.stringify(targetProg, null, 2), "utf8");
+          }
+        } catch {}
+      }
+
+      // 3. Copia caches de árvore
+      try {
+        const files = fs.readdirSync(cand);
+        for (const f of files) {
+          if (f.startsWith("tree-cache-") && f.endsWith(".json")) {
+            const target = path.join(fallbackDir, f);
+            if (!fs.existsSync(target)) {
+              fs.copyFileSync(path.join(cand, f), target);
+            }
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+}
+
 // 1. Resolução do diretório de dados (durabilidade e portabilidade)
 function resolveDataDir() {
   if (process.env.LP_DATA_DIR) {
@@ -35,6 +105,7 @@ function resolveDataDir() {
     // Armazenamento padrão persistente do usuário (~/.config/local-player/data)
     const fallbackDir = path.join(app.getPath("userData"), "data");
     fs.mkdirSync(fallbackDir, { recursive: true });
+    syncFallbackData(fallbackDir, appImageDir);
     return fallbackDir;
   }
   // Modo de desenvolvimento local
