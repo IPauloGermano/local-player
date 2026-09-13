@@ -124,7 +124,7 @@ function applyAdhdDirectives(systemPrompt, adhdCfg) {
     "- Suprima tangentes; resolva o assunto atual antes de levantar outro.\n" +
     "- Estimativas de tempo sempre em unidades concretas (minutos), nunca 'rapidinho'.\n" +
     "- Erros: informe local, causa e correção de forma objetiva, sem drama.\n" +
-    "- Listas com no máximo 5 itens.\n" +
+    "- Listas com no máximo 5 itens (exceto quando o aluno solicitar explicitamente a resolução ou explicação de uma lista ou conjunto maior de exercícios).\n" +
     "- Sem preâmbulo ('Ótima pergunta!'), sem recapitulação e sem fechos ('Espero ter ajudado').\n";
   return systemPrompt + directive;
 }
