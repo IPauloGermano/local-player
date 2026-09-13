@@ -2527,6 +2527,67 @@ const MAX_CONCURRENT_TRANSCRIPTIONS = Math.max(
   1,
   parseInt(process.env.MAX_CONCURRENT_TRANSCRIPTIONS || "1", 10),
 );
+// Timeouts proporcionais à duração (fix vídeos longos >1h). O timeout fixo de
+// 15 min matava a transcrição de aulas longas no meio — whisper.cpp em CPU leva
+// bem mais que 15 min para 1h+ de áudio. O timeout total agora escala com a
+// duração estimada do áudio: base 15 min + 3x o realtime, teto de 6h. Override
+// fixo via WHISPER_TIMEOUT_MS (0 = sem timeout). Travamentos (processo vivo
+// sem progredir) são detectados pelo watchdog de inatividade abaixo, então o
+// teto total pode ser generoso sem prender o slot pesado por horas à toa.
+// Mesma lógica na extração ffmpeg (FFMPEG_EXTRACT_TIMEOUT_MS).
+const WHISPER_TIMEOUT_BASE_MS = 15 * 60 * 1000;
+const WHISPER_TIMEOUT_PER_SEC_MS = 3000; // 3x realtime
+const WHISPER_TIMEOUT_MARGIN_MS = 10 * 60 * 1000;
+const WHISPER_TIMEOUT_MAX_MS = 6 * 60 * 60 * 1000;
+// Watchdog de inatividade: mata o whisper se ficar tanto tempo sem emitir
+// NADA no stderr (nem log, nem `progress = N%`). Distingue "lento mas
+// progredindo" (mantém, até o teto total) de "travado" (mata em minutos).
+// Override via WHISPER_STALL_TIMEOUT_MS (0 = desativado).
+const WHISPER_STALL_TIMEOUT_DEFAULT_MS = 15 * 60 * 1000;
+function resolveWhisperStallTimeoutMs() {
+  const env = process.env.WHISPER_STALL_TIMEOUT_MS;
+  if (env !== undefined) {
+    const n = parseInt(env, 10);
+    if (Number.isFinite(n) && n >= 0) return n; // 0 = desativado
+  }
+  return WHISPER_STALL_TIMEOUT_DEFAULT_MS;
+}
+const EXTRACT_TIMEOUT_BASE_MS = 5 * 60 * 1000;
+const EXTRACT_TIMEOUT_MAX_MS = 30 * 60 * 1000;
+
+// WAV 16kHz mono PCM16 = 32000 bytes/s (+44 de header). Estima a duração do
+// áudio pelo tamanho do WAV extraído e devolve o timeout total do whisper.
+function whisperTimeoutForWav(wavSizeBytes) {
+  const env = process.env.WHISPER_TIMEOUT_MS;
+  if (env !== undefined) {
+    const n = parseInt(env, 10);
+    if (Number.isFinite(n) && n >= 0) return n; // 0 = sem timeout
+  }
+  const durationSec =
+    Number.isFinite(wavSizeBytes) && wavSizeBytes > 44
+      ? (wavSizeBytes - 44) / 32000
+      : 0;
+  const scaled =
+    WHISPER_TIMEOUT_BASE_MS +
+    Math.ceil(durationSec * WHISPER_TIMEOUT_PER_SEC_MS) +
+    WHISPER_TIMEOUT_MARGIN_MS;
+  return Math.min(Math.max(scaled, WHISPER_TIMEOUT_BASE_MS), WHISPER_TIMEOUT_MAX_MS);
+}
+
+// Extração ffmpeg é só remux de áudio (rápida), mas em pendrive lento + arquivo
+// grande pode passar de 5 min. Escala pelo tamanho da fonte (~2MB/s pior caso).
+function extractTimeoutForSource(sourceSizeBytes) {
+  const env = process.env.FFMPEG_EXTRACT_TIMEOUT_MS;
+  if (env !== undefined) {
+    const n = parseInt(env, 10);
+    if (Number.isFinite(n) && n >= 0) return n; // 0 = sem timeout
+  }
+  const bySize =
+    Number.isFinite(sourceSizeBytes) && sourceSizeBytes > 0
+      ? Math.ceil(sourceSizeBytes / (2 * 1024 * 1024)) * 1000 + 60 * 1000
+      : 0;
+  return Math.min(Math.max(EXTRACT_TIMEOUT_BASE_MS, bySize), EXTRACT_TIMEOUT_MAX_MS);
+}
 
 // (subtitleCacheName, courseSubtitlePath modularizados em server/ai/subtitles-helpers.js)
 
@@ -3399,6 +3460,7 @@ async function runSubtitlePipeline(job) {
       try {
         await extractAudioToWav(job.abs, wavPath, {
           setProc: (p) => { job.proc = p; },
+          timeoutMs: extractTimeoutForSource(sourceStat.size),
         });
       } finally {
         job.proc = null;
@@ -3419,6 +3481,10 @@ async function runSubtitlePipeline(job) {
         return;
       }
       try {
+        // Timeout proporcional ao WAV real (115MB ≈ 1h de áudio). Sem isso,
+        // vídeos >1h morriam sempre aos 15 min com "Tempo limite excedido".
+        const wavStat = await fs.stat(wavPath).catch(() => null);
+        const whisperTimeoutMs = whisperTimeoutForWav(wavStat ? wavStat.size : null);
         const result = await runWhisperTranscription({
           provider: avail.provider,
           model: cfg.transcription.model,
@@ -3427,6 +3493,7 @@ async function runSubtitlePipeline(job) {
           threads: cfg.advanced.transcriptionThreads || 0,
           wavPath,
           outPrefix: path.join(workspaceDir, "work", hash),
+          timeoutMs: whisperTimeoutMs,
           // Progresso real do whisper (stderr `progress = N%`); se o provider
           // não emite, o frontend mostra estado indeterminado — nunca inventa.
           onProgress: (percent) => {
@@ -3588,7 +3655,8 @@ function extractAudioToWav(srcAbs, wavPath, opts = {}) {
     let stderr = "";
     let completed = false;
 
-    const timeoutTimer = setTimeout(() => {
+    const timeoutMs = opts.timeoutMs !== undefined ? opts.timeoutMs : 5 * 60 * 1000;
+    const timeoutTimer = timeoutMs > 0 ? setTimeout(() => {
       if (completed) return;
       completed = true;
       try {
@@ -3596,8 +3664,8 @@ function extractAudioToWav(srcAbs, wavPath, opts = {}) {
         setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, 3000);
       } catch {}
       if (typeof opts.setProc === "function") opts.setProc(null);
-      reject(new Error("Tempo limite para extração de áudio excedido (5 min)."));
-    }, opts.timeoutMs || 5 * 60 * 1000);
+      reject(new Error(`Tempo limite para extração de áudio excedido (${Math.round(timeoutMs / 60000)} min).`));
+    }, timeoutMs) : null;
 
     proc.stderr.on("data", (c) => {
       stderr += c.toString();
@@ -3649,6 +3717,8 @@ function runWhisperTranscription({
   threads = 0,
   onProgress = null,
   setProc = null,
+  timeoutMs = WHISPER_TIMEOUT_BASE_MS,
+  stallTimeoutMs,
 }) {
   return new Promise((resolve) => {
     resolveWhisperBinary(provider)
@@ -3692,21 +3762,58 @@ function runWhisperTranscription({
             let stdout = "";
             let completed = false;
 
-            const timeoutTimer = setTimeout(() => {
-              if (completed) return;
-              completed = true;
-              console.error(`[SUBTITLE] Timeout de transcrição Whisper após 15 minutos.`);
+            // Timeout total proporcional à duração do áudio (0 = desativado).
+            // O valor vem do pipeline via whisperTimeoutForWav(); sem ele, 15 min.
+            // Job LENTO mas vivo nunca morre aqui (teto de 6h); job TRAVADO morre
+            // no watchdog de inatividade abaixo, liberando o slot pesado em minutos.
+            const effectiveTimeoutMs = timeoutMs !== undefined ? timeoutMs : WHISPER_TIMEOUT_BASE_MS;
+            const effectiveStallMs = stallTimeoutMs !== undefined ? stallTimeoutMs : resolveWhisperStallTimeoutMs();
+            const killProc = () => {
               try {
                 proc.kill("SIGTERM");
                 setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, 3000);
               } catch {}
+            };
+            let stallTimer = null;
+            const timeoutTimer = effectiveTimeoutMs > 0 ? setTimeout(() => {
+              if (completed) return;
+              completed = true;
+              clearTimeout(stallTimer);
+              const mins = Math.round(effectiveTimeoutMs / 60000);
+              console.error(`[SUBTITLE] Timeout de transcrição Whisper após ${mins} minutos.`);
+              killProc();
               if (setProc) setProc(null);
               runResolve({
                 ok: false,
-                error: "Tempo limite de transcrição excedido (15 min).",
+                error: `Tempo limite de transcrição excedido (${mins} min).`,
                 stderr,
               });
-            }, 15 * 60 * 1000);
+            }, effectiveTimeoutMs) : null;
+
+            // Watchdog de inatividade: qualquer saída no stderr prova que o
+            // processo está vivo e reinicia a contagem. Só dispara se o whisper
+            // ficar mudo pelo período inteiro (travamento real). Usa stderr
+            // bruto — não só `progress = N%` — para não matar provider que
+            // loga mas não emite progresso percentual.
+            const armStallTimer = () => {
+              if (!(effectiveStallMs > 0)) return;
+              clearTimeout(stallTimer);
+              stallTimer = setTimeout(() => {
+                if (completed) return;
+                completed = true;
+                clearTimeout(timeoutTimer);
+                const mins = Math.round(effectiveStallMs / 60000);
+                console.error(`[SUBTITLE] Whisper sem atividade há ${mins} minutos; cancelando transcrição travada.`);
+                killProc();
+                if (setProc) setProc(null);
+                runResolve({
+                  ok: false,
+                  error: `Transcrição travada (sem atividade há ${mins} min).`,
+                  stderr,
+                });
+              }, effectiveStallMs);
+            };
+            armStallTimer();
 
             proc.stdout.on("data", (c) => {
               stdout += c.toString();
@@ -3717,6 +3824,7 @@ function runWhisperTranscription({
               const chunk = c.toString();
               stderr += chunk;
               if (stderr.length > 8000) stderr = stderr.slice(-8000);
+              armStallTimer(); // qualquer saída = processo vivo
               if (onProgress) {
                 const m = /progress\s*=\s*(\d+(?:\.\d+)?)\s*%/.exec(chunk);
                 if (m) onProgress(Math.min(100, Math.round(Number(m[1]))));
@@ -3727,6 +3835,7 @@ function runWhisperTranscription({
               if (completed) return;
               completed = true;
               clearTimeout(timeoutTimer);
+              clearTimeout(stallTimer);
               if (setProc) setProc(null);
               runResolve({
                 ok: false,
@@ -3738,6 +3847,7 @@ function runWhisperTranscription({
               if (completed) return;
               completed = true;
               clearTimeout(timeoutTimer);
+              clearTimeout(stallTimer);
               if (setProc) setProc(null);
 
               if (code !== 0) {
@@ -7264,6 +7374,8 @@ if (require.main === module) {
     loadLessonTranscription,
     getOptimalTranscriptionThreads,
     runWhisperTranscription,
+    whisperTimeoutForWav,
+    extractTimeoutForSource,
     buildLessonTutorContext,
     buildTutorSystemPrompt,
     streamLlmChat,
