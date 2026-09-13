@@ -495,7 +495,23 @@ function gracefulShutdown() {
   }
 }
 
-app.whenReady().then(startApp);
+// Instância única: segundo clique no atalho foca a janela existente em vez de
+// abrir outra janela + outro servidor em outra porta (mesma expectativa do
+// modo web, onde o launcher foca a aba existente em vez de abrir nova aba).
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
+    } catch {}
+  });
+  app.whenReady().then(startApp);
+}
 
 app.on("before-quit", gracefulShutdown);
 

@@ -148,9 +148,32 @@ PORT="${PORT:-4173}"
 HOST="${HOST:-127.0.0.1}"
 TARGET_URL="http://${HOST}:${PORT}/"
 
-# Se o servidor já estiver rodando, apenas abre o navegador e sai
+# ------------------------------------------------------------------------------
+# Foco em instância existente (single-instance percebido pelo usuário)
+# ------------------------------------------------------------------------------
+# Cada clique no atalho chamava `xdg-open`, que SEMPRE abre uma nova aba —
+# 5 cliques = 5 abas. Antes de abrir, tenta trazer a janela existente do
+# Local Player para frente (o título da aba/janela é "Local Player").
+# Degrada graciosamente: sem wmctrl/xdotool (ou no Wayland sem suporte),
+# cai no comportamento anterior (xdg-open).
+focus_or_open() {
+  local url="$1"
+  if command -v wmctrl >/dev/null 2>&1; then
+    if wmctrl -a "Local Player" 2>/dev/null; then return 0; fi
+  fi
+  if command -v xdotool >/dev/null 2>&1; then
+    local wid
+    wid=$(xdotool search --onlyvisible --name "Local Player" 2>/dev/null | head -n 1)
+    if [ -n "$wid" ]; then
+      if xdotool windowactivate "$wid" 2>/dev/null; then return 0; fi
+    fi
+  fi
+  xdg-open "$url" >/dev/null 2>&1 &
+}
+
+# Se o servidor já estiver rodando, apenas foca a janela existente (sem nova aba) e sai
 if curl -s --max-time 1 "$TARGET_URL" >/dev/null 2>&1; then
-  xdg-open "$TARGET_URL" >/dev/null 2>&1 &
+  focus_or_open "$TARGET_URL"
   exit 0
 fi
 
