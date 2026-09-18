@@ -343,3 +343,37 @@ test("librarySummary: diferencia tópicos e não infla módulos aninhados como c
   assert.strictEqual(summary.topicCount, 1);  // Topico 1
 });
 
+// --- requestLibrary ----------------------------------------------------------
+
+test("requestLibrary: alias libId (query/body) equivale a libraryId", () => {
+  const { requestLibrary } = require("../server.js");
+  // O spread de module.exports congela `librariesCache` como valor; o
+  // acessor vivo está no registry — injeta/restaura o cache por ele.
+  const registry = require("../server/libraries/registry.js");
+  const prev = registry.librariesCache;
+  const def = { id: "default", path: "/x", isDefault: true, enabled: true };
+  const ext = { id: "ext1", path: "/y", enabled: true };
+  registry.librariesCache = [def, ext];
+  try {
+    // Sem id → biblioteca padrão.
+    assert.strictEqual(requestLibrary({ query: {}, body: {} }), def);
+    assert.strictEqual(requestLibrary({ query: {} }), def);
+    // libraryId e libId resolvem a mesma biblioteca, em query e body.
+    assert.strictEqual(requestLibrary({ query: { libraryId: "ext1" } }), ext);
+    assert.strictEqual(requestLibrary({ query: { libId: "ext1" } }), ext);
+    assert.strictEqual(requestLibrary({ query: {}, body: { libraryId: "ext1" } }), ext);
+    assert.strictEqual(requestLibrary({ query: {}, body: { libId: "ext1" } }), ext);
+    // libraryId tem precedência sobre libId.
+    assert.strictEqual(
+      requestLibrary({ query: { libraryId: "ext1", libId: "nope" } }),
+      ext,
+    );
+    // Id desconhecido → null (nunca degrada para a padrão).
+    assert.strictEqual(requestLibrary({ query: { libId: "nope" } }), null);
+    assert.strictEqual(requestLibrary({ query: { libraryId: "nope" } }), null);
+    assert.strictEqual(requestLibrary({ query: {}, body: { libId: "nope" } }), null);
+  } finally {
+    registry.librariesCache = prev;
+  }
+});
+
