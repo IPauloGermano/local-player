@@ -5,4 +5,5 @@ module.exports = {
   ...require("./subtitles-helpers"),
   ...require("./status"),
   ...require("./routes"),
+  ...require("./translation"),
 };

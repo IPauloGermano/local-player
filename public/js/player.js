@@ -1169,6 +1169,10 @@ function wirePlayerUI(videoEl) {
       closePopovers();
       return;
     }
+    if (e.target.closest(".pc-cc-target-wrap") || e.target.closest(".pc-cc-target-select")) {
+      e.stopPropagation();
+      return;
+    }
     const cc = e.target.closest("[data-cc]");
     if (!cc) return;
     e.stopPropagation();
@@ -1179,8 +1183,24 @@ function wirePlayerUI(videoEl) {
       setSubtitleEnabled(false);
       closePopovers();
     } else if (cc.dataset.cc === "lang-source") {
-      setSubtitleEnabled(true);
+      if (typeof selectSubtitleOriginal === "function") {
+        selectSubtitleOriginal();
+      } else {
+        setSubtitleEnabled(true);
+      }
       closePopovers();
+    } else if (cc.dataset.cc === "lang-translated") {
+      if (typeof selectSubtitleTranslation === "function") {
+        selectSubtitleTranslation();
+      }
+      closePopovers();
+    }
+  });
+
+  wrap.addEventListener("change", (e) => {
+    const targetSelect = e.target.closest(".pc-cc-target-select");
+    if (targetSelect && typeof onSubtitleTargetLangChange === "function") {
+      onSubtitleTargetLangChange(targetSelect.value);
     }
   });
 

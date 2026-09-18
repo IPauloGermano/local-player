@@ -1104,6 +1104,11 @@ const AI_TABS = [
     icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`,
   },
   {
+    id: "translation",
+    label: "Tradução",
+    icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 8 6 6"></path><path d="m4 14 6-6 2-3"></path><path d="M2 5h12"></path><path d="M7 2h1"></path><path d="m22 22-5-10-5 10"></path><path d="M14 18h6"></path></svg>`,
+  },
+  {
     id: "providers",
     label: "Provedores LLM",
     icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>`,
@@ -1228,6 +1233,7 @@ function renderAiPanel() {
     case "tutor": return renderAiTutor();
     case "skills": return renderAiSkills();
     case "transcription": return renderAiTranscription();
+    case "translation": return renderAiTranslation();
     case "providers": return renderAiProviders();
     case "models": return renderAiModels();
     case "advanced": return renderAiAdvanced();
@@ -1239,6 +1245,7 @@ function bindAiPanel(panel) {
     case "tutor": return bindAiTutor(panel);
     case "skills": return bindAiSkills(panel);
     case "transcription": return bindAiTranscription(panel);
+    case "translation": return bindAiTranslation(panel);
     case "providers": return bindAiProviders(panel);
     case "models": return bindAiModels(panel);
     case "advanced": return bindAiAdvanced(panel);
@@ -1287,6 +1294,14 @@ function renderAiOverview() {
     : (tr && tr.available
       ? "Modelo não instalado (veja a aba Modelos)"
       : "Não instalado");
+
+  const trlCfg = cfg?.translation || {};
+  const trlProv = (cfg?.llm?.providers || []).find((p) => p.id === trlCfg.providerId) || (cfg?.llm?.providers || [])[0] || null;
+  const trlDot = trlCfg.enabled !== false && trlProv ? "ok" : "off";
+  const trlSub = trlCfg.enabled === false
+    ? "Desativada"
+    : (trlProv ? `Ativa · ${trlCfg.model || trlProv.defaultModel || "modelo padrão"}` : "Sem provedor LLM configurado");
+
   // Resumo do pipeline de legendas (processados / em fila / com erro).
   const s = aiState.subtitles;
   const stat = (n, label, cls) =>
@@ -1300,6 +1315,14 @@ function renderAiOverview() {
         </div>
         <p class="ai-status-sub">${trSub}</p>
         <p class="ai-status-desc">Converte áudio em texto com timestamps, 100% offline.</p>
+      </div>
+      <div class="ai-status-card">
+        <div class="ai-status-head">
+          <span class="ai-status-dot ${trlDot}"></span>
+          <span class="ai-status-title">Tradução de legendas</span>
+        </div>
+        <p class="ai-status-sub">${trlSub}</p>
+        <p class="ai-status-desc">Tradução multibilíngue on-demand via LLM mantendo sincronia temporal.</p>
       </div>
     </div>
     <div class="ai-pipeline-stats">
@@ -1696,6 +1719,195 @@ function bindAiTutor(panel) {
         aiMsg("ai-tu-msg", "ok", "Configurações do Tutor IA salvas com sucesso.");
       } catch (err) {
         aiMsg("ai-tu-msg", "error", err.message);
+      }
+    });
+  }
+}
+
+function renderAiTranslation() {
+  const cfg = aiState.config;
+  const trl = (cfg && cfg.translation) || {
+    enabled: true,
+    providerId: "",
+    model: "",
+    targetLanguage: "pt",
+    batchSize: 100,
+    temperature: 0.3,
+    customPrompt: "",
+  };
+  const providers = (cfg && cfg.llm && cfg.llm.providers) || [];
+  const selProvider = providers.find((p) => p.id === trl.providerId) || providers[0] || null;
+  const isLocalProvider = selProvider && selProvider.baseUrl && (
+    selProvider.baseUrl.includes("127.0.0.1") ||
+    selProvider.baseUrl.includes("localhost") ||
+    selProvider.baseUrl.includes(":11434") ||
+    selProvider.baseUrl.includes(":1234") ||
+    selProvider.baseUrl.includes(":8080") ||
+    selProvider.baseUrl.includes(":20128")
+  );
+
+  const trlSwitch = (id, label, on, desc) => `
+    <div class="ai-field ai-field-switch">
+      <button class="switch ${on ? "on" : ""}" id="${id}" type="button" role="switch" aria-checked="${on}">
+        <span class="switch-track"></span>
+        <span class="switch-thumb"></span>
+      </button>
+      <div class="ai-switch-text">
+        <label class="ai-label" for="${id}">${label}</label>
+        ${desc ? `<p class="ai-field-desc">${desc}</p>` : ""}
+      </div>
+    </div>`;
+
+  const TARGET_LANGS = [
+    { id: "pt", name: "Português (Brasil)" },
+    { id: "en", name: "Inglês" },
+    { id: "es", name: "Espanhol" },
+    { id: "fr", name: "Francês" },
+    { id: "de", name: "Alemão" },
+    { id: "it", name: "Italiano" },
+    { id: "nl", name: "Holandês" },
+    { id: "ja", name: "Japonês" },
+    { id: "ko", name: "Coreano" },
+    { id: "zh", name: "Chinês" },
+    { id: "ru", name: "Russo" },
+  ];
+
+  const llmBlock = providers.length ? `
+    <div class="ai-field">
+      <label class="ai-label" for="ai-trl-provider">Provedor LLM para Tradução</label>
+      <select class="ai-select" id="ai-trl-provider">
+        <option value="" ${!trl.providerId ? "selected" : ""}>Padrão (primeiro configurado ou Tutor)</option>
+        ${providers.map((p) => `<option value="${p.id}" ${p.id === trl.providerId ? "selected" : ""}>${escapeHtml(p.name)}${p.defaultModel ? ` (${escapeHtml(p.defaultModel)})` : ""}</option>`).join("")}
+      </select>
+      ${isLocalProvider ? `
+        <div style="margin-top: 8px; padding: 8px 12px; background: rgba(51, 201, 111, 0.08); border: 1px solid rgba(51, 201, 111, 0.25); border-radius: 8px; font-size: 12px; color: #86efac; display: flex; align-items: center; gap: 6px;">
+          <span>⚡</span>
+          <span><strong>Modelo Local ativo (${escapeHtml(selProvider.name)}):</strong> Tradução 100% offline, sem custos por token e sem limites de taxa externos.</span>
+        </div>
+      ` : ""}
+    </div>
+    <div class="ai-field">
+      <label class="ai-label" for="ai-trl-model">Modelo LLM específico para Tradução</label>
+      <input class="ai-input" id="ai-trl-model" type="text" value="${escapeHtml(trl.model || "")}" placeholder="${selProvider?.defaultModel ? `Padrão do provedor: ${escapeHtml(selProvider.defaultModel)}` : "ex.: llama3.2, gemma2, gpt-4o-mini…"}">
+      <p class="ai-field-desc">Se deixado em branco, utiliza o modelo padrão configurado no provedor ou no Tutor IA.</p>
+    </div>
+    <div class="ai-field">
+      <label class="ai-label" for="ai-trl-target-lang">Idioma de Destino Padrão</label>
+      <select class="ai-select" id="ai-trl-target-lang">
+        ${TARGET_LANGS.map((l) => `<option value="${l.id}" ${l.id === (trl.targetLanguage || "pt") ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}
+      </select>
+      <p class="ai-field-desc">Idioma pré-selecionado no menu CC do player para traduções automáticas.</p>
+    </div>
+    <div class="ai-field">
+      <label class="ai-label" for="ai-trl-batch-size">Tamanho do lote (falas por requisição)</label>
+      <input class="ai-input" id="ai-trl-batch-size" type="number" min="20" max="200" step="10" value="${trl.batchSize || 100}">
+      <p class="ai-field-desc">Quantidade de segmentos traduzidos por requisição ao modelo (padrão recomendado: 100). Lotes maiores executam em menos requisições; lotes menores consomem menos tokens por chamada.</p>
+    </div>
+    <div class="ai-field">
+      <label class="ai-label" for="ai-trl-temp">Temperatura / Precisão: <span id="ai-trl-temp-val">${Number(trl.temperature !== undefined ? trl.temperature : 0.3).toFixed(1)}</span></label>
+      <input class="ai-range" id="ai-trl-temp" type="range" min="0" max="1" step="0.1" value="${trl.temperature !== undefined ? trl.temperature : 0.3}">
+      <p class="ai-field-desc">Valores menores (ex.: 0.1 - 0.3) garantem traduções fiéis, literais e preservam estritamente termos de código e sintaxe.</p>
+    </div>
+  ` : `
+    <p class="ai-empty">Nenhum provedor de LLM configurado.</p>
+    <p class="ai-note">Para traduzir legendas, cadastre um provedor local (Ollama, LM Studio, OmniRoute) ou em nuvem (OpenRouter, OpenAI) na aba <strong>Provedores LLM</strong>.</p>
+    <div class="settings-actions">
+      <button class="btn btn--secondary" id="ai-trl-goto-providers" type="button">Ir para Provedores LLM</button>
+    </div>`;
+
+  return `
+    <h4 class="ai-block-title">Tradução de Legendas por Inteligência Artificial</h4>
+    <p class="ai-note">Traduz sob demanda as legendas das aulas (geradas pelo Whisper ou existentes) para outros idiomas, mantendo o alinhamento temporal milimétrico 1:1.</p>
+    ${trlSwitch("ai-trl-enabled", "Ativar tradução de legendas no Player", trl.enabled !== false, "Quando ativado, o menu CC do player exibe opções para traduzir e alternar idiomas em tempo real.")}
+    <hr class="ai-sep">
+    <h4 class="ai-block-title">Configurações do Modelo e Idioma</h4>
+    ${llmBlock}
+    <hr class="ai-sep">
+    <h4 class="ai-block-title">Instruções Personalizadas e Glossário</h4>
+    <div class="ai-field">
+      <label class="ai-label" for="ai-trl-prompt">Glossário ou diretivas adicionais para o Tradutor</label>
+      <textarea class="ai-textarea" id="ai-trl-prompt" rows="3" placeholder="Ex.: Não traduza termos como 'query', 'schema', 'JOIN'. Mantenha jargões de programação em inglês.">${escapeHtml(trl.customPrompt || "")}</textarea>
+      <p class="ai-field-desc">Instruções inseridas no prompt do modelo para orientar termos específicos do curso, jargões técnicos ou preferências de estilo.</p>
+    </div>
+    <div class="settings-actions">
+      <button class="btn btn--primary" id="ai-trl-save" type="button">Salvar</button>
+      <button class="btn btn--secondary" id="ai-trl-reset" type="button">Restaurar padrões</button>
+    </div>
+    <p class="ai-inline-msg ok" id="ai-trl-msg" hidden></p>`;
+}
+
+function bindAiTranslation(panel) {
+  const cfg = aiState.config;
+  const trl = cfg.translation = cfg.translation || {
+    enabled: true,
+    providerId: "",
+    model: "",
+    targetLanguage: "pt",
+    batchSize: 100,
+    temperature: 0.3,
+    customPrompt: "",
+  };
+
+  const gotoBtn = document.getElementById("ai-trl-goto-providers");
+  if (gotoBtn) gotoBtn.addEventListener("click", () => aiGoToTab("providers"));
+
+  const swEnabled = document.getElementById("ai-trl-enabled");
+  if (swEnabled) {
+    swEnabled.addEventListener("click", () => {
+      trl.enabled = !trl.enabled;
+      swEnabled.classList.toggle("on", trl.enabled);
+      swEnabled.setAttribute("aria-checked", String(trl.enabled));
+    });
+  }
+
+  const provSel = document.getElementById("ai-trl-provider");
+  if (provSel) {
+    provSel.addEventListener("change", () => {
+      trl.providerId = provSel.value;
+      renderAiPanelInto(panel);
+    });
+  }
+
+  const tempInput = document.getElementById("ai-trl-temp");
+  const tempVal = document.getElementById("ai-trl-temp-val");
+  if (tempInput && tempVal) {
+    tempInput.addEventListener("input", () => {
+      trl.temperature = Number(tempInput.value) || 0.3;
+      tempVal.textContent = trl.temperature.toFixed(1);
+    });
+  }
+
+  const resetBtn = document.getElementById("ai-trl-reset");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      trl.providerId = "";
+      trl.model = "";
+      trl.targetLanguage = "pt";
+      trl.batchSize = 100;
+      trl.temperature = 0.3;
+      trl.customPrompt = "";
+      renderAiPanelInto(panel);
+    });
+  }
+
+  const saveBtn = document.getElementById("ai-trl-save");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", async () => {
+      if (provSel) trl.providerId = provSel.value;
+      const modelIn = document.getElementById("ai-trl-model");
+      if (modelIn) trl.model = modelIn.value.trim();
+      const langSel = document.getElementById("ai-trl-target-lang");
+      if (langSel) trl.targetLanguage = langSel.value;
+      const batchIn = document.getElementById("ai-trl-batch-size");
+      if (batchIn) trl.batchSize = Math.min(200, Math.max(20, parseInt(batchIn.value, 10) || 100));
+      const promptIn = document.getElementById("ai-trl-prompt");
+      if (promptIn) trl.customPrompt = promptIn.value.trim();
+
+      try {
+        await saveAiPatch({ translation: trl });
+        aiMsg("ai-trl-msg", "ok", "Configurações de Tradução salvas com sucesso.");
+      } catch (err) {
+        aiMsg("ai-trl-msg", "error", err.message);
       }
     });
   }

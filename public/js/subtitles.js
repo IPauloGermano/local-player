@@ -23,7 +23,6 @@ let dirtyGuardSuppressed = false;
 // pelo backend (fonte: edição manual > processed > VTT do curso; nunca raw).
 // `frame`/`fontPx`/`bottomInset` são recalculados em resize/fullscreen/idle.
 var subtitleState = {
-
   hash: null,
   rel: null,
   libId: null,
@@ -49,6 +48,15 @@ var subtitleState = {
   pos: null,
   // Percentual real do job ativo (progresso do whisper via -pp), p/ o badge.
   percent: null,
+  originalSegments: [],
+  selectedLang: "source", // "source" | "translated"
+  targetLang: "pt",
+  translations: [],
+  llmAvailable: false,
+  translating: false,
+  translationError: null,
+  targetLangReady: false,
+  currentActionHandler: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -57,6 +65,232 @@ var subtitleState = {
 // A preferência Ligado/Desativado fica no localStorage (nunca no servidor).
 // ---------------------------------------------------------------------------
 const SUBTITLES_ENABLED_KEY = "course-player-subtitles-enabled";
+const SUBTITLE_TARGET_LANG_KEY = "course-player-subtitle-target-lang";
+const SUBTITLE_MODE_KEY = "course-player-subtitle-mode";
+
+const SUBTITLE_LANG_LABELS = {
+  pt: "Português",
+  en: "Inglês",
+  es: "Espanhol",
+  fr: "Francês",
+  de: "Alemão",
+  it: "Italiano",
+  nl: "Holandês",
+  ja: "Japonês",
+  ko: "Coreano",
+  zh: "Chinês",
+  ru: "Russo",
+};
+
+function getSubtitleTargetLang() {
+  const v = localStorage.getItem(SUBTITLE_TARGET_LANG_KEY);
+  if (v && SUBTITLE_LANG_LABELS[v]) return v;
+  if (typeof subtitleState !== "undefined" && subtitleState.defaultTargetLang && SUBTITLE_LANG_LABELS[subtitleState.defaultTargetLang]) {
+    return subtitleState.defaultTargetLang;
+  }
+  return "pt";
+}
+
+function setSubtitleTargetLang(lang) {
+  if (!SUBTITLE_LANG_LABELS[lang]) return;
+  try {
+    localStorage.setItem(SUBTITLE_TARGET_LANG_KEY, lang);
+  } catch {}
+  subtitleState.targetLang = lang;
+}
+
+function getSubtitleMode() {
+  return localStorage.getItem(SUBTITLE_MODE_KEY) === "translated" ? "translated" : "source";
+}
+
+function setSubtitleMode(mode) {
+  try {
+    localStorage.setItem(SUBTITLE_MODE_KEY, mode === "translated" ? "translated" : "source");
+  } catch {}
+}
+
+// Parser VTT canônico compartilhado (public/scope.js, carregado antes deste
+// script via <script src="/scope.js">) — sem duplicar a lógica aqui.
+function parseVttSegments(vttText) {
+  return LocalPlayerScope.parseVttSegments(vttText);
+}
+
+async function switchToTranslatedSegments(targetLang, rel, libId) {
+  const hash = subtitleState.hash;
+  if (!hash) return false;
+  const relPath = rel || subtitleState.rel;
+  const lib = libId || subtitleState.libId;
+  const url =
+    `/subtitles/${hash}-${targetLang}.vtt?rel=${encodeURIComponent(relPath)}` +
+    libQuery({ libId: lib });
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return false;
+    const vttText = await res.text();
+    const segs = parseVttSegments(vttText);
+    if (segs && segs.length) {
+      subtitleState.ready = true;
+      subtitleState.segments = segs;
+      subtitleState.selectedLang = "translated";
+      setSubtitleMode("translated");
+      subtitleState.currentIndex = -1;
+      applySubtitleVisibility();
+      syncSubtitleCcUi();
+      const v = document.getElementById("video-el");
+      if (v) updateSubtitleOverlay(typeof v.currentTime === "number" ? v.currentTime : 0);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+function switchToOriginalSegments() {
+  if (subtitleState.originalSegments && subtitleState.originalSegments.length) {
+    subtitleState.segments = subtitleState.originalSegments;
+  }
+  subtitleState.selectedLang = "source";
+  setSubtitleMode("source");
+  subtitleState.currentIndex = -1;
+  applySubtitleVisibility();
+  syncSubtitleCcUi();
+  const v = document.getElementById("video-el");
+  if (v) updateSubtitleOverlay(typeof v.currentTime === "number" ? v.currentTime : 0);
+}
+
+async function requestSubtitleTranslate(targetLang, force = false) {
+  const rel = subtitleState.rel;
+  const libId = subtitleState.libId;
+  if (!rel) return;
+  const lang = targetLang || subtitleState.targetLang || getSubtitleTargetLang();
+
+  if (!subtitleState.llmAvailable) {
+    if (typeof showToast === "function") {
+      showToast("Configure um provedor LLM em Configurações > Central de IA para traduzir legendas.");
+    }
+    subtitleState.translationError = "Configure um provedor LLM em Configurações > Inteligência Artificial > Provedores LLM.";
+    syncSubtitleCcUi();
+    return;
+  }
+
+  subtitleState.translating = true;
+  subtitleState.translationError = null;
+  syncSubtitleCcUi();
+
+  try {
+    const url = "/api/subtitles/translate" + (force ? "?force=1" : "");
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: rel,
+        targetLang: lang,
+        ...(libId ? { libId } : {}),
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || (data && data.ok === false)) {
+      subtitleState.translating = false;
+      let errStr = (data && data.error) || "Falha ao traduzir legenda";
+      if (res.status === 429 || (data && data.retryAfterMs)) {
+        const secs = Math.ceil(((data && data.retryAfterMs) || 5000) / 1000);
+        errStr = `rate_limit_429:${secs}`;
+      }
+      subtitleState.translationError = errStr;
+      syncSubtitleCcUi();
+      return;
+    }
+
+    subtitleState.translating = false;
+    subtitleState.targetLangReady = true;
+    const availItem = subtitleState.translations.find((t) => t.lang === lang);
+    if (availItem) availItem.ready = true;
+    else subtitleState.translations.push({ lang, ready: true });
+
+    if (Array.isArray(data.segments) && data.segments.length) {
+      subtitleState.segments = data.segments;
+      subtitleState.selectedLang = "translated";
+      setSubtitleMode("translated");
+      subtitleState.currentIndex = -1;
+      setSubtitleEnabled(true);
+      applySubtitleVisibility();
+      const v = document.getElementById("video-el");
+      if (v) updateSubtitleOverlay(typeof v.currentTime === "number" ? v.currentTime : 0);
+    } else {
+      await switchToTranslatedSegments(lang, rel, libId);
+    }
+    syncSubtitleCcUi();
+  } catch (err) {
+    subtitleState.translating = false;
+    subtitleState.translationError = (err && err.message) || "Erro de conexão ao traduzir legenda";
+    syncSubtitleCcUi();
+  }
+}
+
+async function fetchSubtitleTranslations(rel, libId) {
+  try {
+    const res = await fetch(
+      "/api/subtitles/translations?path=" +
+        encodeURIComponent(rel) +
+        libQuery({ libId }),
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data && data.hash) subtitleState.hash = data.hash;
+    subtitleState.sourceLanguage = data.sourceLanguage || "pt";
+    subtitleState.llmAvailable = !!data.llmAvailable;
+    subtitleState.translationEnabled = data.enabled !== false;
+    subtitleState.configuredModel = data.configuredModel || "";
+    subtitleState.defaultTargetLang = data.defaultTargetLang || "pt";
+    subtitleState.translations = Array.isArray(data.available) ? data.available : [];
+    if (!localStorage.getItem(SUBTITLE_TARGET_LANG_KEY) && data.defaultTargetLang) {
+      subtitleState.targetLang = data.defaultTargetLang;
+    }
+    const target = subtitleState.targetLang || getSubtitleTargetLang();
+    const item = subtitleState.translations.find((t) => t.lang === target);
+    subtitleState.targetLangReady = !!(item && item.ready);
+
+    if (getSubtitleMode() === "translated" && subtitleState.targetLangReady && subtitleState.ready) {
+      await switchToTranslatedSegments(target, rel, libId);
+    }
+
+    syncSubtitleCcUi();
+  } catch {}
+}
+
+async function onSubtitleTargetLangChange(newLang) {
+  if (!SUBTITLE_LANG_LABELS[newLang]) return;
+  setSubtitleTargetLang(newLang);
+  const item = subtitleState.translations.find((t) => t.lang === newLang);
+  subtitleState.targetLangReady = !!(item && item.ready);
+  if (subtitleState.selectedLang === "translated") {
+    if (subtitleState.targetLangReady) {
+      await switchToTranslatedSegments(newLang);
+    } else {
+      switchToOriginalSegments();
+    }
+  }
+  // O select acabou de ser usado (dropdown já fechou): tira o foco para que
+  // o sync abaixo aplique o HTML atualizado em vez de pular por foco ativo.
+  const ae = document.activeElement;
+  if (ae && ae.classList && ae.classList.contains("pc-cc-target-select")) ae.blur();
+  syncSubtitleCcUi();
+}
+
+function selectSubtitleOriginal() {
+  switchToOriginalSegments();
+  setSubtitleEnabled(true);
+}
+
+function selectSubtitleTranslation() {
+  const target = subtitleState.targetLang || getSubtitleTargetLang();
+  if (subtitleState.targetLangReady) {
+    switchToTranslatedSegments(target);
+    setSubtitleEnabled(true);
+  } else {
+    requestSubtitleTranslate(target, false);
+  }
+}
 
 function getSubtitleEnabled() {
   return localStorage.getItem(SUBTITLES_ENABLED_KEY) !== "0";
@@ -133,31 +367,91 @@ function syncSubtitleCcUi() {
   }
   if (dot) {
     // Com legendas desativadas o botão fica limpo (is-off), sem dot — a não ser
-    // que um job ainda rode (gerando/aguardando/falha), que continua informado.
-    const active = ["ready", "stale", "generating", "waiting", "failed"].includes(kind);
+    // que um job ainda rode (gerando/aguardando/falha) ou tradução ativa, que continua informado.
+    const active =
+      ["ready", "stale", "generating", "waiting", "failed"].includes(kind) ||
+      subtitleState.translating ||
+      !!subtitleState.translationError;
     const showDot =
       active &&
-      (enabled || kind === "generating" || kind === "waiting" || kind === "failed");
+      (enabled ||
+        kind === "generating" ||
+        kind === "waiting" ||
+        kind === "failed" ||
+        subtitleState.translating ||
+        !!subtitleState.translationError);
     dot.hidden = !showDot;
-    dot.textContent = kind === "failed" || kind === "waiting" ? "!" : "";
+    dot.textContent =
+      kind === "failed" || kind === "waiting" || subtitleState.translationError ? "!" : "";
   }
-  // Seletor (Original / Desativado) — montado nos dois menus (barra e ⋮ mobile).
-  const isSrcActive = enabled;
+  // Seletor (Original / <Nome do idioma> / Desativado) — montado nos dois menus (barra e ⋮ mobile).
+  const targetLang = subtitleState.targetLang || getSubtitleTargetLang();
+  const targetLangLabel = SUBTITLE_LANG_LABELS[targetLang] || targetLang;
+
+  const isTranslatedActive = enabled && subtitleState.selectedLang === "translated";
+  const isSrcActive = enabled && !isTranslatedActive;
   const isOffActive = !enabled;
 
   const langItems = [
     `<button type="button" class="pc-menu-item${isSrcActive ? " is-active" : ""}" data-cc="lang-source" aria-pressed="${isSrcActive}">Original</button>`,
-    `<button type="button" class="pc-menu-item${isOffActive ? " is-active" : ""}" data-cc="off" aria-pressed="${isOffActive}">Desativado</button>`,
   ];
+
+  if (subtitleState.translationEnabled !== false && (subtitleState.llmAvailable || subtitleState.targetLangReady)) {
+    langItems.push(
+      `<button type="button" class="pc-menu-item${isTranslatedActive ? " is-active" : ""}" data-cc="lang-translated" aria-pressed="${isTranslatedActive}">${targetLangLabel}</button>`,
+    );
+  }
+
+  langItems.push(
+    `<button type="button" class="pc-menu-item${isOffActive ? " is-active" : ""}" data-cc="off" aria-pressed="${isOffActive}">Desativado</button>`,
+  );
+
+  if (subtitleState.translationEnabled !== false) {
+    const optionsHtml = Object.entries(SUBTITLE_LANG_LABELS)
+      .map(
+        ([code, name]) =>
+          `<option value="${code}"${code === targetLang ? " selected" : ""}>${name}</option>`,
+      )
+      .join("");
+
+    const targetSelectHtml = `
+      <div class="pc-cc-target-wrap" style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;margin-top:4px;border-top:1px solid rgba(255,255,255,0.08);gap:8px;">
+        <span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">Traduzir para</span>
+        <select class="pc-cc-target-select tutor-study-select" style="font-size:11.5px;padding:2px 6px;height:26px;border-radius:6px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;cursor:pointer;max-width:110px;" aria-label="Idioma de tradução">
+          ${optionsHtml}
+        </select>
+      </div>
+    `;
+    langItems.push(targetSelectHtml);
+  }
+
   const langsHtml = langItems.join("");
   ["pc-cc-langs", "pc-more-cc-langs"].forEach((id) => {
     const el = document.getElementById(id);
-    if (el && el.innerHTML !== langsHtml) el.innerHTML = langsHtml;
+    if (!el || el.innerHTML === langsHtml) return;
+    // Não destrói o <select> enquanto ele tem foco/aberto: trocar innerHTML
+    // fecharia o dropdown no meio da escolha (sync roda a cada sondagem).
+    // A sincronização acontece na próxima chamada após o blur/troca.
+    if (el.contains(document.activeElement)) return;
+    el.innerHTML = langsHtml;
   });
   // Formata mensagens de erro de legenda para exibição amigável e resolutiva
   function formatSubtitleErrorMessage(error) {
     if (!error) return "Erro ao gerar legenda. Clique em 'Tentar novamente'.";
     const err = String(error).trim();
+    if (err.startsWith("rate_limit_429:")) {
+      const secs = err.split(":")[1] || "5";
+      return `Limite do provedor atingido — aguarde ~${secs}s e tente novamente.`;
+    }
+    if (err.includes("429") || err.includes("Limite") || err.includes("rate limit") || err.includes("Too Many Requests")) {
+      return "Limite do provedor atingido — aguarde e tente novamente.";
+    }
+    if (err.includes("Nenhum provedor de IA configurado")) {
+      return "Nenhum provedor LLM configurado. Acesse Configurações → Central de IA.";
+    }
+    if (err.includes("sem legenda original")) {
+      return "Gere a legenda original antes de solicitar a tradução.";
+    }
     if (err.includes("Binário do Whisper") || err.includes("binary_not_installed")) {
       return "Whisper não instalado. Configure o executável em Configurações → Central de IA.";
     }
@@ -188,7 +482,7 @@ function syncSubtitleCcUi() {
     return `Erro: ${err}. Clique em 'Tentar novamente'.`;
   }
 
-  // Ação contextual (Gerar/Regenerar) e linha de status.
+  // Ação contextual (Gerar/Regenerar/Traduzir) e linha de status.
   const statusEls = [
     document.getElementById("pc-cc-status"),
     document.getElementById("pc-more-cc-status"),
@@ -200,25 +494,57 @@ function syncSubtitleCcUi() {
   let statusText = "";
   let actionText = "";
   let showAction = false;
-  const isError = kind === "failed";
-  if (kind === "generating") statusText = "Gerando legenda…";
-  else if (kind === "waiting") statusText = "Aguardando o dispositivo…";
-  else if (kind === "failed") {
+  let actionHandler = "generate";
+  let isError = kind === "failed";
+
+  if (subtitleState.translating) {
+    statusText = "Gerando tradução via IA…";
+    actionText = "Traduzindo…";
+    showAction = true;
+    actionHandler = "none";
+  } else if (subtitleState.translationError) {
+    statusText = formatSubtitleErrorMessage(subtitleState.translationError);
+    actionText = "Tentar novamente";
+    showAction = true;
+    actionHandler = "retry-translate";
+    isError = true;
+  } else if (kind === "generating") {
+    statusText = "Gerando legenda…";
+  } else if (kind === "waiting") {
+    statusText = "Aguardando o dispositivo…";
+  } else if (kind === "failed") {
     const errorDetail = subtitleState.lastError || "";
     statusText = formatSubtitleErrorMessage(errorDetail);
     actionText = "Tentar novamente";
     showAction = true;
+    actionHandler = "retry-generate";
   } else if (kind === "unavailable") {
     actionText = "Gerar legenda";
     showAction = true;
+    actionHandler = "generate";
   } else if (kind === "ready" || kind === "stale") {
-    // "Regenerar" exige pipeline — sem Whisper o botão some (ação morta),
-    // mas o seletor de idioma (Original/Desativado) continua funcional.
-    if (subtitleState.canGenerate !== false) {
+    if (subtitleState.staleSource && subtitleState.selectedLang === "translated") {
+      statusText = "Legenda original alterada — regenerar tradução";
+      actionText = "Regenerar tradução";
+      showAction = true;
+      actionHandler = "force-translate";
+    } else if (!subtitleState.targetLangReady) {
+      actionText = `Traduzir para ${targetLangLabel}`;
+      showAction = true;
+      actionHandler = "translate";
+    } else if (subtitleState.selectedLang === "translated") {
+      actionText = "Regenerar tradução";
+      showAction = true;
+      actionHandler = "force-translate";
+    } else if (subtitleState.canGenerate !== false) {
       actionText = "Regenerar";
       showAction = true;
+      actionHandler = "generate";
     }
   }
+
+  subtitleState.currentActionHandler = actionHandler;
+
   statusEls.forEach((el) => {
     el.textContent = statusText;
     el.hidden = !statusText;
@@ -241,8 +567,19 @@ function updateSubtitleBadge() {
   if (!badge) return;
   const kind = subtitleState.ccKind || null;
   let msg = "";
-  const isError = kind === "failed";
-  if (kind === "generating") {
+  let isError = false;
+
+  if (subtitleState.translating) {
+    msg = "Gerando tradução…";
+  } else if (subtitleState.translationError) {
+    const err = String(subtitleState.translationError);
+    if (err.startsWith("rate_limit_429:") || err.includes("429") || err.includes("Limite")) {
+      msg = "⚠ Limite da IA atingido — abra o menu CC";
+    } else {
+      msg = "⚠ Falha na tradução — abra o menu CC para detalhes";
+    }
+    isError = true;
+  } else if (kind === "generating") {
     msg = "Gerando legenda…";
     if (typeof subtitleState.percent === "number") {
       msg += " " + Math.round(subtitleState.percent) + "%";
@@ -264,6 +601,7 @@ function updateSubtitleBadge() {
       shortReason = "Tempo limite excedido";
     }
     msg = `⚠ ${shortReason} — abra o menu CC para detalhes`;
+    isError = true;
   }
   badge.classList.toggle("is-error", isError);
   badge.hidden = !msg;
@@ -277,7 +615,13 @@ let subtitleGenerateApi = null; // preenchido em setupPlayerSubtitles
 // Re-sondagem do status.
 let subtitleCheckApi = null; // preenchido em setupPlayerSubtitles
 function requestSubtitleGenerate() {
-  if (subtitleGenerateApi) subtitleGenerateApi();
+  if (subtitleState.currentActionHandler === "translate" || subtitleState.currentActionHandler === "retry-translate") {
+    requestSubtitleTranslate(subtitleState.targetLang, false);
+  } else if (subtitleState.currentActionHandler === "force-translate") {
+    requestSubtitleTranslate(subtitleState.targetLang, true);
+  } else if (subtitleGenerateApi) {
+    subtitleGenerateApi();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1270,6 +1614,7 @@ async function loadSubtitleOverlay(videoEl, rel, libId) {
   subtitleState.edited = doc.edited === true;
   subtitleState.staleSource = doc.staleSource === true;
   subtitleState.segments = subtitleState.ready ? segs : [];
+  subtitleState.originalSegments = subtitleState.segments;
   subtitleState.currentIndex = -1;
   const overlay = document.getElementById("subtitle-overlay");
   const inner = overlay && overlay.querySelector(".subtitle-overlay-inner");
@@ -1303,12 +1648,21 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   // Zera o estado do overlay e do botão CC (nova aula); a preferência
   // Ligado/Desativado vem do localStorage.
   subtitleState.hash = null;
-  subtitleState.rel = null;
+  subtitleState.rel = video.path;
   subtitleState.ready = false;
   subtitleState.source = null;
   subtitleState.edited = false;
   subtitleState.staleSource = false;
   subtitleState.segments = [];
+  subtitleState.originalSegments = [];
+  subtitleState.selectedLang = getSubtitleMode();
+  subtitleState.targetLang = getSubtitleTargetLang();
+  subtitleState.translations = [];
+  subtitleState.llmAvailable = false;
+  subtitleState.translating = false;
+  subtitleState.translationError = null;
+  subtitleState.targetLangReady = false;
+  subtitleState.currentActionHandler = null;
   subtitleState.currentIndex = -1;
   subtitleState.ccKind = null;
   subtitleState.enabled = getSubtitleEnabled();
@@ -1317,6 +1671,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   subtitleState.percent = null;
   subtitleGenerateApi = null;
   subtitleCheckApi = null;
+  fetchSubtitleTranslations(video.path, video.libId);
   const overlayEl = document.getElementById("subtitle-overlay");
   if (overlayEl) overlayEl.hidden = true;
   syncSubtitleCcUi();
@@ -1397,6 +1752,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
       );
       if (!res.ok) throw new Error("http " + res.status);
       st = await res.json();
+      if (st && st.hash) subtitleState.hash = st.hash;
       if (st && st.error) {
         subtitleState.lastError = st.error;
       }
@@ -1445,12 +1801,14 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
           );
           const stale = subtitleState.staleSource;
           setCc(stale ? "stale" : "ready");
+          fetchSubtitleTranslations(rel, video.libId);
         });
       } else {
         // Overlay já carregado (ex.: regeneração): atualiza o estado do CC
         // sem recarregar os segmentos — sem isto o botão ficava preso em
         // "Gerando legenda…" mesmo com a legenda pronta de novo.
         setCc(subtitleState.staleSource ? "stale" : "ready");
+        fetchSubtitleTranslations(rel, video.libId);
       }
       stopPolling();
       maybePregenNextLesson();
@@ -1529,8 +1887,19 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   if (!subtitlePollTimer) subtitlePollTimer = setInterval(check, 2500);
 }
 
-// Subtitle Editor movido para public/js/editor.js
+document.addEventListener("change", (e) => {
+  const sel = e.target && e.target.closest && e.target.closest(".pc-cc-target-select");
+  if (sel && typeof onSubtitleTargetLangChange === "function") {
+    onSubtitleTargetLangChange(sel.value);
+  }
+});
 
 window.subtitleState = subtitleState;
 window.setupPlayerSubtitles = setupPlayerSubtitles;
 window.applySubtitleGeometry = applySubtitleGeometry;
+window.selectSubtitleOriginal = selectSubtitleOriginal;
+window.selectSubtitleTranslation = selectSubtitleTranslation;
+window.requestSubtitleTranslate = requestSubtitleTranslate;
+window.getSubtitleTargetLang = getSubtitleTargetLang;
+window.setSubtitleTargetLang = setSubtitleTargetLang;
+window.onSubtitleTargetLangChange = onSubtitleTargetLangChange;
