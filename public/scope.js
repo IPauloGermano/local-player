@@ -367,6 +367,57 @@
     return 0;
   }
 
+  // Parser WebVTT/SRT canônico (puro, sem DOM): fonte única da lógica de
+  // segmentação — usada pelo player (overlay/traduções) e pelo backend
+  // (vtt.js, subtitles-helpers.js via require). Sem duplicação.
+  function parseVttSegments(vttText) {
+    if (typeof vttText !== "string" || !vttText.trim()) return [];
+    const lines = vttText.replace(/^\uFEFF/, "").split(/\r?\n/);
+    const segments = [];
+
+    const parseTimestamp = (str) => {
+      const parts = str.trim().replace(",", ".").split(":");
+      if (parts.length === 3) {
+        return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
+      } else if (parts.length === 2) {
+        return parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
+      }
+      return parseFloat(str) || 0;
+    };
+
+    const tsRegex = /((?:\d{1,2}:)?\d{2}:\d{2}(?:[.,]\d{1,3})?)\s+-->\s+((?:\d{1,2}:)?\d{2}:\d{2}(?:[.,]\d{1,3})?)/;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const match = tsRegex.exec(line);
+      if (!match) continue;
+
+      const start = parseTimestamp(match[1]);
+      const end = parseTimestamp(match[2]);
+
+      const textLines = [];
+      i++;
+      while (i < lines.length) {
+        const cur = lines[i].trim();
+        if (!cur) break;
+        if (tsRegex.test(cur) || (i + 1 < lines.length && /^\d+$/.test(cur) && tsRegex.test(lines[i + 1].trim()))) {
+          i--;
+          break;
+        }
+        if (!/^\d+$/.test(cur)) {
+          textLines.push(cur.replace(/<[^>]*>/g, "").trim());
+        }
+        i++;
+      }
+
+      const segText = textLines.join(" ").trim();
+      if (segText && Number.isFinite(start) && Number.isFinite(end) && end >= start) {
+        segments.push({ id: `s${segments.length + 1}`, start, end, text: segText });
+      }
+    }
+    return segments;
+  }
+
   // Extrai ID de 11 caracteres de URLs do YouTube (watch, youtu.be, embed)
   function extractYouTubeId(url) {
     if (!url || typeof url !== "string") return null;
@@ -928,6 +979,7 @@
     sanitizeLinkUrl,
     parseMarkdownTable,
     parseTimestampToSeconds,
+    parseVttSegments,
     renderMarkdownToHtml,
     extractYouTubeId,
     buildVideoEmbedCardHtml,

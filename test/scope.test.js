@@ -20,6 +20,7 @@ const {
   getLibraryProgressSummary,
   collectOrphanRecords,
   humanizeLibraryName,
+  parseVttSegments,
 } = require("../public/scope.js");
 
 // ---- Fixtures ---------------------------------------------------------------
@@ -584,4 +585,31 @@ test("bibliotecas: humanizeLibraryName remove numeração e traduz pastas genér
   assert.strictEqual(humanizeLibraryName("Meus cursos"), "Meus cursos");
   assert.strictEqual(humanizeLibraryName(""), "");
   assert.strictEqual(humanizeLibraryName(null), "");
+});
+
+test("legendas: parseVttSegments canônico (VTT/SRT, BOM, vazios)", () => {
+  assert.deepStrictEqual(parseVttSegments(""), []);
+  assert.deepStrictEqual(parseVttSegments(null), []);
+  assert.deepStrictEqual(parseVttSegments("WEBVTT\n"), []);
+
+  const vtt = [
+    "WEBVTT",
+    "",
+    "00:00:01.000 --> 00:00:03.500",
+    "Olá mundo",
+    "",
+    "00:00:03.500 --> 00:00:06.000",
+    "Segunda <b>frase</b> aqui",
+    "",
+  ].join("\n");
+  assert.deepStrictEqual(parseVttSegments(vtt), [
+    { id: "s1", start: 1, end: 3.5, text: "Olá mundo" },
+    { id: "s2", start: 3.5, end: 6, text: "Segunda frase aqui" },
+  ]);
+
+  // BOM inicial e numeração estilo SRT não quebram o parse.
+  const bom = "\uFEFFWEBVTT\n\n1\n00:00:01,000 --> 00:00:02,000\nCom BOM\n";
+  assert.deepStrictEqual(parseVttSegments(bom), [
+    { id: "s1", start: 1, end: 2, text: "Com BOM" },
+  ]);
 });
