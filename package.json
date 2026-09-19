@@ -1,7 +1,7 @@
 {
   "name": "local-player",
   "desktopName": "local-player.desktop",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Player local/offline para organizar e reproduzir conteúdo de mídia em disco",
   "author": "Local Player",
   "private": true,
