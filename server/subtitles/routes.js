@@ -12,6 +12,7 @@ const { subtitleCacheName } = require("../ai/subtitles-helpers");
 const { extractAndParseJson } = require("../ai/study");
 const {
   SUPPORTED_TARGET_LANGS,
+  TARGET_LANG_LABELS,
   buildTranslatePrompt,
   sanitizeTranslationResult,
 } = require("../ai/translation");
@@ -534,7 +535,7 @@ function registerSubtitleRoutes(app) {
       const sourceStat = await fs.stat(safe.abs).catch(() => null);
       const sourceDoc = await loadEditableDoc(lib, safe.rel, hash, safe.abs, sourceStat);
       const sourceReady = !!(sourceDoc && Array.isArray(sourceDoc.segments) && sourceDoc.segments.length > 0);
-      const sourceLanguage = (sourceDoc && sourceDoc.language) || "pt";
+      const sourceLanguage = (sourceDoc && sourceDoc.language) || null;
 
       const cfg = await loadAiConfig();
       const trlCfg = cfg.translation || {};
@@ -601,6 +602,28 @@ function registerSubtitleRoutes(app) {
         return res.status(409).json({ ok: false, error: "sem legenda original" });
       }
       const sourceSegments = sourceDoc.segments;
+
+      let sourceLang = sourceDoc.language || null;
+      if (!sourceLang && sourceSegments.length > 0) {
+        const sampleText = sourceSegments.slice(0, 15).map((s) => s.text).join(" ").toLowerCase();
+        const enWords = (sampleText.match(/\b(the|and|is|in|to|of|you|that|it|welcome|hello|this)\b/g) || []).length;
+        const ptWords = (sampleText.match(/\b(de|que|em|para|com|não|uma|os|bem-vindos|olá|este)\b/g) || []).length;
+        if (enWords > ptWords) sourceLang = "en";
+        else if (ptWords > enWords) sourceLang = "pt";
+      }
+
+      // Traduzir para o mesmo idioma da transcrição não faz sentido e gerava
+      // um VTT "traduzido" indistinguível do original (ex.: pt→pt), que o
+      // player passava a exibir no lugar da transcrição. Barra antes do
+      // cache para valer também em cache-hit.
+      if (sourceLang && targetLang === sourceLang) {
+        const label = TARGET_LANG_LABELS[targetLang] || targetLang;
+        return res.status(400).json({
+          ok: false,
+          error: `A legenda original já está em ${label}. Escolha outro idioma-alvo.`,
+          sourceLanguage: sourceLang,
+        });
+      }
 
       const cfg = await loadAiConfig();
       const trlCfg = cfg.translation || {};
@@ -684,15 +707,6 @@ function registerSubtitleRoutes(app) {
       const backoffMaxMs = getTranslateBackoffMaxMs();
       const maxRetries = 4;
       let previousWaitMs = 0;
-
-      let sourceLang = sourceDoc.language || null;
-      if (!sourceLang && sourceSegments.length > 0) {
-        const sampleText = sourceSegments.slice(0, 15).map((s) => s.text).join(" ").toLowerCase();
-        const enWords = (sampleText.match(/\b(the|and|is|in|to|of|you|that|it|welcome|hello|this)\b/g) || []).length;
-        const ptWords = (sampleText.match(/\b(de|que|em|para|com|não|uma|os|bem-vindos|olá|este)\b/g) || []).length;
-        if (enWords > ptWords) sourceLang = "en";
-        else if (ptWords > enWords) sourceLang = "pt";
-      }
 
       for (let i = resumeFrom; i < sourceSegments.length; i += BATCH_SIZE) {
         const chunk = sourceSegments.slice(i, i + BATCH_SIZE);

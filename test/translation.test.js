@@ -1058,4 +1058,235 @@ test("Tradução: /api/subtitles/translate honra modelo, temperatura e customPro
   }
 });
 
+// ---------------------------------------------------------------------------
+// 6. Regressão: tradução para o mesmo idioma da transcrição
+// ---------------------------------------------------------------------------
+// Um VTT "traduzido" pt→pt é indistinguível do original e o player passava a
+// exibi-lo no lugar da transcrição. O backend deve barrar (400) e o status
+// deve informar o idioma real (null quando desconhecido, nunca "pt" chutado).
+
+test("Tradução: POST /api/subtitles/translate barra idioma igual ao da transcrição", async () => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-test-trl-samelang-data-"));
+  const libDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-test-trl-samelang-lib-"));
+
+  const lessonRel = "Curso Mesmo Idioma/Aula 01.mp4";
+  const courseDir = path.join(libDir, "Curso Mesmo Idioma");
+  await fs.mkdir(courseDir, { recursive: true });
+  await fs.writeFile(path.join(libDir, lessonRel), "dummy video");
+
+  let mockCalls = 0;
+  const mockPort = 30000 + Math.floor(Math.random() * 15000);
+  const mockLlmServer = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      mockCalls++;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify([
+                  { id: "s1", text: "Hello world" },
+                  { id: "s2", text: "Second sentence" },
+                ]),
+              },
+            },
+          ],
+        }),
+      );
+    });
+  });
+  await new Promise((r) => mockLlmServer.listen(mockPort, "127.0.0.1", r));
+
+  const srv = await startTestServer(dataDir);
+
+  try {
+    const libRes = await fetch(`${srv.base}/api/libraries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: libDir }),
+    });
+    const libData = await libRes.json();
+    const libId = libData.id;
+
+    await fetch(`${srv.base}/api/ai/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        llm: {
+          providers: [
+            {
+              id: "mock-samelang",
+              type: "openai-compatible",
+              name: "Mock SameLang",
+              baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+              defaultModel: "mock-model",
+            },
+          ],
+        },
+        tutor: { providerId: "mock-samelang", model: "mock-model" },
+      }),
+    });
+
+    // Transcrição original marcada como pt.
+    const hash = subtitleCacheName(libId, lessonRel);
+    const sourceStat = await fs.stat(path.join(libDir, lessonRel));
+    await fs.mkdir(path.join(dataDir, "subtitles", "processed"), { recursive: true });
+    await fs.writeFile(
+      path.join(dataDir, "subtitles", "processed", `${hash}.json`),
+      JSON.stringify({
+        version: 1,
+        source: { mtimeMs: sourceStat.mtimeMs, size: sourceStat.size },
+        language: "pt",
+        segments: [
+          { id: "s1", start: 0, end: 2.0, text: "Olá mundo" },
+          { id: "s2", start: 2.0, end: 4.0, text: "Segunda frase" },
+        ],
+      }),
+    );
+
+    // pt→pt deve ser barrado mesmo com LLM configurado e sem chamar o LLM.
+    const sameRes = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "pt", libId }),
+    });
+    assert.strictEqual(sameRes.status, 400);
+    const sameData = await sameRes.json();
+    assert.strictEqual(sameData.ok, false);
+    assert.ok(sameData.error.includes("já está em"), `erro deve explicar o motivo, obteve: ${sameData.error}`);
+    assert.strictEqual(sameData.sourceLanguage, "pt");
+    assert.strictEqual(mockCalls, 0, "Idioma igual não deve chamar o LLM");
+
+    // pt→pt com force=1 também deve ser barrado (não gera VTT indistinguível).
+    const forceRes = await fetch(`${srv.base}/api/subtitles/translate?force=1`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "pt", libId }),
+    });
+    assert.strictEqual(forceRes.status, 400);
+    assert.strictEqual(mockCalls, 0);
+
+    // Nenhum artefato pt deve ter sido criado.
+    assert.strictEqual(await fs.stat(path.join(dataDir, "subtitles", `${hash}-pt.vtt`)).catch(() => null), null);
+    assert.strictEqual(await fs.stat(path.join(dataDir, "subtitles", `${hash}-pt.json`)).catch(() => null), null);
+
+    // Idioma diferente continua funcionando.
+    const enRes = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(enRes.status, 200);
+    const enData = await enRes.json();
+    assert.strictEqual(enData.ok, true);
+    assert.strictEqual(enData.segments[0].text, "Hello world");
+    assert.strictEqual(mockCalls, 1);
+  } finally {
+    await srv.stop();
+    await new Promise((r) => mockLlmServer.close(r));
+    await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(libDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("Tradução: translations informa sourceLanguage null quando a origem é só VTT", async () => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-test-trl-srclang-data-"));
+  const libDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-test-trl-srclang-lib-"));
+
+  const lessonRel = "Curso VTT Only/Aula 01.mp4";
+  const courseDir = path.join(libDir, "Curso VTT Only");
+  await fs.mkdir(courseDir, { recursive: true });
+  await fs.writeFile(path.join(libDir, lessonRel), "dummy video");
+
+  const mockPort = 30000 + Math.floor(Math.random() * 15000);
+  const mockLlmServer = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify([
+                  { id: "s1", text: "Hello world" },
+                  { id: "s2", text: "Second sentence" },
+                ]),
+              },
+            },
+          ],
+        }),
+      );
+    });
+  });
+  await new Promise((r) => mockLlmServer.listen(mockPort, "127.0.0.1", r));
+
+  const srv = await startTestServer(dataDir);
+
+  try {
+    const libRes = await fetch(`${srv.base}/api/libraries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: libDir }),
+    });
+    const libData = await libRes.json();
+    const libId = libData.id;
+
+    await fetch(`${srv.base}/api/ai/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        llm: {
+          providers: [
+            {
+              id: "mock-srclang",
+              type: "openai-compatible",
+              name: "Mock SrcLang",
+              baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+              defaultModel: "mock-model",
+            },
+          ],
+        },
+        tutor: { providerId: "mock-srclang", model: "mock-model" },
+      }),
+    });
+
+    // Origem só com VTT canônico, sem processed/edited (sem idioma conhecido).
+    const hash = subtitleCacheName(libId, lessonRel);
+    const courseSubDir = path.join(courseDir, ".courseplayer", "subtitles");
+    await fs.mkdir(courseSubDir, { recursive: true });
+    await fs.writeFile(
+      path.join(courseSubDir, `${hash}.vtt`),
+      "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nOlá mundo\n\n00:00:02.000 --> 00:00:04.000\nSegunda frase\n",
+    );
+
+    const infoRes = await fetch(
+      `${srv.base}/api/subtitles/translations?path=${encodeURIComponent(lessonRel)}&libId=${libId}`,
+    );
+    assert.strictEqual(infoRes.status, 200);
+    const info = await infoRes.json();
+    assert.strictEqual(info.ok, true);
+    assert.strictEqual(info.ready, true);
+    assert.strictEqual(info.sourceLanguage, null, "idioma desconhecido deve ser null, nunca 'pt' chutado");
+
+    // Idioma desconhecido não bloqueia tradução para outro idioma.
+    const trRes = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(trRes.status, 200);
+  } finally {
+    await srv.stop();
+    await new Promise((r) => mockLlmServer.close(r));
+    await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(libDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+
 

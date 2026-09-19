@@ -163,6 +163,16 @@ async function requestSubtitleTranslate(targetLang, force = false) {
   if (!rel) return;
   const lang = targetLang || subtitleState.targetLang || getSubtitleTargetLang();
 
+  // Mesmo idioma da transcrição não é tradução: barra local antes de qualquer
+  // chamada (o backend também responde 400). Sem isto, um VTT "traduzido"
+  // pt→pt passava a ser exibido no lugar da transcrição original.
+  if (subtitleState.sourceLanguage && lang === subtitleState.sourceLanguage) {
+    const label = SUBTITLE_LANG_LABELS[lang] || lang;
+    subtitleState.translationError = `A legenda original já está em ${label}. Escolha outro idioma em Traduzir para.`;
+    syncSubtitleCcUi();
+    return;
+  }
+
   if (!subtitleState.llmAvailable) {
     if (typeof showToast === "function") {
       showToast("Configure um provedor LLM em Configurações > Central de IA para traduzir legendas.");
@@ -237,7 +247,7 @@ async function fetchSubtitleTranslations(rel, libId) {
     if (!res.ok) return;
     const data = await res.json();
     if (data && data.hash) subtitleState.hash = data.hash;
-    subtitleState.sourceLanguage = data.sourceLanguage || "pt";
+    subtitleState.sourceLanguage = data.sourceLanguage || null;
     subtitleState.llmAvailable = !!data.llmAvailable;
     subtitleState.translationEnabled = data.enabled !== false;
     subtitleState.configuredModel = data.configuredModel || "";
@@ -248,9 +258,14 @@ async function fetchSubtitleTranslations(rel, libId) {
     }
     const target = subtitleState.targetLang || getSubtitleTargetLang();
     const item = subtitleState.translations.find((t) => t.lang === target);
-    subtitleState.targetLangReady = !!(item && item.ready);
+    // Mesmo idioma da transcrição não é tradução: nunca oferece nem exibe o
+    // VTT "traduzido" no lugar do original.
+    const sameLang = !!subtitleState.sourceLanguage && subtitleState.sourceLanguage === target;
+    subtitleState.targetLangReady = !sameLang && !!(item && item.ready);
 
-    if (getSubtitleMode() === "translated" && subtitleState.targetLangReady && subtitleState.ready) {
+    if (sameLang && subtitleState.selectedLang === "translated") {
+      switchToOriginalSegments();
+    } else if (getSubtitleMode() === "translated" && subtitleState.targetLangReady && subtitleState.ready) {
       await switchToTranslatedSegments(target, rel, libId);
     }
 
@@ -262,7 +277,8 @@ async function onSubtitleTargetLangChange(newLang) {
   if (!SUBTITLE_LANG_LABELS[newLang]) return;
   setSubtitleTargetLang(newLang);
   const item = subtitleState.translations.find((t) => t.lang === newLang);
-  subtitleState.targetLangReady = !!(item && item.ready);
+  const sameLang = !!subtitleState.sourceLanguage && subtitleState.sourceLanguage === newLang;
+  subtitleState.targetLangReady = !sameLang && !!(item && item.ready);
   if (subtitleState.selectedLang === "translated") {
     if (subtitleState.targetLangReady) {
       await switchToTranslatedSegments(newLang);
@@ -387,6 +403,9 @@ function syncSubtitleCcUi() {
   // Seletor (Original / <Nome do idioma> / Desativado) — montado nos dois menus (barra e ⋮ mobile).
   const targetLang = subtitleState.targetLang || getSubtitleTargetLang();
   const targetLangLabel = SUBTITLE_LANG_LABELS[targetLang] || targetLang;
+  // Mesmo idioma da transcrição não é tradução: o botão traduzido some e
+  // nenhuma ação de traduzir é oferecida (evita exibir pt→pt como original).
+  const sameLang = !!subtitleState.sourceLanguage && subtitleState.sourceLanguage === targetLang;
 
   const isTranslatedActive = enabled && subtitleState.selectedLang === "translated";
   const isSrcActive = enabled && !isTranslatedActive;
@@ -396,7 +415,7 @@ function syncSubtitleCcUi() {
     `<button type="button" class="pc-menu-item${isSrcActive ? " is-active" : ""}" data-cc="lang-source" aria-pressed="${isSrcActive}">Original</button>`,
   ];
 
-  if (subtitleState.translationEnabled !== false && (subtitleState.llmAvailable || subtitleState.targetLangReady)) {
+  if (!sameLang && subtitleState.translationEnabled !== false && (subtitleState.llmAvailable || subtitleState.targetLangReady)) {
     langItems.push(
       `<button type="button" class="pc-menu-item${isTranslatedActive ? " is-active" : ""}" data-cc="lang-translated" aria-pressed="${isTranslatedActive}">${targetLangLabel}</button>`,
     );
@@ -451,6 +470,9 @@ function syncSubtitleCcUi() {
     }
     if (err.includes("sem legenda original")) {
       return "Gere a legenda original antes de solicitar a tradução.";
+    }
+    if (err.includes("já está em")) {
+      return err;
     }
     if (err.includes("Binário do Whisper") || err.includes("binary_not_installed")) {
       return "Whisper não instalado. Configure o executável em Configurações → Central de IA.";
@@ -523,7 +545,9 @@ function syncSubtitleCcUi() {
     showAction = true;
     actionHandler = "generate";
   } else if (kind === "ready" || kind === "stale") {
-    if (subtitleState.staleSource && subtitleState.selectedLang === "translated") {
+    if (sameLang) {
+      statusText = `A legenda original já está em ${targetLangLabel}.`;
+    } else if (subtitleState.staleSource && subtitleState.selectedLang === "translated") {
       statusText = "Legenda original alterada — regenerar tradução";
       actionText = "Regenerar tradução";
       showAction = true;
