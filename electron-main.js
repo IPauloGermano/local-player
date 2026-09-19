@@ -454,8 +454,15 @@ async function startApp() {
     }
   });
 
-  // Princípio do menor privilégio: recusa permissões desnecessárias (câmera, mic, geolocalização)
+  // Princípio do menor privilégio: recusa permissões desnecessárias (câmera, mic, geolocalização).
+  // Exceção: "fullscreen" — o Chromium encaminha Element.requestFullscreen()
+  // pelo sistema de permissões do Electron; negar tudo quebra o botão de tela
+  // cheia do player (a promise rejeita e nada acontece).
   mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === "fullscreen") {
+      callback(true);
+      return;
+    }
     callback(false);
   });
 
