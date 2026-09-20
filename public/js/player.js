@@ -1169,6 +1169,10 @@ function wirePlayerUI(videoEl) {
       closePopovers();
       return;
     }
+    if (e.target.closest(".pc-cc-target-wrap") || e.target.closest(".pc-cc-target-select")) {
+      e.stopPropagation();
+      return;
+    }
     const cc = e.target.closest("[data-cc]");
     if (!cc) return;
     e.stopPropagation();
@@ -1179,8 +1183,24 @@ function wirePlayerUI(videoEl) {
       setSubtitleEnabled(false);
       closePopovers();
     } else if (cc.dataset.cc === "lang-source") {
-      setSubtitleEnabled(true);
+      if (typeof selectSubtitleOriginal === "function") {
+        selectSubtitleOriginal();
+      } else {
+        setSubtitleEnabled(true);
+      }
       closePopovers();
+    } else if (cc.dataset.cc === "lang-translated") {
+      if (typeof selectSubtitleTranslation === "function") {
+        selectSubtitleTranslation();
+      }
+      closePopovers();
+    }
+  });
+
+  wrap.addEventListener("change", (e) => {
+    const targetSelect = e.target.closest(".pc-cc-target-select");
+    if (targetSelect && typeof onSubtitleTargetLangChange === "function") {
+      onSubtitleTargetLangChange(targetSelect.value);
     }
   });
 
@@ -1236,13 +1256,24 @@ async function togglePlayerFullscreen(videoEl) {
   const playerWrap = document.getElementById("player-wrap");
   const fullscreenEl = document.fullscreenElement;
   if (fullscreenEl) {
-    await document.exitFullscreen().catch(() => {});
+    try {
+      await document.exitFullscreen();
+    } catch (err) {
+      console.warn("[PLAYER] Falha ao sair da tela cheia:", err);
+    }
     return;
   }
 
   if (playerWrap && playerWrap.requestFullscreen) {
-    await playerWrap.requestFullscreen().catch(() => {});
-    return;
+    try {
+      await playerWrap.requestFullscreen();
+      return;
+    } catch (err) {
+      // Não retorna: cai para os fallbacks abaixo (antes o erro era engolido
+      // pelo .catch vazio e o botão parecia não fazer nada, ex. permissão
+      // "fullscreen" negada no Electron).
+      console.warn("[PLAYER] Falha na tela cheia do player, tentando fallback:", err);
+    }
   }
 
   // iOS < 16.4 não tem Element.requestFullscreen; o único caminho é o
@@ -1257,7 +1288,11 @@ async function togglePlayerFullscreen(videoEl) {
   }
 
   if (videoEl && videoEl.requestFullscreen) {
-    await videoEl.requestFullscreen().catch(() => {});
+    try {
+      await videoEl.requestFullscreen();
+    } catch (err) {
+      console.warn("[PLAYER] Tela cheia indisponível:", err);
+    }
   }
 }
 

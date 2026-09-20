@@ -39,9 +39,15 @@ function getDefaultLibrary() {
 // a biblioteca padrão quando ausente. Id desconhecido → null (o caller responde
 // 400 — nunca degrada silenciosamente para a padrão num id digitado errado).
 function requestLibrary(req) {
+  if (!req) return getDefaultLibrary();
+  if (typeof req === "string") {
+    return getLibraryById(req) || null;
+  }
   const id =
     (req.query && typeof req.query.libraryId === "string" && req.query.libraryId) ||
+    (req.query && typeof req.query.libId === "string" && req.query.libId) ||
     (req.body && typeof req.body.libraryId === "string" && req.body.libraryId) ||
+    (req.body && typeof req.body.libId === "string" && req.body.libId) ||
     "";
   if (!id) return getDefaultLibrary();
   return getLibraryById(id);

@@ -52,6 +52,20 @@ const AI_TRANSCRIPTION_PROVIDERS = [
   },
 ];
 
+const AI_TRANSLATION_LANGUAGES = [
+  { id: "pt", name: "Português (Brasil)" },
+  { id: "en", name: "Inglês" },
+  { id: "es", name: "Espanhol" },
+  { id: "fr", name: "Francês" },
+  { id: "de", name: "Alemão" },
+  { id: "it", name: "Italiano" },
+  { id: "nl", name: "Holandês" },
+  { id: "ja", name: "Japonês" },
+  { id: "ko", name: "Coreano" },
+  { id: "zh", name: "Chinês" },
+  { id: "ru", name: "Russo" },
+];
+
 const AI_LLM_PROVIDER_TYPES = [
   { id: "openai-compatible", name: "OpenAI-compatible", chatEndpoint: "/chat/completions" },
 ];
@@ -83,6 +97,15 @@ function defaultAiConfig() {
       pregenNextLesson: true,
       background: false,
       vad: true,
+    },
+    translation: {
+      enabled: true,
+      providerId: "",
+      model: "",
+      targetLanguage: "pt",
+      batchSize: 100,
+      temperature: 0.3,
+      customPrompt: "",
     },
     tutor: {
       enabled: true,
@@ -164,6 +187,19 @@ function sanitizeAiConfig(raw) {
     const l = curProv.languages.some(x => x.id === tr.language);
     out.transcription.language = l ? clampStr(tr.language, 10) : curProv.languages[0].id;
   }
+
+  const trl = objOr(raw.translation, {});
+  out.translation.enabled = trl.enabled !== false;
+  out.translation.providerId = clampStr(trl.providerId, 80);
+  out.translation.model = clampStr(trl.model, AI_STR_LIMITS.model);
+  out.translation.targetLanguage = AI_TRANSLATION_LANGUAGES.some((x) => x.id === trl.targetLanguage)
+    ? trl.targetLanguage
+    : "pt";
+  const bs = Number(trl.batchSize);
+  out.translation.batchSize = Number.isFinite(bs) ? Math.min(200, Math.max(10, Math.floor(bs))) : 100;
+  const trlTemp = Number(trl.temperature);
+  out.translation.temperature = Number.isFinite(trlTemp) ? Math.min(2.0, Math.max(0.0, trlTemp)) : 0.3;
+  out.translation.customPrompt = clampStr(trl.customPrompt, 2000);
 
   const pp = objOr(raw.postprocessing, {});
   out.postprocessing.capitalize = pp.capitalize !== false;
@@ -326,6 +362,34 @@ function applyAiPatch(config, patch) {
     }
   }
 
+  const trl = objOr(src.translation, {});
+  if (Object.keys(trl).length) {
+    if (!out.translation) out.translation = defaultAiConfig().translation;
+    if (trl.enabled !== undefined) out.translation.enabled = trl.enabled === true;
+    if (trl.providerId !== undefined) {
+      const has = out.llm.providers.some(x => x.id === trl.providerId);
+      if (trl.providerId !== "" && !has) throw new Error("Provedor de Tradução inválido.");
+      out.translation.providerId = clampStr(trl.providerId, 80);
+    }
+    if (trl.model !== undefined) out.translation.model = clampStr(trl.model, AI_STR_LIMITS.model);
+    if (trl.targetLanguage !== undefined) {
+      if (AI_TRANSLATION_LANGUAGES.some(x => x.id === trl.targetLanguage)) {
+        out.translation.targetLanguage = trl.targetLanguage;
+      }
+    }
+    if (trl.batchSize !== undefined) {
+      const bs = Number(trl.batchSize);
+      out.translation.batchSize = Number.isFinite(bs) ? Math.min(200, Math.max(10, Math.floor(bs))) : 100;
+    }
+    if (trl.temperature !== undefined) {
+      const temp = Number(trl.temperature);
+      out.translation.temperature = Number.isFinite(temp) ? Math.min(2.0, Math.max(0.0, temp)) : 0.3;
+    }
+    if (trl.customPrompt !== undefined) {
+      out.translation.customPrompt = clampStr(trl.customPrompt, 2000);
+    }
+  }
+
   const tr = objOr(src.transcription, {});
   if (Object.keys(tr).length) {
     if (tr.provider !== undefined) {
@@ -434,6 +498,7 @@ function applyAiPatch(config, patch) {
 function maskAiConfig(config) {
   return {
     transcription: { ...config.transcription },
+    translation: config.translation ? { ...config.translation } : defaultAiConfig().translation,
     tutor: { ...config.tutor },
     postprocessing: { ...config.postprocessing },
     skills: config.skills ? JSON.parse(JSON.stringify(config.skills)) : defaultAiConfig().skills,
@@ -487,6 +552,7 @@ function saveAiConfig(mutator) {
 
 module.exports = {
   AI_TRANSCRIPTION_PROVIDERS,
+  AI_TRANSLATION_LANGUAGES,
   AI_LLM_PROVIDER_TYPES,
   AI_LLM_PRESETS,
   AI_STR_LIMITS,
