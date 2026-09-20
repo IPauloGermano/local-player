@@ -4,7 +4,7 @@ const fs = require("fs/promises");
 const path = require("path");
 const state = require("../state");
 const { requireAdminOrLocal } = require("../core/security");
-const { validateSafeUrl } = require("../services/web-search");
+const { validateLlmEndpointUrl } = require("../services/web-search");
 const { sanitizeDisplayPath } = require("../core/titles");
 const { sanitizeTestError } = require("../core/scan");
 const { ensureWorkspaceWritable, resolveWorkspaceDir, getWorkspaceFreeBytes } = require("../subtitles/workspace");
@@ -141,7 +141,9 @@ function registerAiRoutes(app) {
           ? baseUrl
           : `${baseUrl}/chat/completions`;
 
-        const safeCheck = await validateSafeUrl(endpoint);
+        // Endpoints LLM locais (Ollama, LM Studio, llama.cpp) usam loopback
+        // com portas próprias — validação específica, não a anti-SSRF da web.
+        const safeCheck = await validateLlmEndpointUrl(endpoint);
         if (!safeCheck.ok) {
           return res.status(400).json({ ok: false, error: safeCheck.error });
         }

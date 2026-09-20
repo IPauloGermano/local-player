@@ -204,6 +204,40 @@ async function validateSafeUrl(rawUrl, opts = {}) {
   }
 }
 
+// Validador de endpoint LLM configurado pelo operador (Central de IA).
+// Difere do validateSafeUrl: o baseUrl do provedor LLM é configuração própria
+// do operador (rota admin/local), não URL remota não-confiável. Provedores
+// locais (Ollama, LM Studio, llama.cpp) rodam em loopback com portas
+// próprias (ex.: 11434, 1234, 8080) e devem ser aceitos. Mantém o básico:
+// apenas http/https, hostname presente (exceto .onion) e porta válida.
+// Sem DNS pinning e sem seguir redirects (o teste usa redirect: "manual").
+async function validateLlmEndpointUrl(rawUrl) {
+  try {
+    if (!rawUrl || typeof rawUrl !== "string") {
+      return { ok: false, error: "URL inválida ou vazia." };
+    }
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return { ok: false, error: `Protocolo "${parsed.protocol}" não permitido (apenas http/https).` };
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    if (!hostname || hostname.endsWith(".onion")) {
+      return { ok: false, error: `Host "${parsed.hostname || ""}" não permitido.` };
+    }
+    const port = parsed.port
+      ? Number(parsed.port)
+      : parsed.protocol === "https:"
+        ? 443
+        : 80;
+    if (!Number.isFinite(port) || port < 1 || port > 65535) {
+      return { ok: false, error: `Porta inválida "${parsed.port}".` };
+    }
+    return { ok: true, url: parsed.href, hostname, port };
+  } catch (err) {
+    return { ok: false, error: `URL inválida: ${err.message}` };
+  }
+}
+
 // 2. Leitor Seguro de Páginas Web (com limite de tamanho, timeout, redirects validados e socket pinado)
 async function fetchSafeWebPage(rawUrl, maxBytes = 1.5 * 1024 * 1024, timeoutMs = 8000, maxRedirects = 3) {
   let currentUrl = rawUrl;
@@ -724,6 +758,7 @@ module.exports = {
   isPrivateIp,
   ALLOWED_WEB_PORTS,
   validateSafeUrl,
+  validateLlmEndpointUrl,
   fetchSafeWebPage,
   htmlToCleanMarkdown,
   htmlToAccessibilityTree,
