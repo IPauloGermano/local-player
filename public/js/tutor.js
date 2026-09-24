@@ -216,7 +216,7 @@ function initTutorDrawer(video) {
             <textarea class="tutor-textarea" id="tutor-input" rows="1" placeholder="Tire sua dúvida sobre esta aula…"></textarea>
             <button type="button" class="tutor-send-btn" id="tutor-send-btn" title="Enviar pergunta" aria-label="Enviar pergunta">
               <span id="tutor-send-icon">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="22" y1="2" x2="11" y2="13"></line>
                   <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                 </svg>
@@ -325,7 +325,8 @@ function wireTutorDrawerEvents(video) {
   if (input) {
     input.addEventListener("input", () => {
       input.style.height = "auto";
-      input.style.height = Math.min(180, Math.max(38, input.scrollHeight)) + "px";
+      const minH = window.innerWidth <= 640 ? 40 : 38;
+      input.style.height = Math.min(180, Math.max(minH, input.scrollHeight)) + "px";
     });
 
     input.addEventListener("keydown", (e) => {
@@ -904,7 +905,7 @@ async function sendTutorMessage(video, text) {
     if (sendBtn && sendIcon) {
       sendBtn.classList.remove("streaming");
       sendIcon.innerHTML = `
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"></line>
           <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
         </svg>`;
