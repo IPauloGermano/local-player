@@ -3704,21 +3704,40 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 8px;
-  padding: 4px 4px 4px 0;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 4px 4px 8px 4px;
 }
 .sidebar-title {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 8px 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
   font-weight: 700;
-  font-size: 15px;
   color: var(--text);
   flex: 1;
   min-width: 0;
+}
+.sidebar-heading-text {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.sidebar-progress-badge {
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 138, 61, 0.12);
+  border: 1px solid rgba(255, 138, 61, 0.28);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 .sidebar-close-btn {
   display: none;
@@ -3726,7 +3745,7 @@ body {
   border: 1px solid transparent;
   color: var(--text-dim);
   border-radius: var(--radius-sm);
-  padding: 8px;
+  padding: 6px;
   cursor: pointer;
   align-items: center;
   justify-content: center;
@@ -3748,31 +3767,32 @@ body {
   white-space: nowrap;
 }
 .sidebar-title .pct {
-  color: var(--accent);
-  font-size: 16.5px;
-  font-weight: 700;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
 .sidebar-progress {
-  padding: 0 10px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 8px;
+  padding: 8px 4px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  margin-bottom: 6px;
 }
 
 .sidebar-progress-bar {
   margin-top: 0;
-  height: 6px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .sidebar-progress-meta {
   margin-top: 6px;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 3px;
-  font-size: 12.5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
   color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
 }
 
 #tree-slot {
@@ -3807,86 +3827,100 @@ body {
 }
 
 .tree-folder {
-  margin-bottom: 3px;
+  margin-bottom: 2px;
 }
 
 #tree-slot > .tree-folder + .tree-folder {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  margin-top: 8px;
-  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 6px;
+  padding-top: 6px;
 }
 
 .tree-folder-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 9px;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
   border: 1px solid transparent;
   cursor: pointer;
-  font-size: 14.5px;
+  font-size: 14px;
   color: var(--text-dim);
+  transition: all 0.15s ease;
+  user-select: none;
 }
 .tree-folder-head:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.06);
   color: var(--text);
 }
 .tree-folder-head .chev {
-  transition: transform 0.15s ease;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.15s ease;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: 11px;
   flex-shrink: 0;
 }
 .tree-folder-head.open .chev {
   transform: rotate(90deg);
+  color: var(--accent);
 }
 .tree-folder-head .folder-progress {
   margin-left: auto;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+  padding: 1.5px 6.5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  letter-spacing: 0.02em;
 }
 
 .tree-folder-head[data-depth="1"] {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 13.5px;
+  font-weight: 600;
   color: var(--text);
-  padding: 11px 13px;
+  padding: 9px 10px;
+}
+.tree-folder-head[data-depth="1"].open {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.05);
+  color: #fff;
 }
 .tree-folder-head[data-depth="1"] .chev {
   color: var(--text-dim);
-  font-size: 13px;
+  font-size: 12px;
 }
 .tree-folder-head[data-depth="1"] .folder-progress {
-  color: var(--text);
-  font-weight: 700;
-  font-size: 12px;
+  color: var(--text-mid);
+  font-weight: 600;
+  font-size: 11px;
 }
 
 .tree-folder-head[data-depth="2"] {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--text-mid);
-  padding: 9px 12px;
+  padding: 7px 9px;
 }
 .tree-folder-head[data-depth="2"] .folder-progress {
-  font-size: 11.5px;
+  font-size: 10.5px;
   font-weight: 500;
   color: var(--text-dim);
 }
 
 .tree-folder-head[data-depth="3"],
 .tree-folder-head[data-depth="4"] {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--text-dim);
-  padding: 8px 11px;
+  padding: 6px 8px;
 }
 .tree-folder-head[data-depth="3"] .folder-progress,
 .tree-folder-head[data-depth="4"] .folder-progress {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-dim);
 }
 
@@ -3913,57 +3947,80 @@ body {
 
 .tree-folder.completed > .tree-folder-head .folder-progress,
 .tree-folder-head.completed .folder-progress {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.25);
   color: var(--success);
-  opacity: 0.85;
+  opacity: 1;
 }
 
 .tree-folder-children {
-  padding-left: 14px;
+  padding-left: 6px;
+  margin-left: 14px;
+  margin-top: 2px;
+  margin-bottom: 4px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
   display: none;
 }
 .tree-folder-children.open {
   display: block;
 }
 .tree-folder-children .tree-folder-children {
-  padding-left: 12px;
+  margin-left: 10px;
+  padding-left: 6px;
+  border-left-color: rgba(255, 255, 255, 0.06);
 }
 .tree-folder-children .tree-folder-children .tree-folder-children {
-  padding-left: 10px;
+  margin-left: 8px;
+  padding-left: 6px;
+  border-left-color: rgba(255, 255, 255, 0.04);
 }
 
 .tree-lesson {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 9px;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 8px;
   border: 1px solid transparent;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 400;
   color: var(--text-dim);
   position: relative;
+  transition: all 0.15s ease;
 }
 .tree-lesson:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text);
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
 .tree-lesson.active {
   background: linear-gradient(
     90deg,
-    rgba(255, 138, 61, 0.12),
-    rgba(255, 138, 61, 0.04)
+    rgba(255, 138, 61, 0.14) 0%,
+    rgba(255, 138, 61, 0.03) 100%
   );
   color: var(--text);
-  box-shadow: inset 2px 0 0 var(--accent);
+  border-color: rgba(255, 138, 61, 0.28);
+  box-shadow: inset 3px 0 0 var(--accent), 0 2px 8px rgba(0, 0, 0, 0.18);
 }
+.tree-lesson.active .lesson-title-inner {
+  color: #fff;
+  font-weight: 600;
+}
+.tree-lesson.active .lesson-counter {
+  color: var(--accent);
+  opacity: 0.95;
+  font-weight: 600;
+}
+
 .tree-lesson .check {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
   flex-shrink: 0;
   border-radius: 50%;
-  border: 1.5px solid rgba(154, 168, 191, 0.5);
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3973,17 +4030,26 @@ body {
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .tree-lesson .check:hover {
   border-color: var(--accent);
+  background: rgba(255, 138, 61, 0.12);
+  transform: scale(1.1);
+}
+.tree-lesson .check:active {
+  transform: scale(0.92);
 }
 .tree-lesson.done .check {
   background: var(--success);
   border-color: var(--success);
   color: #06210f;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.3);
+}
+.tree-lesson.done .check:hover {
+  background: var(--success);
+  border-color: var(--success);
+  transform: scale(1.1);
 }
 .tree-lesson .lesson-title,
 .tree-file .lesson-title,
@@ -4006,10 +4072,10 @@ body {
   transition: transform 0.6s ease;
 }
 .tree-lesson .lesson-mini-progress {
-  width: 28px;
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
+  width: 24px;
+  height: 3.5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -4017,14 +4083,16 @@ body {
   display: block;
   height: 100%;
   background: var(--accent);
+  border-radius: 999px;
 }
 
 .tree-lesson .lesson-counter {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   padding-left: 2px;
+  opacity: 0.8;
 }
 
 /* Concluída: o ícone verde já marca; título com contraste acessível */

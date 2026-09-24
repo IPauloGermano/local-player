@@ -1682,6 +1682,8 @@ function updateProgressUI() {
   }
   const stats = getNodeProgressStats(state.currentCourseNode, progFor);
   const pct = stats.pct;
+  const badgeEl = document.getElementById("sidebar-progress-badge");
+  if (badgeEl) badgeEl.textContent = `${pct}%`;
   const titleEl = document.querySelector(".sidebar-title .pct");
   if (titleEl) titleEl.textContent = `${pct}%`;
   const progressFill = document.getElementById("course-progress-fill");
@@ -2191,7 +2193,10 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
       <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
       <div class="sidebar">
         <div class="sidebar-header">
-          <div class="sidebar-title"><span class="sidebar-course-name">${escapeHtml(courseTitle(course))}</span> <span class="pct">${pct}%</span></div>
+          <div class="sidebar-title">
+            <span class="sidebar-heading-text">Conteúdo do curso</span>
+            <span class="sidebar-progress-badge pct" id="sidebar-progress-badge">${pct}%</span>
+          </div>
           <button class="sidebar-close-btn" id="sidebar-close-btn" aria-label="Fechar lista de aulas" title="Fechar (Esc)" type="button">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -2202,8 +2207,8 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
         <div class="sidebar-progress">
           <div class="progress-bar sidebar-progress-bar"><div class="progress-bar-fill" id="course-progress-fill" style="width:${pct}%"></div></div>
           <div class="sidebar-progress-meta">
-            <span id="course-progress-count">${stats.done}/${stats.total} aulas concluídas</span>
-            <span id="course-progress-watch">${formatDuration(stats.watchedSeconds)} assistidos</span>
+            <span id="course-progress-count">${stats.done}/${stats.total} aulas</span>
+            <span id="course-progress-watch">${formatDuration(stats.watchedSeconds)}</span>
           </div>
         </div>
         <div id="tree-slot"></div>
