@@ -1676,6 +1676,14 @@ function renderTree(course, resetExpanded) {
   if (!slot) return;
   slot.innerHTML = renderFolderChildren(course);
   attachTreeHandlers(slot);
+  if (resetExpanded) {
+    requestAnimationFrame(() => {
+      const activeLesson = slot.querySelector(".tree-lesson.active");
+      if (activeLesson) {
+        activeLesson.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    });
+  }
 }
 
 function updateProgressUI() {
