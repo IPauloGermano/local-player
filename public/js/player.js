@@ -160,6 +160,8 @@ const ICON_SUMMARY = svgIcon('<path d="M4 6h9v2H4V6zm0 5h9v2H4v-2zm0 5h9v2H4v-2z
 const ICON_SUBTITLE = svgIcon('<path d="M4 6h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-2 2.5L12 19H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm2 4v2h4v-2H6zm6 0v2h6v-2h-6zM6 14v2h3v-2H6z"/>');
 // ⋮ (mais opções): abre o menu de ações avançadas (teatro, sumário).
 const ICON_MORE = svgIcon('<path d="M12 7.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>');
+const ICON_COMPLETE_CHECK = '<svg class="complete-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+const ICON_COMPLETE_CIRCLE = '<svg class="complete-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle></svg>';
 
 function volumeIcon(state) {
   if (state === 0) return ICON_VOLUME_MUTED;
@@ -174,15 +176,17 @@ function volumeIcon(state) {
 //   baixas automaticamente em todas as aulas, sem intervenção do usuário.
 // - GainNode: controla o volume base (0–100%) e amplifica ganho extra (100–200%).
 // Cadeia DSP de Processamento Vocal e Normalização Profunda (Broadcast Vocal DSP):
-// videoEl -> sourceNode -> highPassFilter -> presenceFilter -> preGainNode -> compressorNode -> gainNode -> limiterNode -> destination
-// 1. highPassFilter (85 Hz): elimina sub-graves inaudíveis (vibração de mesa, ar, hum 60 Hz) e libera potência para a fala.
-// 2. presenceFilter (3.0 kHz, +3.5 dB): realça consoantes e inteligibilidade fonética da voz humana.
-// 3. preGainNode (+6.8 dB / ~2.2x): pré-amplifica sinais gravados com ganho de entrada fraco.
-// 4. compressorNode (-34 dB): puxa vozes distantes e uniformiza a dinâmica das aulas.
-// 5. gainNode: volume do usuário (0–100%) e ganho manual ampliado até 300%.
-// 6. limiterNode (-1 dBFS): barreira true-peak que elimina qualquer risco de distorção ou clipping.
+// videoEl -> sourceNode -> highPassFilter -> roomFilter -> presenceFilter -> preGainNode -> compressorNode -> gainNode -> limiterNode -> destination
+// 1. highPassFilter (85 Hz / 115 Hz no modo anti-eco): elimina sub-graves inaudíveis (vibração de mesa, ar, hum 60 Hz) e libera potência para a fala.
+// 2. roomFilter (360 Hz, -5.5 dB ativado / 0 dB neutro): atenua ressonância de sala cavernosa ("som de caixa/eco").
+// 3. presenceFilter (3.0 kHz, +3.5 dB): realça consoantes e inteligibilidade fonética da voz humana.
+// 4. preGainNode (+6.8 dB / ~2.2x): pré-amplifica sinais gravados com ganho de entrada fraco.
+// 5. compressorNode (-34 dB): puxa vozes distantes e uniformiza a dinâmica das aulas.
+// 6. gainNode: volume do usuário (0–100%) e ganho manual ampliado até 300%.
+// 7. limiterNode (-1 dBFS): barreira true-peak que elimina qualquer risco de distorção ou clipping.
 let audioCtx = null;
 let highPassFilter = null;
+let roomFilter = null;
 let presenceFilter = null;
 let preGainNode = null;
 let compressorNode = null;
@@ -196,6 +200,7 @@ const WEB_AUDIO_OK = !!(window.AudioContext || window.webkitAudioContext);
 const VOLUME_KEY = "course-player-volume"; // 0–100 (volume nativo)
 const GAIN_KEY = "course-player-gain"; // 100–300 (ganho extra ampliado via Web Audio)
 const MUTED_KEY = "course-player-muted"; // "1"|"0" (estado de mudo)
+const DEREVERB_KEY = "course-player-dereverb"; // "1"|"0" (redução de eco/ressonância)
 
 function getMutedPref() {
   return localStorage.getItem(MUTED_KEY) === "1";
@@ -203,6 +208,35 @@ function getMutedPref() {
 
 function setMutedPref(muted) {
   localStorage.setItem(MUTED_KEY, muted ? "1" : "0");
+}
+
+function getDeReverbPref() {
+  return localStorage.getItem(DEREVERB_KEY) === "1";
+}
+
+function setDeReverbPref(active) {
+  localStorage.setItem(DEREVERB_KEY, active ? "1" : "0");
+}
+
+function applyDeReverb(active, videoEl) {
+  setDeReverbPref(active);
+  if (videoEl) ensureAudioGraph(videoEl);
+  if (audioCtx) {
+    const now = audioCtx.currentTime;
+    if (roomFilter) {
+      roomFilter.gain.setTargetAtTime(active ? -7.0 : 0, now, 0.02);
+    }
+    if (highPassFilter) {
+      highPassFilter.frequency.setTargetAtTime(active ? 115 : 85, now, 0.02);
+    }
+    if (preGainNode) {
+      preGainNode.gain.setTargetAtTime(active ? 1.0 : 2.2, now, 0.02);
+    }
+    if (compressorNode) {
+      compressorNode.threshold.setTargetAtTime(active ? -20 : -34, now, 0.02);
+    }
+    resumeAudio();
+  }
 }
 
 function getVolumePrefs() {
@@ -233,18 +267,30 @@ function ensureAudioGraph(videoEl) {
     highPassFilter.frequency.value = 85;
     highPassFilter.Q.value = 0.707;
 
-    // 2. Presence Filter (3 kHz, +3.5 dB) — inteligibilidade e nitidez de consoantes da fala
+    // 2. Anti-Ressonância / Room De-Echo (360 Hz) — atenua ressonância cavernosa de sala
+    roomFilter = audioCtx.createBiquadFilter();
+    roomFilter.type = "peaking";
+    roomFilter.frequency.value = 360;
+    roomFilter.Q.value = 1.4;
+    roomFilter.gain.value = 0;
+
+    if (getDeReverbPref()) {
+      roomFilter.gain.value = -7.0;
+      highPassFilter.frequency.value = 115;
+    }
+
+    // 3. Presence Filter (3 kHz, +3.5 dB) — inteligibilidade e nitidez de consoantes da fala
     presenceFilter = audioCtx.createBiquadFilter();
     presenceFilter.type = "peaking";
     presenceFilter.frequency.value = 3000;
     presenceFilter.Q.value = 1.2;
     presenceFilter.gain.value = 3.5;
 
-    // 3. Pré-amplificação de sinais fracos (+6.8 dB / ~2.2x)
+    // 4. Pré-amplificação de sinais fracos (+6.8 dB / ~2.2x)
     preGainNode = audioCtx.createGain();
     preGainNode.gain.value = 2.2;
 
-    // 4. Normalizador de dinâmica profundo (-34 dB) — nivela vozes baixas e atenua picos
+    // 5. Normalizador de dinâmica profundo (-34 dB) — nivela vozes baixas e atenua picos
     compressorNode = audioCtx.createDynamicsCompressor();
     compressorNode.threshold.value = -34;
     compressorNode.knee.value = 30;
@@ -252,11 +298,16 @@ function ensureAudioGraph(videoEl) {
     compressorNode.attack.value = 0.003;
     compressorNode.release.value = 0.25;
 
-    // 5. Volume do usuário e ganho extra até 300%
+    if (getDeReverbPref()) {
+      preGainNode.gain.value = 1.0;
+      compressorNode.threshold.value = -20;
+    }
+
+    // 6. Volume do usuário e ganho extra até 300%
     gainNode = audioCtx.createGain();
     gainNode.gain.value = prefs.gain / 100;
 
-    // 6. True-Peak Brickwall Limiter (-1 dBFS) — proteção absoluta contra clipping e distorção
+    // 7. True-Peak Brickwall Limiter (-1 dBFS) — proteção absoluta contra clipping e distorção
     limiterNode = audioCtx.createDynamicsCompressor();
     limiterNode.threshold.value = -1.0;
     limiterNode.knee.value = 0;
@@ -265,8 +316,9 @@ function ensureAudioGraph(videoEl) {
     limiterNode.release.value = 0.05;
 
     // Conexão sequencial da cadeia DSP:
-    // highPass -> presence -> preGain -> compressor -> gain -> limiter -> destination
-    highPassFilter.connect(presenceFilter);
+    // highPass -> roomFilter -> presence -> preGain -> compressor -> gain -> limiter -> destination
+    highPassFilter.connect(roomFilter);
+    roomFilter.connect(presenceFilter);
     presenceFilter.connect(preGainNode);
     preGainNode.connect(compressorNode);
     compressorNode.connect(gainNode);
@@ -368,9 +420,12 @@ function updateVolumeUI(videoEl) {
     icon.innerHTML = volumeIcon(muted || vol <= 0.001 ? 0 : vol >= 1 ? 1 : 2);
   }
   const extra = WEB_AUDIO_OK && prefs.gain > 100 ? prefs.gain - 100 : 0;
+  const dereverbActive = WEB_AUDIO_OK && getDeReverbPref();
   btn.setAttribute(
     "aria-label",
     `Volume ${pct}%${extra > 0 ? `, ganho extra de ${extra}%` : ""}${
+      dereverbActive ? ", redução de eco ativa" : ""
+    }${
       videoEl && videoEl.muted ? ", mutado" : ""
     }`,
   );
@@ -481,7 +536,8 @@ function renderPlayerAndLesson() {
     </div>
     <div class="player-status" id="player-status"></div>
     <div class="player-progress-warning" id="progress-save-warning" hidden>
-      <span>⚠ Falha ao salvar progresso</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:4px;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      <span>Falha ao salvar progresso</span>
     </div>
     <div class="player-ui" id="player-ui">
       <button class="pc-center hidden" id="pc-play-center" type="button" aria-label="Reproduzir">${ICON_PLAY_CENTER}</button>
@@ -610,7 +666,7 @@ function renderPlayerAndLesson() {
         </button>
         <div class="nav-sep" aria-hidden="true"></div>
         <button id="toggle-lesson-complete-btn" class="btn-nav btn-complete ${isDone ? "is-completed" : ""}" type="button" aria-label="${isDone ? "Desmarcar aula como concluída" : "Marcar aula como concluída"}" title="${isDone ? "Desmarcar aula como concluída" : "Marcar aula como concluída"}">
-          <span class="complete-icon" aria-hidden="true">${isDone ? "✓" : "○"}</span>
+          <span class="complete-icon" aria-hidden="true">${isDone ? ICON_COMPLETE_CHECK : ICON_COMPLETE_CIRCLE}</span>
           <span class="complete-text">${isDone ? "Concluída" : "Concluir"}</span>
         </button>
         <div class="nav-sep" aria-hidden="true"></div>

@@ -23,7 +23,7 @@ function renderTutorQuiz(video) {
     container.innerHTML = `
       <div class="tutor-quiz-hero">
         <div class="tutor-quiz-hero-badge" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #ef4444;">
-          <span>⚠️</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
         </div>
         <h4 class="tutor-quiz-hero-title">Erro ao Gerar Quiz</h4>
         <p class="tutor-quiz-hero-desc">${escapeHtml(st.error)}</p>
@@ -293,7 +293,7 @@ function renderTutorFlashcards(video) {
     container.innerHTML = `
       <div class="tutor-quiz-hero">
         <div class="tutor-quiz-hero-badge" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #ef4444;">
-          <span>⚠️</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
         </div>
         <h4 class="tutor-quiz-hero-title">Erro ao Gerar Flashcards</h4>
         <p class="tutor-quiz-hero-desc">${escapeHtml(st.error)}</p>

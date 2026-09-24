@@ -1340,10 +1340,17 @@ function renderHome(app) {
         (l) => l.enabled !== false && (l.status === "unavailable" || l.status === "error"),
       );
       if (unavailableLibs.length > 0 && !libs.length) {
-        html += `<div class="empty-state" style="border: 1px solid rgba(234, 179, 8, 0.35); background: rgba(234, 179, 8, 0.08); border-radius: 10px; padding: 24px; text-align: center; margin: 20px 0;">
-          <div style="font-size: 1.15rem; font-weight: 600; margin-bottom: 8px; color: #eab308;">⚠ Biblioteca indisponível</div>
-          <p style="margin-bottom: 14px; opacity: 0.85;">O dispositivo ou pasta onde seus cursos estão armazenados não está acessível no momento.</p>
-          <a href="#/settings" class="btn btn--primary" style="display: inline-block; text-decoration: none; padding: 8px 18px; border-radius: 6px; font-weight: 500;">Configurações → Bibliotecas</a>
+        html += `<div class="empty-state empty-state-warn">
+          <div class="empty-state-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span>Biblioteca indisponível</span>
+          </div>
+          <p class="empty-state-desc">O dispositivo ou pasta onde seus cursos estão armazenados não está acessível no momento.</p>
+          <a href="#/settings" class="btn btn-primary empty-state-btn">Configurações → Bibliotecas</a>
         </div>`;
       } else if (!libs.length) {
         html += `<div class="empty-state">Nenhuma biblioteca configurada. Adicione uma pasta em <a href="#/settings" style="text-decoration:underline;color:inherit;font-weight:600;">Configurações → Bibliotecas</a>.</div>`;
@@ -1410,8 +1417,8 @@ function renderFolderChildren(folderNode, depth = 1) {
       html += `
         <div class="tree-folder ${isCompleted ? "completed" : ""}">
           <div class="tree-folder-head ${isOpen ? "open" : ""} ${isCompleted ? "completed" : ""}" data-folder="${encodeURIComponent(child.path)}" data-depth="${Math.min(depth, 4)}" role="button" tabindex="0" aria-expanded="${isOpen}">
-            <span class="chev">▶</span>
-            <span class="folder-title"><span class="folder-title-inner">${escapeHtml(moduleTitle(child))}</span></span>
+            <svg class="chev" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            <span class="folder-title" title="${escapeHtml(moduleTitle(child))}"><span class="folder-title-inner">${escapeHtml(moduleTitle(child))}</span></span>
             <span class="folder-progress">${stats.done}/${stats.total}</span>
           </div>
           <div class="tree-folder-children ${isOpen ? "open" : ""}" data-folder-body="${encodeURIComponent(child.path)}">
@@ -1435,8 +1442,8 @@ function renderFolderChildren(folderNode, depth = 1) {
       const lessonTotal = state.flatVideos.length;
       html += `
         <div class="tree-lesson ${done ? "done" : ""} ${active ? "active" : ""}" data-lesson="${encodeURIComponent(child.path)}">
-          <button class="check" type="button" data-lesson="${encodeURIComponent(child.path)}" aria-label="${done ? "Desmarcar como assistido" : "Marcar como assistido"}">${done ? "✓" : ""}</button>
-          <span class="lesson-title"><span class="lesson-title-inner">${escapeHtml(lessonTitle(child))}</span></span>
+          <button class="check" type="button" data-lesson="${encodeURIComponent(child.path)}" aria-label="${done ? "Desmarcar como assistido" : "Marcar como assistido"}">${done ? '<svg class="check-svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ""}</button>
+          <span class="lesson-title" title="${escapeHtml(lessonTitle(child))}"><span class="lesson-title-inner">${escapeHtml(lessonTitle(child))}</span></span>
           <span class="lesson-mini-progress"><span style="width:${pct}%"></span></span>
           <span class="lesson-counter">${lessonIndex}/${lessonTotal}</span>
         </div>`;
@@ -1459,7 +1466,11 @@ function updateLessonCompleteButton(videoNode) {
   btn.setAttribute("aria-label", label);
   btn.setAttribute("title", label);
   const icon = btn.querySelector(".complete-icon");
-  if (icon) icon.textContent = isDone ? "✓" : "○";
+  if (icon) {
+    icon.innerHTML = isDone
+      ? '<svg class="complete-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+      : '<svg class="complete-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle></svg>';
+  }
   const text = btn.querySelector(".complete-text");
   if (text) text.textContent = isDone ? "Concluída" : "Concluir";
 }
@@ -2781,7 +2792,7 @@ async function init() {
     rescanning = true;
     btn.disabled = true;
     const originalHTML = btn.innerHTML;
-    btn.innerHTML = `<span class="rescan-icon" aria-hidden="true">⟳</span> <span class="rescan-label">Atualizando...</span>`;
+    btn.innerHTML = `<span class="rescan-icon is-spinning" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></span> <span class="rescan-label">Atualizando...</span>`;
     try {
       const res = await fetch("/api/rescan", {
         method: "POST",
@@ -2791,7 +2802,7 @@ async function init() {
       await loadAll();
       if (!refreshCourseViewInPlace()) route();
       // Feedback transitório de sucesso (2s), sem bloquear a interface.
-      btn.innerHTML = `<span class="rescan-icon" aria-hidden="true">✓</span> <span class="rescan-label">Atualizado!</span>`;
+      btn.innerHTML = `<span class="rescan-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg></span> <span class="rescan-label">Atualizado!</span>`;
       await new Promise((resolve) => setTimeout(resolve, 2000));
     } catch (err) {
       console.error("[rescan] falha ao atualizar:", err);

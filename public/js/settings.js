@@ -394,6 +394,22 @@ function renderSettingsReproducao() {
           })()}
         </select>
       </div>
+
+      <div class="settings-row" id="dereverb-row">
+        <div class="settings-row-text">
+          <div class="settings-row-title">Redução de eco e ressonância de sala</div>
+          <div class="settings-row-desc">Atenua frequências cavernosas de salas sem tratamento acústico e suaviza caudas de reverberação nos silêncios.</div>
+        </div>
+        ${(() => {
+          const on = localStorage.getItem("course-player-dereverb") === "1";
+          return `
+            <button class="switch ${on ? "on" : ""}" id="toggle-dereverb" type="button" role="switch"
+                    aria-checked="${on}" aria-label="Redução de eco e ressonância de sala">
+              <span class="switch-track"></span>
+              <span class="switch-thumb"></span>
+            </button>`;
+        })()}
+      </div>
     </section>`;
 }
 
@@ -403,6 +419,25 @@ function bindSettingsReproducao(app) {
     speedSel.addEventListener("change", () => {
       localStorage.setItem("course-player-speed", String(speedSel.value));
     });
+  }
+
+  const dereverbBtn = app.querySelector("#toggle-dereverb");
+  const dereverbRow = app.querySelector("#dereverb-row");
+  if (dereverbBtn) {
+    const applyDereverb = (next) => {
+      localStorage.setItem("course-player-dereverb", next ? "1" : "0");
+      dereverbBtn.classList.toggle("on", next);
+      dereverbBtn.setAttribute("aria-checked", String(next));
+    };
+    dereverbBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      applyDereverb(localStorage.getItem("course-player-dereverb") !== "1");
+    });
+    if (dereverbRow) {
+      dereverbRow.addEventListener("click", () => {
+        applyDereverb(localStorage.getItem("course-player-dereverb") !== "1");
+      });
+    }
   }
 }
 
@@ -561,8 +596,8 @@ function renderSettingsBibliotecas() {
         lib.enabled === false
           ? `<span class="lib-badge lib-badge-off">Desativada</span>`
           : lib.status === "unavailable" || lib.status === "error"
-            ? `<span class="lib-badge lib-badge-warn" title="${escapeHtml(lib.error || "diretório indisponível")}">⚠ indisponível</span>`
-            : `<span class="lib-badge lib-badge-ok">✓ Disponível</span>`;
+            ? `<span class="lib-badge lib-badge-warn" title="${escapeHtml(lib.error || "diretório indisponível")}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:3px;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>indisponível</span>`
+            : `<span class="lib-badge lib-badge-ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:3px;"><polyline points="20 6 9 17 4 12"></polyline></svg>Disponível</span>`;
       const pathText = isDefault && !lib.path ? "Biblioteca da instalação" : lib.path;
       const actions = [
         `<button type="button" class="lib-btn" data-action="rescan"${lib.enabled === false ? " disabled" : ""}>Reescanear</button>`,
@@ -1340,7 +1375,7 @@ function renderAiTranscription() {
   const prov = aiTranscriptionProvider(cfg.transcription.provider);
   const avail = !!(prov && prov.available);
   const modelOptions = (prov ? prov.models : []).map((m) =>
-    `<option value="${m.id}" ${m.id === cfg.transcription.model ? "selected" : ""}>${escapeHtml(m.name)}${m.installed ? " ✓" : " — não instalado"}</option>`).join("");
+    `<option value="${m.id}" ${m.id === cfg.transcription.model ? "selected" : ""}>${escapeHtml(m.name)}${m.installed ? " (instalado)" : " — não instalado"}</option>`).join("");
   const langOptions = (prov ? prov.languages : []).map((l) =>
     `<option value="${l.id}" ${l.id === cfg.transcription.language ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("");
   const sub = aiState.subtitles;

@@ -88,14 +88,14 @@ function renderSubtitleEditor(videoEl, video) {
         <span class="se-title">Editor de legendas</span>
         <span class="se-dirty" id="se-dirty">carregando…</span>
         <div class="se-actions">
-          <button class="secondary-btn" id="se-add" hidden>＋ Adicionar</button>
-          <button class="secondary-btn" id="se-save" hidden>💾 Salvar</button>
-          <button class="secondary-btn" id="se-undo" hidden title="Desfazer (Ctrl+Z)">↩ Desfazer</button>
-          <button class="secondary-btn" id="se-redo" hidden title="Refazer (Ctrl+Y)">↪ Refazer</button>
+          <button class="secondary-btn" id="se-add" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:3px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>Adicionar</button>
+          <button class="secondary-btn" id="se-save" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:3px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Salvar</button>
+          <button class="secondary-btn" id="se-undo" hidden title="Desfazer (Ctrl+Z)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:3px;"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg>Desfazer</button>
+          <button class="secondary-btn" id="se-redo" hidden title="Refazer (Ctrl+Y)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:3px;"><path d="M21 7v6h-6"></path><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"></path></svg>Refazer</button>
           <button class="secondary-btn" id="se-export-vtt" hidden>Exportar VTT</button>
           <button class="secondary-btn" id="se-export-srt" hidden>Exportar SRT</button>
           <button class="secondary-btn" id="se-regen" hidden>Regenerar</button>
-          <button class="secondary-btn" id="se-close">✕ Fechar editor</button>
+          <button class="secondary-btn" id="se-close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:3px;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>Fechar editor</button>
         </div>
       </div>
       <div class="se-body" id="se-body">
@@ -363,7 +363,7 @@ function renderEditorList() {
       </div>`;
     })
     .join("");
-  list.innerHTML = rows || `<div class="se-empty">Nenhum segmento. Use ＋ Adicionar.</div>`;
+  list.innerHTML = rows || `<div class="se-empty">Nenhum segmento. Use o botão Adicionar.</div>`;
 }
 
 function renderEditorTimeline() {
@@ -672,7 +672,7 @@ async function editorSave() {
   } finally {
     editor.saveInFlight = false;
     if (saveBtn) {
-      saveBtn.textContent = "💾 Salvar";
+      saveBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:3px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Salvar`;
       saveBtn.disabled = !editor.dirty;
     }
   }

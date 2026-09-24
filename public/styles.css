@@ -4,7 +4,8 @@
   --bg-card: #141a26;
   --bg-card-2: #192132;
   --bg-hover: #20293b;
-  --border: #263144;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
   --text: #f1f5fb;
   --text-mid: #c3cfe0;
   --text-dim: #9aa8bf;
@@ -72,32 +73,37 @@ html,
 body {
   margin: 0;
   padding: 0;
-  /* Fundo sem banding: elipses de tamanho explícito (em vez de
-     farthest-corner, que criava anéis visíveis), várias paradas de cor
-     para um fade suave e uma camada de ruído fino (dithering) que
-     quebra as faixas de gradiente em telas de 8 bits. */
+  /* Fundo sutil e performático: gradientes suaves sem filtro fractal
+     inline SVG, eliminando recomposição contínua de GPU no playback. */
   background-color: var(--bg);
   background-image:
     radial-gradient(
-      ellipse 90% 70% at 12% -15%,
-      rgba(255, 138, 61, 0.1),
-      rgba(255, 138, 61, 0.05) 25%,
-      rgba(255, 138, 61, 0.02) 45%,
-      transparent 65%
+      ellipse 80% 60% at 12% -15%,
+      rgba(255, 138, 61, 0.08),
+      rgba(255, 138, 61, 0.03) 30%,
+      transparent 60%
     ),
     radial-gradient(
-      ellipse 70% 60% at 100% -10%,
-      rgba(58, 87, 140, 0.12),
-      rgba(58, 87, 140, 0.05) 30%,
-      rgba(58, 87, 140, 0.02) 50%,
-      transparent 70%
-    ),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 140px 140px;
+      ellipse 70% 50% at 100% -10%,
+      rgba(58, 87, 140, 0.1),
+      rgba(58, 87, 140, 0.03) 35%,
+      transparent 65%
+    );
+  background-repeat: no-repeat, no-repeat;
   background-attachment: fixed;
   color: var(--text);
-  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   height: 100%;
 }
 
@@ -148,7 +154,7 @@ body {
 
 .topbar-brand-minimal:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
 .brand-icon {
@@ -187,6 +193,10 @@ body {
 
 .topbar-search input:focus {
   border-color: var(--accent);
+}
+.topbar-search input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Dropdown flutuante de busca global (ativo em cursos, tópicos e configurações) */
@@ -341,12 +351,30 @@ body {
   transform: translateY(-1px);
   box-shadow: 0 10px 22px rgba(255, 138, 61, 0.24);
 }
+.btn-ghost:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
 /* Botão Atualizar desabilitado durante o scan: sinaliza espera e impede
    cliques concorrentes. */
 .btn-ghost:disabled {
   opacity: 0.65;
   cursor: wait;
   transform: none;
+}
+.rescan-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.rescan-icon.is-spinning svg {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 /* Toast não-bloqueante de erro do rescan: some sozinho, nunca intercepta
    clique (pointer-events: none). */
@@ -393,7 +421,7 @@ body {
 }
 .topbar-icon-btn:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
 .app {
@@ -411,9 +439,14 @@ body {
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.10s ease;
 }
 .secondary-btn:hover {
   border-color: var(--accent);
+}
+.secondary-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Botão destrutivo (limpar progresso) */
@@ -1244,6 +1277,10 @@ body {
 .fav-btn.on {
   color: #ffb703;
   text-shadow: 0 0 8px rgba(255, 183, 3, 0.55);
+}
+.fav-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .course-toolbar-actions {
@@ -3159,11 +3196,14 @@ body {
 .pc-vol-btn {
   gap: 6px;
   padding: 0 12px 0 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .pc-vol-label {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
 }
 /* Estado extra: o chip inteiro acende no accent sempre que o slider de ganho
    está acima de 100% (o rótulo mostra o volume efetivo). Indicação clara de
@@ -3219,23 +3259,26 @@ body {
   overflow: auto;
 }
 .pc-vol-pop {
-  min-width: 252px;
+  min-width: 280px;
+  width: 290px;
+  max-width: min(340px, calc(100vw - 24px));
+  box-sizing: border-box;
   /* Painel curto não precisa de scroll; overflow visível deixa o caret
      aparecer e conecta o painel ao botão. */
   overflow: visible;
 }
-/* Caret apontando para o botão de volume (mesmo fundo do painel). */
+/* Caret apontando para o botão de volume (alinhado com o botão disparador à direita). */
 .pc-vol-pop::after {
   content: "";
   position: absolute;
   top: 100%;
-  left: 50%;
+  right: 22px;
   width: 10px;
   height: 10px;
   background: inherit;
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
-  transform: translateX(-50%) translateY(-5px) rotate(45deg);
+  transform: translateY(-5px) rotate(45deg);
   pointer-events: none;
 }
 .pc-slider-row {
@@ -3245,22 +3288,26 @@ body {
   font-size: 12px;
   color: var(--text-dim);
   padding: 7px 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 .pc-slider-name {
-  width: 84px;
+  width: 82px;
   flex-shrink: 0;
 }
 .pc-slider-val {
-  width: 40px;
+  width: 44px;
   text-align: right;
   color: #fff;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .pc-slider {
   -webkit-appearance: none;
   appearance: none;
   flex: 1;
+  min-width: 0;
   height: 4px;
   border-radius: 999px;
   background: linear-gradient(
@@ -3447,6 +3494,11 @@ body {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text);
   border-color: rgba(255, 255, 255, 0.06);
+}
+.nav-buttons button:focus-visible,
+.btn-nav:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .nav-buttons button:disabled,
 .btn-nav:disabled {
@@ -3838,12 +3890,11 @@ body {
   color: var(--text-dim);
 }
 
-/* Módulos com todas as aulas concluídas: mais discretos e esmaecidos na sidebar */
+/* Módulos com todas as aulas concluídas: distinção sem perda de contraste (WCAG AA) */
 .tree-folder.completed > .tree-folder-head,
 .tree-folder-head.completed {
-  opacity: 0.55;
+  color: var(--text-mid);
   transition:
-    opacity 0.2s ease,
     color 0.2s ease,
     background 0.15s ease;
 }
@@ -3852,7 +3903,7 @@ body {
 .tree-folder.completed > .tree-folder-head:focus-visible,
 .tree-folder-head.completed:hover,
 .tree-folder-head.completed:focus-visible {
-  opacity: 0.95;
+  color: var(--text);
 }
 
 .tree-folder.completed > .tree-folder-head .folder-title,
@@ -3976,9 +4027,9 @@ body {
   padding-left: 2px;
 }
 
-/* Concluída: o ✓ verde já marca; o título mais apagado reforça "feito" */
+/* Concluída: o ícone verde já marca; título com contraste acessível */
 .tree-lesson.done .lesson-title-inner {
-  opacity: 0.6;
+  color: var(--text-mid);
 }
 
 /* Foco visível (teclado) sem sacrificar densidade */
@@ -4051,6 +4102,36 @@ body {
   color: var(--text-dim);
   padding: 60px 20px;
   font-size: 14px;
+}
+
+.empty-state-warn {
+  border: 1px solid rgba(255, 138, 61, 0.35);
+  background: rgba(255, 138, 61, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 24px;
+  text-align: center;
+  margin: 20px 0;
+}
+.empty-state-warn .empty-state-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--accent);
+}
+.empty-state-warn .empty-state-desc {
+  margin-bottom: 14px;
+  color: var(--text-mid);
+}
+.empty-state-warn .empty-state-btn {
+  display: inline-block;
+  text-decoration: none;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-weight: 500;
 }
 
 @media (max-width: 900px) {
@@ -4894,10 +4975,12 @@ body {
   .topbar-rescan-btn .rescan-label {
     display: none;
   }
+  .topbar-brand-minimal,
+  .topbar-icon-btn,
   .topbar-rescan-btn {
-    width: 38px;
-    height: 38px;
-    min-width: 38px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
     padding: 0;
     font-size: 16px;
   }

@@ -598,9 +598,9 @@ function updateSubtitleBadge() {
   } else if (subtitleState.translationError) {
     const err = String(subtitleState.translationError);
     if (err.startsWith("rate_limit_429:") || err.includes("429") || err.includes("Limite")) {
-      msg = "⚠ Limite da IA atingido — abra o menu CC";
+      msg = "Limite da IA atingido — abra o menu CC";
     } else {
-      msg = "⚠ Falha na tradução — abra o menu CC para detalhes";
+      msg = "Falha na tradução — abra o menu CC para detalhes";
     }
     isError = true;
   } else if (kind === "generating") {
