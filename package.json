@@ -16,6 +16,8 @@
     "dist:dir": "electron-builder --linux dir --dir",
     "shortcut:install": "./instalar-atalho.sh",
     "shortcut:remove": "./remover-atalho.sh",
+    "clean:audio": "node tools/clean-audio.js",
+    "clean-audio": "node tools/clean-audio.js",
     "test": "node --test test/*.test.js test/*-smoke.js"
   },
   "dependencies": {
