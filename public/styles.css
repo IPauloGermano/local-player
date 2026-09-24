@@ -2049,11 +2049,11 @@ body {
 }
 /* Colapsado no desktop: além do trilho 0px, esconde o conteúdo para que os
    links da árvore não fiquem tabuláveis enquanto invisíveis e zera larguras/paddings
-   para prevenir overflow horizontal. */
-.course-view.theater:not(.summary-open) {
+   para prevenir overflow horizontal. Restrito a telas fora do drawer mobile. */
+.course-view.theater:not(.summary-open):not(.drawer-host) {
   column-gap: 0;
 }
-.course-view.theater:not(.summary-open) .sidebar {
+.course-view.theater:not(.summary-open):not(.drawer-host) .sidebar {
   visibility: hidden;
   width: 0;
   max-width: 0;
@@ -2074,9 +2074,9 @@ body {
   margin-right: auto;
 }
 
-.course-view.theater:not(.summary-open) .course-toolbar,
-.course-view.theater:not(.summary-open) .lesson-header,
-.course-view.theater:not(.summary-open) .materials {
+.course-view.theater:not(.summary-open):not(.drawer-host) .course-toolbar,
+.course-view.theater:not(.summary-open):not(.drawer-host) .lesson-header,
+.course-view.theater:not(.summary-open):not(.drawer-host) .materials {
   max-width: min(100%, calc((73vh) * 16 / 9));
   margin-left: auto;
   margin-right: auto;
@@ -4245,22 +4245,24 @@ body {
     grid-template-columns: 1fr;
   }
   /* Drawer mobile: o sumário sai do fluxo e desliza da direita quando
-     .drawer-open é adicionado ao .course-view (helpers em app.js). Fechado,
-     fica fora da tela e invisível (nada tabulável — a ocultação vence o
-     visibility:hidden que o teatro aplica no desktop). O estado não é
-     persistido: trocar de aula re-renderiza e fecha o drawer.
-     A posição fixa vive SEMPRE em .drawer-host (não em :not(.drawer-open)):
-     num estado-dependente, adicionar .drawer-open derrubaria position/top/
-     right/bottom/z-index e o sumário "saltaria" de volta ao fluxo da página,
-     empilhado abaixo do player. O :not() controla só o estado off-canvas. */
-  .course-view.drawer-host .sidebar {
+     .drawer-open é adicionado ao .course-view (helpers em app.js).
+     Neutraliza integralmente no mobile o colapso do modo teatro desktop. */
+  .course-view.theater:not(.summary-open) .sidebar,
+  .course-view.theater.summary-open .sidebar,
+  .course-view.theater .sidebar,
+  .course-view.drawer-host .sidebar,
+  .course-view .sidebar {
     position: fixed;
     top: 0;
     right: 0;
     bottom: 0;
     width: min(350px, 88vw);
+    max-width: min(350px, 88vw);
+    height: 100%;
+    height: 100dvh;
     max-height: none;
     margin: 0;
+    padding: 10px;
     border-radius: 0;
     border: none;
     border-left: 1px solid var(--border);
@@ -4270,18 +4272,42 @@ body {
     transition: transform 0.25s ease, visibility 0.25s ease;
     box-shadow: -16px 0 40px rgba(0, 0, 0, 0.5);
     overscroll-behavior: contain;
-    /* Respiro para home-indicator (iOS) e gesture bar no fim da árvore rolável. */
     padding-bottom: max(16px, env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg,
+      rgba(18, 24, 35, 0.98),
+      rgba(14, 20, 31, 0.98)
+    );
   }
-  .course-view.drawer-host:not(.drawer-open) .sidebar {
+  .course-view.drawer-host:not(.drawer-open) .sidebar,
+  .course-view.theater:not(.summary-open):not(.drawer-open) .sidebar,
+  .course-view.theater:not(.drawer-open) .sidebar,
+  .course-view:not(.drawer-open) .sidebar {
     visibility: hidden;
     transform: translateX(102%);
+    pointer-events: none;
   }
-  .course-view.drawer-host.drawer-open .sidebar {
+  .course-view.drawer-host.drawer-open .sidebar,
+  .course-view.theater.drawer-open .sidebar,
+  .course-view.theater:not(.summary-open).drawer-open .sidebar,
+  .course-view.drawer-open .sidebar {
     visibility: visible;
     transform: translateX(0);
+    pointer-events: auto;
+    width: min(350px, 88vw);
+    max-width: min(350px, 88vw);
+    height: 100%;
+    height: 100dvh;
+    max-height: none;
+    padding: 10px;
+    display: flex;
   }
-  .course-view.drawer-host.drawer-open #tree-slot {
+  .course-view.drawer-host.drawer-open #tree-slot,
+  .course-view.theater.drawer-open #tree-slot,
+  .course-view.drawer-open #tree-slot {
     overflow-y: auto;
     overflow-x: hidden;
     flex: 1 1 auto;
