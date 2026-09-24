@@ -1016,7 +1016,18 @@ function setDrawerOpen(open) {
   // drawer aberto, então este refresh garante que o progresso exibido ao
   // abrir está atual (a lista re-renderiza sem perder o scroll de quem abre).
   if (open && state.currentCourseNode) {
+    if (state.currentVideoNode) {
+      const ancestors =
+        findAncestorFolders(state.currentCourseNode, state.currentVideoNode.path) || [];
+      ancestors.forEach((p) => expandedFolders.add(p));
+    }
     renderTree(state.currentCourseNode, false);
+    requestAnimationFrame(() => {
+      const activeLesson = document.querySelector("#tree-slot .tree-lesson.active");
+      if (activeLesson) {
+        activeLesson.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    });
   }
 }
 function toggleDrawer() {

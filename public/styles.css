@@ -4256,23 +4256,24 @@ body {
     top: 0;
     right: 0;
     bottom: 0;
-    width: min(350px, 88vw);
-    max-width: min(350px, 88vw);
+    width: min(360px, 88vw);
+    max-width: min(360px, 88vw);
     height: 100%;
     height: 100dvh;
     max-height: none;
     margin: 0;
     padding: 10px;
     border-radius: 0;
+    border-top-left-radius: var(--radius);
+    border-bottom-left-radius: var(--radius);
     border: none;
     border-left: 1px solid var(--border);
     z-index: 60;
     visibility: hidden;
     transform: translateX(102%);
-    transition: transform 0.25s ease, visibility 0.25s ease;
-    box-shadow: -16px 0 40px rgba(0, 0, 0, 0.5);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.28s ease;
+    box-shadow: -16px 0 40px rgba(0, 0, 0, 0.55);
     overscroll-behavior: contain;
-    padding-bottom: max(16px, env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
     pointer-events: none;
@@ -4281,6 +4282,8 @@ body {
       rgba(18, 24, 35, 0.98),
       rgba(14, 20, 31, 0.98)
     );
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
   .course-view.drawer-host:not(.drawer-open) .sidebar,
   .course-view.theater:not(.summary-open):not(.drawer-open) .sidebar,
@@ -4297,8 +4300,8 @@ body {
     visibility: visible;
     transform: translateX(0);
     pointer-events: auto;
-    width: min(350px, 88vw);
-    max-width: min(350px, 88vw);
+    width: min(360px, 88vw);
+    max-width: min(360px, 88vw);
     height: 100%;
     height: 100dvh;
     max-height: none;
@@ -4313,11 +4316,15 @@ body {
     flex: 1 1 auto;
     min-height: 0;
     -webkit-overflow-scrolling: touch;
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
   }
   .sidebar-close-btn {
     display: inline-flex;
-    min-width: 40px;
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
   }
   .course-view .sidebar-backdrop {
     display: block;
@@ -4799,33 +4806,29 @@ body {
 
   /* Sidebar / árvore no drawer */
   .sidebar {
-    padding: 8px;
-    border-radius: 0;
+    padding: 10px 8px 0;
+    border-top-left-radius: var(--radius);
+    border-bottom-left-radius: var(--radius);
+  }
+  .sidebar-header {
+    padding: 4px 2px 8px 4px;
   }
   .sidebar-title {
-    padding: 6px 8px;
-    font-size: 13.5px;
-    margin-bottom: 4px;
-  }
-  .sidebar-title .pct {
-    font-size: 14.5px;
+    padding: 0;
   }
   .sidebar-progress {
-    padding: 0 8px 8px;
+    padding: 6px 4px 8px;
     margin-bottom: 6px;
   }
-  .sidebar-progress-bar {
-    height: 5px;
-  }
   .sidebar-progress-meta {
-    margin-top: 4px;
+    margin-top: 5px;
     display: flex;
     justify-content: space-between;
     gap: 8px;
     font-size: 11px;
   }
   .tree-folder {
-    margin-bottom: 0;
+    margin-bottom: 2px;
   }
   #tree-slot > .tree-folder + .tree-folder {
     margin-top: 6px;
@@ -4834,38 +4837,60 @@ body {
   .tree-folder-head {
     gap: 8px;
     border-radius: 8px;
+    min-height: 44px;
+    padding: 10px 8px;
+    touch-action: manipulation;
+  }
+  .tree-folder-head:active {
+    background: rgba(255, 255, 255, 0.08);
+    transform: scale(0.985);
   }
   .tree-folder-head[data-depth="1"] {
     font-size: 13.5px;
+    min-height: 44px;
     padding: 10px 8px;
   }
   .tree-folder-head[data-depth="2"] {
     font-size: 12.5px;
-    padding: 9px 8px;
+    min-height: 44px;
+    padding: 10px 8px;
   }
   .tree-folder-head[data-depth="3"],
   .tree-folder-head[data-depth="4"] {
     font-size: 12px;
-    padding: 8px;
+    min-height: 44px;
+    padding: 9px 8px;
   }
   .tree-folder-head .folder-progress {
-    font-size: 11px;
+    font-size: 10.5px;
+    padding: 2px 6px;
   }
   .tree-folder-children {
-    padding-left: 10px;
+    padding-left: 8px;
+    margin-left: 12px;
   }
   .tree-folder-children .tree-folder-children {
-    padding-left: 8px;
+    margin-left: 8px;
+    padding-left: 6px;
   }
   .tree-folder-children .tree-folder-children .tree-folder-children {
+    margin-left: 6px;
     padding-left: 6px;
   }
   .tree-lesson {
-    padding: 8px 10px;
-    gap: 8px;
+    padding: 9px 10px;
+    gap: 9px;
     font-size: 13px;
     border-radius: 8px;
-    min-height: 42px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  .tree-lesson:active {
+    background: rgba(255, 255, 255, 0.08);
+    transform: scale(0.985);
+  }
+  .tree-lesson.active:active {
+    background: rgba(255, 138, 61, 0.2);
   }
   .tree-lesson .check {
     width: 22px;
@@ -4873,6 +4898,10 @@ body {
     font-size: 11px;
     border-width: 1.5px;
     flex-shrink: 0;
+    touch-action: manipulation;
+  }
+  .tree-lesson .check:active {
+    transform: scale(0.88);
   }
   .tree-lesson .lesson-mini-progress {
     width: 24px;
