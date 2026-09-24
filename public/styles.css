@@ -6061,6 +6061,14 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-dim);
   cursor: default;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.tutor-context-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tutor-context-dot {
@@ -6973,12 +6981,77 @@ body {
 
   .tutor-header {
     border-radius: 20px 20px 0 0;
-    padding: 8px 14px 10px;
+    padding: 10px 14px;
     gap: 8px;
+    align-items: center;
   }
 
-  .tutor-btn .tutor-btn-label {
-    display: none;
+  .tutor-sparkle-badge {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+  }
+
+  .tutor-header-main {
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .tutor-header-meta {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .tutor-header-title-row {
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .tutor-title-main {
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+
+  .tutor-status-badge {
+    padding: 2px 8px;
+    font-size: 11px;
+    gap: 5px;
+    height: 22px;
+    border-radius: 999px;
+    max-width: 155px;
+    flex-shrink: 1;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .tutor-lesson-badge {
+    font-size: 11.5px;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tutor-header-actions {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .tutor-header-actions .tutor-icon-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+  }
+
+  .tutor-header-actions .tutor-btn-label {
+    display: none !important;
   }
 
   .tutor-tab-bar {
@@ -7836,6 +7909,7 @@ body {
     font-size: 11px;
     gap: 5px;
   }
+  .tutor-lesson-badge,
   .tutor-header-sub {
     font-size: 11px;
     max-width: 180px;
@@ -7843,15 +7917,18 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .tutor-header-actions .tutor-icon-btn,
   .tutor-btn {
-    padding: 4px 8px;
-    font-size: 11.5px;
-    min-height: 28px;
-    gap: 4px;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 7px;
   }
-  .tutor-btn-close {
-    width: 28px;
-    height: 28px;
+  .tutor-header-actions .tutor-btn-label {
+    display: none !important;
   }
   .tutor-tab-bar {
     padding: 3px 10px;

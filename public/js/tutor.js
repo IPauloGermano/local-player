@@ -265,8 +265,15 @@ function switchTutorTab(tabName, video) {
   if (fcView) fcView.hidden = tabName !== "flashcards";
 
   const resetLabel = document.getElementById("tutor-reset-btn-label");
+  const newChatBtn = document.getElementById("tutor-new-chat");
+  const actionLabel = tabName === "chat" ? "Novo" : "Reiniciar";
+  const actionTitle = tabName === "chat" ? "Limpar e iniciar novo chat" : (tabName === "quiz" ? "Reiniciar Quiz" : "Reiniciar Flashcards");
   if (resetLabel) {
-    resetLabel.textContent = tabName === "chat" ? "Novo" : "Reiniciar";
+    resetLabel.textContent = actionLabel;
+  }
+  if (newChatBtn) {
+    newChatBtn.setAttribute("title", actionTitle);
+    newChatBtn.setAttribute("aria-label", actionTitle);
   }
 
   if (tabName === "chat" && currentVid) {
