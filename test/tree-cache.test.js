@@ -6,6 +6,12 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
+// Isola o teste do data/ real do repositório: DATA_DIR é lido no carregamento
+// do módulo, então LP_DATA_DIR precisa ser definido ANTES do require.
+const TEST_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "lp-treecache-data-"));
+process.env.LP_DATA_DIR = TEST_DATA_DIR;
+test.after(() => fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true }));
+
 const {
   scanLibrary,
   libraryTreeCacheFile,

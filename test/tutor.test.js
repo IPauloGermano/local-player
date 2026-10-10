@@ -1351,41 +1351,63 @@ Ele explica tudo do zero. Veja também o link https://youtu.be/dQw4w9WgXcQ novam
   assert.strictEqual(occurrences, 1);
 });
 
-test("Tutor IA: Rotas HTTP /api/tutor/video/verify e /api/tutor/video/search", async () => {
+test("Tutor IA: Rotas HTTP /api/tutor/video/* validam parâmetros (offline)", async () => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-video-tutor-data-"));
   const srv = await startTestServer(dataDir);
 
   try {
-    // 1. GET /api/tutor/video/verify com ID válido
-    const resValid = await fetch(`${srv.base}/api/tutor/video/verify?id=dQw4w9WgXcQ`);
-    assert.strictEqual(resValid.status, 200);
-    const dataValid = await resValid.json();
-    assert.strictEqual(dataValid.ok, true);
-    assert.strictEqual(dataValid.video.id, "dQw4w9WgXcQ");
+    // GET /api/tutor/video/verify sem url/id -> 400
+    const resNoId = await fetch(`${srv.base}/api/tutor/video/verify`);
+    assert.strictEqual(resNoId.status, 400);
+    assert.strictEqual((await resNoId.json()).ok, false);
 
-    // 2. GET /api/tutor/video/verify com ID inválido
-    const resInvalid = await fetch(`${srv.base}/api/tutor/video/verify?id=invalid-id`);
-    assert.strictEqual(resInvalid.status, 404);
-    const dataInvalid = await resInvalid.json();
-    assert.strictEqual(dataInvalid.ok, false);
-
-    // 3. GET /api/tutor/video/search sem query -> 400
+    // GET /api/tutor/video/search sem query -> 400
     const resEmpty = await fetch(`${srv.base}/api/tutor/video/search`);
     assert.strictEqual(resEmpty.status, 400);
     const dataEmpty = await resEmpty.json();
     assert.strictEqual(dataEmpty.ok, false);
-
-    // 4. GET /api/tutor/video/search com query válida
-    const resSearch = await fetch(`${srv.base}/api/tutor/video/search?query=javascript&max=1`);
-    assert.strictEqual(resSearch.status, 200);
-    const dataSearch = await resSearch.json();
-    assert.ok(Array.isArray(dataSearch.videos));
-    if (dataSearch.videos.length > 0) {
-      assert.ok(dataSearch.videos[0].id);
-      assert.strictEqual(dataSearch.videos[0].valid, true);
-    }
   } finally {
     await srv.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });
+
+// Depende do YouTube real (oEmbed/busca). Mock não é viável: o servidor roda em
+// subprocesso e o anti-SSRF bloqueia servidores falsos em localhost por design.
+// Rode com: LP_TEST_NETWORK=1 node --test test/tutor.test.js
+test(
+  "Tutor IA: Rotas HTTP /api/tutor/video/verify e /api/tutor/video/search (rede)",
+  { skip: process.env.LP_TEST_NETWORK !== "1" && "requer LP_TEST_NETWORK=1 (acessa YouTube)" },
+  async () => {
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-video-tutor-data-"));
+    const srv = await startTestServer(dataDir);
+
+    try {
+      // 1. GET /api/tutor/video/verify com ID válido
+      const resValid = await fetch(`${srv.base}/api/tutor/video/verify?id=dQw4w9WgXcQ`);
+      assert.strictEqual(resValid.status, 200);
+      const dataValid = await resValid.json();
+      assert.strictEqual(dataValid.ok, true);
+      assert.strictEqual(dataValid.video.id, "dQw4w9WgXcQ");
+
+      // 2. GET /api/tutor/video/verify com ID inválido
+      const resInvalid = await fetch(`${srv.base}/api/tutor/video/verify?id=invalid-id`);
+      assert.strictEqual(resInvalid.status, 404);
+      const dataInvalid = await resInvalid.json();
+      assert.strictEqual(dataInvalid.ok, false);
+
+      // 3. GET /api/tutor/video/search com query válida
+      const resSearch = await fetch(`${srv.base}/api/tutor/video/search?query=javascript&max=1`);
+      assert.strictEqual(resSearch.status, 200);
+      const dataSearch = await resSearch.json();
+      assert.ok(Array.isArray(dataSearch.videos));
+      if (dataSearch.videos.length > 0) {
+        assert.ok(dataSearch.videos[0].id);
+        assert.strictEqual(dataSearch.videos[0].valid, true);
+      }
+    } finally {
+      await srv.stop();
+      await fs.rm(dataDir, { recursive: true, force: true });
+    }
+  }
+);
