@@ -8,9 +8,19 @@ const { ROOT, APP_DIR } = require("../state");
 function resolveSafeRelPath(relPath, base) {
   if (typeof relPath !== "string" || !relPath) return null;
   const normalized = path.normalize(relPath).replace(/^([/\\])+/, "");
-  const rootBase = base || ROOT;
+  if (normalized === ".." || normalized.startsWith(".." + path.sep) || normalized.startsWith("../")) {
+    return null;
+  }
+  const rootBase = path.resolve(base || ROOT);
   const abs = path.resolve(rootBase, normalized);
-  if (abs !== rootBase && !abs.startsWith(rootBase + path.sep)) return null;
+
+  const isWin = process.platform === "win32";
+  const absComp = isWin ? abs.toLowerCase() : abs;
+  const baseComp = isWin ? rootBase.toLowerCase() : rootBase;
+  const baseWithSep = baseComp.endsWith(path.sep) ? baseComp : baseComp + path.sep;
+
+  if (absComp !== baseComp && !absComp.startsWith(baseWithSep)) return null;
+
   // `rel` é SEMPRE canônico com "/" — mesmo formato da árvore do scan e das
   // URLs (multiplataforma). No Windows, `path.normalize` devolveria "\" e as
   // chaves de progresso deixariam de bater com os paths vindos do scan. O
@@ -48,23 +58,30 @@ async function fileWithinLibrary(lib, abs) {
     return false;
   }
   const sep = path.sep;
-  const normEnd = (p) => (p.endsWith(sep) ? p.slice(0, -1) : p);
-  const rd = normEnd(realDir);
-  return realFile === rd || realFile.startsWith(rd + sep);
+  const isWin = process.platform === "win32";
+  const rd = isWin ? realDir.toLowerCase() : realDir;
+  const rf = isWin ? realFile.toLowerCase() : realFile;
+  const rdWithSep = rd.endsWith(sep) ? rd : rd + sep;
+  return rf === rd || rf.startsWith(rdWithSep);
 }
 
 // BUG-001: o primeiro segmento do rel canônico é a pasta do app? O app vive
 // DENTRO de ROOT, então `resolveSafeRelPath` deixa passar `_LocalPlayer/*`;
 // este check fecha essa brecha em qualquer rota que resolva path de cliente.
-// Só se aplica à biblioteca PADRÃO (a única que contém a pasta do app): numa
-// biblioteca externa, uma pasta literalmente chamada "_LocalPlayer" não é o
-// app e não deve ser bloqueada. Case-exato no Linux, case-insensitive no
-// Windows (filesystem nativo).
+// Case-exato no Linux, case-insensitive no Windows (filesystem nativo).
 function isAppDirRel(safe, lib) {
   if (!safe || !safe.abs) return false;
   const appPath = path.resolve(APP_DIR);
   const safeAbs = path.resolve(safe.abs);
-  return safeAbs === appPath || safeAbs.startsWith(appPath + path.sep);
+  const sep = path.sep;
+  if (process.platform === "win32") {
+    const a = appPath.toLowerCase();
+    const s = safeAbs.toLowerCase();
+    const aWithSep = a.endsWith(sep) ? a : a + sep;
+    return s === a || s.startsWith(aWithSep);
+  }
+  const aWithSep = appPath.endsWith(sep) ? appPath : appPath + sep;
+  return safeAbs === appPath || safeAbs.startsWith(aWithSep);
 }
 
 module.exports = {

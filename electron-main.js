@@ -4,9 +4,12 @@ const path = require("path");
 const fs = require("fs");
 const net = require("net");
 const { fork } = require("child_process");
+const { executableName, requestGracefulShutdown } = require("./server/core/platform");
 
 app.setName("Local Player");
-if (process.platform === "linux") {
+// AppUserModelId é o que agrupa a janela na barra de tarefas do Windows e a
+// associa ao atalho criado pelo instalador (deve bater com build.appId).
+if (process.platform === "linux" || process.platform === "win32") {
   app.setAppUserModelId("com.localplayer.app");
 }
 
@@ -188,7 +191,7 @@ async function startApp() {
   };
 
   // Prioriza binários de IA integrados no pacote se existirem
-  const embeddedWhisperCli = path.join(embeddedBin, "whisper-cli");
+  const embeddedWhisperCli = path.join(embeddedBin, executableName("whisper-cli"));
   if (fs.existsSync(embeddedWhisperCli)) {
     serverEnv.WHISPER_BIN = embeddedWhisperCli;
     serverEnv.PATH = `${embeddedBin}${path.delimiter}${process.env.PATH || ""}`;
@@ -491,10 +494,7 @@ function gracefulShutdown() {
   }
   if (serverProcess) {
     console.log("[DESKTOP] Encerrando servidor interno graciosamente...");
-    serverProcess.kill("SIGTERM");
-    setTimeout(() => {
-      try { serverProcess.kill("SIGKILL"); } catch {}
-    }, 4000);
+    requestGracefulShutdown(serverProcess, { timeoutMs: 4000 });
   }
 }
 

@@ -276,7 +276,11 @@ function bindSettingsGeral(app) {
   fetch("/api/system/shortcut")
     .then((r) => r.json())
     .then((d) => {
-      if (d && d.installed && statusDesc) {
+      if (d && d.supported === false && d.message && statusDesc) {
+        statusDesc.textContent = d.message;
+        if (createBtn) createBtn.style.display = "none";
+        if (removeBtn) removeBtn.style.display = "none";
+      } else if (d && d.installed && statusDesc) {
         statusDesc.textContent = "Atalho atualmente instalado neste computador.";
       }
     })

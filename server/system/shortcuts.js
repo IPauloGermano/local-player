@@ -8,7 +8,15 @@ const state = require("../state");
 
 async function checkDesktopShortcuts() {
   if (process.platform !== "linux") {
-    return { ok: false, error: "Gerenciamento de atalhos suportado apenas no Linux." };
+    return {
+      ok: true,
+      platform: process.platform,
+      supported: false,
+      installed: false,
+      message: process.platform === "win32"
+        ? "No Windows, atalhos são gerenciados pelo instalador do aplicativo."
+        : "Gerenciamento de atalhos suportado apenas no Linux.",
+    };
   }
   try {
     const home = os.homedir();
@@ -39,7 +47,12 @@ async function checkDesktopShortcuts() {
 
 async function createDesktopShortcuts() {
   if (process.platform !== "linux") {
-    return { ok: false, error: "A criação de atalhos está disponível apenas para Linux." };
+    return {
+      ok: false,
+      error: process.platform === "win32"
+        ? "No Windows, atalhos são gerenciados pelo instalador do aplicativo."
+        : "A criação de atalhos está disponível apenas para Linux.",
+    };
   }
   const appDir = state.APP_DIR;
   const home = os.homedir();
@@ -142,7 +155,12 @@ async function createDesktopShortcuts() {
 
 async function removeDesktopShortcuts() {
   if (process.platform !== "linux") {
-    return { ok: false, error: "A remoção de atalhos está disponível apenas para Linux." };
+    return {
+      ok: false,
+      error: process.platform === "win32"
+        ? "No Windows, atalhos são gerenciados pelo instalador do aplicativo."
+        : "A remoção de atalhos está disponível apenas para Linux.",
+    };
   }
   const home = os.homedir();
   const appsDir = path.join(home, ".local", "share", "applications");
