@@ -1,4 +1,5 @@
 const path = require("path");
+const os = require("os");
 const fs = require("fs/promises");
 const crypto = require("crypto");
 const { writeFileAtomic, readJsonFile } = require("../core/fs-atomic");
@@ -138,12 +139,53 @@ async function validateLibraryPath(inputPath, ignoreLibId = null) {
   if (typeof inputPath !== "string") {
     return { ok: false, error: "path deve ser uma string" };
   }
-  const p = inputPath.trim();
+  let p = inputPath.trim();
+  if (
+    (p.startsWith('"') && p.endsWith('"')) ||
+    (p.startsWith("'") && p.endsWith("'"))
+  ) {
+    p = p.slice(1, -1).trim();
+  }
   if (!p) return { ok: false, error: "path vazio" };
   if (p.includes("\0")) return { ok: false, error: "path inválido" };
-  if (!path.isAbsolute(p)) return { ok: false, error: "path deve ser absoluto" };
+
+  // Expansão amigável de home (~/ ou ~)
+  if (p === "~" || p.startsWith("~/") || p.startsWith("~\\")) {
+    p = path.join(os.homedir(), p.slice(1));
+  }
+
+  // Conversão de caminhos do Windows no Linux (ex.: C:\Users\... ou C:/...)
+  if (process.platform === "linux" && /^[a-zA-Z]:[/\\]/.test(p)) {
+    const drive = p[0].toLowerCase();
+    const rest = p.slice(2).replace(/\\/g, "/");
+    const mntDrive = `/mnt/${drive}`;
+    let mntExists = false;
+    try {
+      await fs.access(mntDrive);
+      mntExists = true;
+    } catch {}
+    if (!mntExists) {
+      return {
+        ok: false,
+        error: `A unidade ${drive.toUpperCase()}: não está acessível no WSL (${mntDrive} não encontrado). Para montá-la no WSL, execute no terminal: sudo mkdir -p ${mntDrive} && sudo mount -t drvfs ${drive.toUpperCase()}: ${mntDrive} (ou execute o Local Player nativamente no Windows).`,
+      };
+    }
+    p = `${mntDrive}${rest.startsWith("/") ? "" : "/"}${rest}`;
+  }
+
+  if (!path.isAbsolute(p)) {
+    return {
+      ok: false,
+      error: `path deve ser absoluto (ex.: /caminho/completo ou ~/pasta). Caminho informado: "${p}"`,
+    };
+  }
+
   let abs = path.resolve(p);
   try {
+    const stat = await fs.stat(abs);
+    if (!stat.isDirectory()) {
+      return { ok: false, error: "o caminho deve ser um diretório, não um arquivo" };
+    }
     abs = await fs.realpath(abs); // resolve symlinks/junctions → canônico
   } catch {}
   const sep = path.sep;
@@ -168,10 +210,11 @@ async function validateLibraryPath(inputPath, ignoreLibId = null) {
       return { ok: false, error: "diretório proibido (pasta do app/data)" };
     }
   }
-  // Aninhamento com bibliotecas existentes (ancestral/descendente) — evita
-  // raízes ambíguas e double-scan.
+  // Aninhamento com bibliotecas ativas (ancestral/descendente) — evita
+  // raízes ambíguas e double-scan. Bibliotecas desativadas não conflitam.
   for (const lib of getLibraries()) {
     if (ignoreLibId && lib.id === ignoreLibId) continue;
+    if (lib.enabled === false) continue;
     const c = norm(lib.path);
     if (c === absN || absN.startsWith(c + sep) || c.startsWith(absN + sep)) {
       return {

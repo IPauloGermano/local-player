@@ -1351,6 +1351,10 @@ function renderHome(app) {
         (l) => l.enabled !== false && (l.status === "unavailable" || l.status === "error"),
       );
       if (unavailableLibs.length > 0 && !libs.length) {
+        const paths = unavailableLibs.map((l) => l.path).filter(Boolean);
+        const wslHint = paths.some((p) => /^\/mnt\/[a-z](\/|$)/i.test(p))
+          ? `<p class="empty-state-hint" style="margin-top:8px;font-size:0.875rem;color:var(--text-dim);line-height:1.4;">Dica WSL: se a pasta está no Windows (ex.: unidade D:), monte-a no terminal do WSL com:<br><code style="background:var(--bg-card-2);padding:3px 8px;border-radius:4px;display:inline-block;margin-top:6px;font-size:0.85rem;user-select:all;">sudo mkdir -p /mnt/d && sudo mount -t drvfs D: /mnt/d</code></p>`
+          : "";
         html += `<div class="empty-state empty-state-warn">
           <div class="empty-state-title">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1360,8 +1364,11 @@ function renderHome(app) {
             </svg>
             <span>Biblioteca indisponível</span>
           </div>
-          <p class="empty-state-desc">O dispositivo ou pasta onde seus cursos estão armazenados não está acessível no momento.</p>
-          <a href="#/settings" class="btn btn-primary empty-state-btn">Configurações → Bibliotecas</a>
+          <p class="empty-state-desc">A pasta onde seus cursos estão armazenados não está acessível no momento (${escapeHtml(paths.join(", "))}).</p>
+          ${wslHint}
+          <div style="margin-top:14px;display:flex;gap:10px;justify-content:center;">
+            <a href="#/settings" class="btn btn-primary empty-state-btn">Configurações → Bibliotecas</a>
+          </div>
         </div>`;
       } else if (!libs.length) {
         html += `<div class="empty-state">Nenhuma biblioteca configurada. Adicione uma pasta em <a href="#/settings" style="text-decoration:underline;color:inherit;font-weight:600;">Configurações → Bibliotecas</a>.</div>`;

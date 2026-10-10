@@ -735,12 +735,12 @@ function openLibraryDialog(app, { mode, libId, onSaved }) {
         <p class="ai-note">${
           isEdit
             ? "Ajuste o nome, o caminho e o estado da biblioteca."
-            : "Cole ou digite o caminho absoluto da pasta com o conteúdo. A pasta será escaneada e aparecerá na Home, ao lado da biblioteca padrão."
+            : "Cole ou digite o caminho absoluto da pasta com o conteúdo (ex.: <code>/caminho/para/pasta</code> ou <code>~/Cursos</code>). A pasta será escaneada e aparecerá na Home, ao lado da biblioteca padrão."
         }</p>
         <div class="lib-field">
           <label class="ai-label" for="lib-path">Caminho da pasta</label>
           <div style="display:flex;gap:8px;align-items:center;">
-            <input class="ai-input" id="lib-path" type="text" value="${escapeHtml(lib ? lib.path : "")}" placeholder="/caminho/para/sua/pasta" autocomplete="off" style="flex:1;">
+            <input class="ai-input" id="lib-path" type="text" value="${escapeHtml(lib ? lib.path : "")}" placeholder="/caminho/para/sua/pasta ou ~/Cursos" autocomplete="off" style="flex:1;">
             <button type="button" class="btn btn--secondary" id="lib-browse-btn" style="white-space:nowrap;padding:8px 12px;font-size:0.875rem;cursor:pointer;">📁 Escolher pasta…</button>
           </div>
         </div>
@@ -774,11 +774,18 @@ function openLibraryDialog(app, { mode, libId, onSaved }) {
   });
   overlay.querySelector(".btn-cancel").addEventListener("click", close);
 
+  const confirmBtn = overlay.querySelector(".btn-confirm");
+  const pathInput = overlay.querySelector("#lib-path");
+  const nameInput = overlay.querySelector("#lib-name");
+  const enabledBox = overlay.querySelector("#lib-enabled");
+  const errEl = overlay.querySelector("#lib-dialog-error");
+
   const browseBtn = overlay.querySelector("#lib-browse-btn");
   if (browseBtn) {
     browseBtn.addEventListener("click", async () => {
       try {
         browseBtn.disabled = true;
+        if (errEl) errEl.hidden = true;
         const res = await fetch("/api/system/select-folder", { method: "POST" });
         const data = await res.json().catch(() => ({}));
         if (data && data.path) {
@@ -787,18 +794,28 @@ function openLibraryDialog(app, { mode, libId, onSaved }) {
             const parts = data.path.split(/[/\\]/).filter(Boolean);
             if (parts.length) nameInput.value = parts[parts.length - 1];
           }
+        } else if (data && data.supported === false) {
+          if (errEl) {
+            errEl.textContent = "A seleção de pasta pelo sistema está disponível no aplicativo Desktop (Electron). No navegador, digite ou cole o caminho absoluto no campo acima (ex.: /caminho/para/pasta ou ~/Cursos).";
+            errEl.hidden = false;
+          }
+          pathInput.focus();
+        } else if (data && data.error && data.error !== "canceled") {
+          if (errEl) {
+            errEl.textContent = "Não foi possível selecionar a pasta: " + data.error;
+            errEl.hidden = false;
+          }
         }
-      } catch {}
-      finally {
+      } catch (err) {
+        if (errEl) {
+          errEl.textContent = "Erro ao solicitar seletor de pasta: " + (err && err.message);
+          errEl.hidden = false;
+        }
+      } finally {
         browseBtn.disabled = false;
       }
     });
   }
-
-  const confirmBtn = overlay.querySelector(".btn-confirm");
-  const pathInput = overlay.querySelector("#lib-path");
-  const nameInput = overlay.querySelector("#lib-name");
-  const enabledBox = overlay.querySelector("#lib-enabled");
 
   const submit = async () => {
     const path = (pathInput.value || "").trim();

@@ -120,6 +120,10 @@ function registerLibraryRoutes(app) {
       lib.name = req.body.name.trim() || lib.name;
     }
     if (req.body && typeof req.body.enabled === "boolean") {
+      if (req.body.enabled && !lib.enabled) {
+        const v = await validateLibraryPath(newPath || lib.path, lib.id);
+        if (!v.ok) return res.status(400).json({ error: v.error });
+      }
       lib.enabled = req.body.enabled;
       if (!lib.enabled) {
         state.treeCaches.delete(lib.id);

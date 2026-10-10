@@ -98,6 +98,56 @@ test("validateLibraryPath: diretório válido é aceito e canonicalizado (realpa
   }
 });
 
+test("validateLibraryPath: til (~) e ~/pasta é expandido para os.homedir()", async () => {
+  const rHome = await validateLibraryPath("~");
+  assert.strictEqual(rHome.ok, true);
+  assert.strictEqual(rHome.path, fs.realpathSync(os.homedir()));
+
+  const rSub = await validateLibraryPath("~/videos_teste_inexistente");
+  assert.strictEqual(rSub.ok, true);
+  assert.strictEqual(rSub.path, path.resolve(os.homedir(), "videos_teste_inexistente"));
+});
+
+test("validateLibraryPath: aspas envolventes são removidas", async () => {
+  const root = makeFixture(["Curso A/Aula.mp4"]);
+  try {
+    const r = await validateLibraryPath(`"${root}"`);
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.path, fs.realpathSync(root));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("validateLibraryPath: caminho Windows é convertido para montagem /mnt/ no Linux", async () => {
+  if (process.platform === "linux") {
+    const rWin = await validateLibraryPath("C:\\Cursos\\React");
+    assert.strictEqual(rWin.ok, true);
+    assert.strictEqual(rWin.path, "/mnt/c/Cursos/React");
+  }
+});
+
+test("validateLibraryPath: unidade Windows não montada no WSL retorna instrução clara de montagem", async () => {
+  if (process.platform === "linux") {
+    const rUnmounted = await validateLibraryPath("Z:\\MinhaPasta");
+    assert.strictEqual(rUnmounted.ok, false);
+    assert.match(rUnmounted.error, /não está acessível no WSL/);
+    assert.match(rUnmounted.error, /sudo mount -t drvfs Z: \/mnt\/z/);
+  }
+});
+
+test("validateLibraryPath: arquivo regular (não diretório) é rejeitado", async () => {
+  const root = makeFixture(["Curso A/Aula.mp4"]);
+  try {
+    const file = path.join(root, "Curso A", "Aula.mp4");
+    const r = await validateLibraryPath(file);
+    assert.strictEqual(r.ok, false);
+    assert.match(r.error, /não um arquivo/i);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("validateLibraryPath: symlink é resolvido para o alvo canônico", async () => {
   const root = makeFixture(["Curso A/Aula.mp4"]);
   const link = path.join(os.tmpdir(), "lp-libs-link-" + path.basename(root));
@@ -132,6 +182,21 @@ test("validateLibraryPath: aninhamento com biblioteca existente é rejeitado", a
     assert.strictEqual(r.ok, true, "path interno é válido isoladamente");
     assert.strictEqual(typeof getDefaultLibrary, "function");
   } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("validateLibraryPath: biblioteca desativada (enabled: false) não bloqueia subpastas", async () => {
+  const root = makeFixture(["Curso A/Aula.mp4"]);
+  const nested = path.join(root, "sub");
+  fs.mkdirSync(nested, { recursive: true });
+  const { setLibraries } = require("../server/libraries/registry");
+  const prev = setLibraries([{ id: "test-lib", name: "Parent", path: root, enabled: false }]);
+  try {
+    const r = await validateLibraryPath(nested);
+    assert.strictEqual(r.ok, true, "deve permitir quando a ancestral está desativada");
+  } finally {
+    setLibraries(prev);
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
