@@ -13,6 +13,7 @@
     "start:desktop": "electron .",
     "start:web": "node server.js",
     "dist": "electron-builder --linux AppImage",
+    "dist:win": "electron-builder --win portable --x64",
     "dist:dir": "electron-builder --linux dir --dir",
     "shortcut:install": "./instalar-atalho.sh",
     "shortcut:remove": "./remover-atalho.sh",
@@ -44,6 +45,22 @@
       "syncDesktopName": true,
       "artifactName": "LocalPlayer.AppImage",
       "synopsis": "Player local/offline de cursos e midia"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "assets/icon.png",
+      "executableName": "LocalPlayer",
+      "artifactName": "LocalPlayer-${version}-Windows.${ext}",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Local Player"
     },
     "files": [
       "**/*",
