@@ -236,6 +236,39 @@ test("Segurança CSRF: isLocalRequest e verifyCsrfAndSafeOrigin", () => {
   assert.strictEqual(validOriginRes.ok, true);
 });
 
+test("Segurança DNS rebinding: Host precisa ser loopback, IP literal ou HOST configurado", () => {
+  const check = (host, extra = {}) =>
+    verifyCsrfAndSafeOrigin({ headers: { host, ...extra } });
+
+  // Rebinding: domínio externo resolvendo para 127.0.0.1 — Host == Origin.
+  const rebind = check("evil.example.com:4173", {
+    origin: "http://evil.example.com:4173",
+    "sec-fetch-site": "same-origin",
+  });
+  assert.strictEqual(rebind.ok, false);
+  assert.strictEqual(rebind.status, 403);
+  assert.strictEqual(check("localhost.evil.com:4173").ok, false);
+  assert.strictEqual(check("127.0.0.1.nip.io:4173").ok, false);
+
+  // Hosts legítimos.
+  assert.strictEqual(check("localhost:4173").ok, true);
+  assert.strictEqual(check("LOCALHOST:4173").ok, true);
+  assert.strictEqual(check("127.0.0.1:4173").ok, true);
+  assert.strictEqual(check("[::1]:4173").ok, true);
+  assert.strictEqual(check("192.168.1.50:4173").ok, true); // LAN via IP literal
+  assert.strictEqual(check("localhost").ok, true);
+
+  // HOST configurado explicitamente (ex.: HOST=meu-pc.local) é permitido.
+  const prev = process.env.HOST;
+  process.env.HOST = "meu-pc.local";
+  try {
+    assert.strictEqual(check("meu-pc.local:4173").ok, true);
+  } finally {
+    if (prev === undefined) delete process.env.HOST;
+    else process.env.HOST = prev;
+  }
+});
+
 // ---------------------------------------------------------------------------
 // 3. Path Sanitization & Display Tests
 // ---------------------------------------------------------------------------
@@ -480,6 +513,37 @@ test("Integração HTTP: proteção CSRF e validações em endpoints destrutivos
     assert.strictEqual(offJson.ok, true);
     assert.strictEqual(offJson.idleTimeoutMinutes, 0);
     assert.strictEqual(offJson.enabled, false);
+  } finally {
+    await srv.stop();
+  }
+});
+
+// DNS rebinding permite LER respostas (same-origin para o navegador), então o
+// Host precisa ser validado em TODA requisição — inclusive GET de leitura.
+test("Integração HTTP: Host de domínio externo (DNS rebinding) é bloqueado em GET", async () => {
+  const http = require("node:http");
+  const getWithHost = (base, urlPath, host) =>
+    new Promise((resolve, reject) => {
+      const u = new URL(urlPath, base);
+      const req = http.request(
+        { hostname: u.hostname, port: u.port, path: u.pathname, method: "GET", headers: { Host: host } },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode));
+        }
+      );
+      req.on("error", reject);
+      req.end();
+    });
+
+  const srv = await startServer(tmpDir("lp-sec-rebind-"));
+  try {
+    const port = new URL(srv.base).port;
+    for (const p of ["/api/libraries", "/api/progress", "/"]) {
+      assert.strictEqual(await getWithHost(srv.base, p, `evil.example.com:${port}`), 403, `GET ${p} com Host externo`);
+    }
+    assert.strictEqual(await getWithHost(srv.base, "/api/libraries", `127.0.0.1:${port}`), 200);
+    assert.strictEqual(await getWithHost(srv.base, "/api/libraries", `localhost:${port}`), 200);
   } finally {
     await srv.stop();
   }

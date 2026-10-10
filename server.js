@@ -24,6 +24,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// Anti DNS rebinding em TODA requisição (inclusive GET): um domínio externo
+// resolvendo para 127.0.0.1 é same-origin para o navegador e poderia LER a
+// árvore, o progresso e os arquivos de mídia. Roda antes do monitor de
+// atividade para que requisições rejeitadas não contem como uso.
+app.use((req, res, next) => {
+  if (!core.isAllowedHostHeader(req.headers.host)) {
+    return res.status(403).json({ error: "Host não autorizado." });
+  }
+  next();
+});
+
 // Monitoramento de atividade para economia de energia e desligamento automático por inatividade
 app.use((req, res, next) => {
   if (
@@ -99,6 +110,11 @@ process.on("uncaughtException", (err) => {
 
 process.on("SIGINT", () => core.shutdownNow(0));
 process.on("SIGTERM", () => core.shutdownNow(0));
+// Equivalente multiplataforma ao SIGTERM quando rodando sob o Electron (fork):
+// no Windows não há sinais POSIX e kill() encerra sem flush de progresso.
+process.on("message", (msg) => {
+  if (msg && msg.type === "shutdown") core.shutdownNow(0);
+});
 
 let server;
 
