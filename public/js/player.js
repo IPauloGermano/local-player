@@ -468,6 +468,13 @@ function closePlayerPopovers() {
   const ccBtn = document.getElementById("pc-cc-btn");
   const moreMenu = document.getElementById("pc-more-menu");
   const moreBtn = document.getElementById("pc-more-btn");
+  [volPop, speedMenu, ccMenu, moreMenu].forEach((p) => {
+    if (p) {
+      p.style.right = "";
+      p.style.maxHeight = "";
+      p.style.overflowY = "";
+    }
+  });
   if (volPop && !volPop.hidden) {
     volPop.hidden = true;
     volBtn?.setAttribute("aria-expanded", "false");
@@ -489,6 +496,29 @@ function closePlayerPopovers() {
     closed = true;
   }
   return closed;
+}
+
+// Mantém o popover aberto 100% contido nos limites do player (sem corte por overflow: hidden)
+function constrainPopover(popoverEl) {
+  if (!popoverEl || popoverEl.hidden) return;
+  const wrap = document.getElementById("player-wrap");
+  if (!wrap) return;
+  popoverEl.style.right = "";
+  popoverEl.style.maxHeight = "";
+  popoverEl.style.overflowY = "";
+
+  const wrapRect = wrap.getBoundingClientRect();
+  const popRect = popoverEl.getBoundingClientRect();
+
+  if (popRect.left < wrapRect.left + 8) {
+    const shift = (wrapRect.left + 8) - popRect.left;
+    popoverEl.style.right = `-${shift}px`;
+  }
+  if (popRect.top < wrapRect.top + 8) {
+    const maxH = Math.max(100, popRect.bottom - (wrapRect.top + 8));
+    popoverEl.style.maxHeight = `${maxH}px`;
+    popoverEl.style.overflowY = "auto";
+  }
 }
 
 function renderPlayerAndLesson() {
@@ -1133,7 +1163,10 @@ function wirePlayerUI(videoEl) {
       closePopovers();
       volPop.hidden = !willOpen;
       volBtn.setAttribute("aria-expanded", String(!willOpen));
-      if (!willOpen) volRange?.focus();
+      if (!willOpen) {
+        constrainPopover(volPop);
+        volRange?.focus();
+      }
     });
   }
   if (volRange) {
@@ -1177,6 +1210,7 @@ function wirePlayerUI(videoEl) {
       closePopovers();
       speedMenu.hidden = !willOpen;
       speedBtn.setAttribute("aria-expanded", String(!willOpen));
+      if (!willOpen) constrainPopover(speedMenu);
     });
   }
   if (ccBtn && ccMenu) {
@@ -1186,6 +1220,7 @@ function wirePlayerUI(videoEl) {
       closePopovers();
       ccMenu.hidden = !willOpen;
       ccBtn.setAttribute("aria-expanded", String(!willOpen));
+      if (!willOpen) constrainPopover(ccMenu);
     });
   }
   if (moreBtn && moreMenu) {
@@ -1195,6 +1230,7 @@ function wirePlayerUI(videoEl) {
       closePopovers();
       moreMenu.hidden = !willOpen;
       moreBtn.setAttribute("aria-expanded", String(!willOpen));
+      if (!willOpen) constrainPopover(moreMenu);
     });
   }
   // Velocidade: um único binding para os itens dos dois menus (barra + ⋮),

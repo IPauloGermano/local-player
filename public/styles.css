@@ -205,7 +205,7 @@ body {
   top: calc(100% + 8px);
   left: 0;
   right: 0;
-  max-height: 420px;
+  max-height: min(420px, calc(100dvh - 80px));
   overflow-y: auto;
   background: #0f1522;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -2105,6 +2105,8 @@ body {
   position: relative;
   width: 100%;
   aspect-ratio: 16/9;
+  container-type: inline-size;
+  container-name: player;
   /* Trava gestual horizontal: o player nunca desliza para o lado no touch
      (pan-y mantém a rolagem vertical da página; o arraste horizontal da
      timeline/sliders e da legenda é liberado nas regras próprias abaixo). */
@@ -3260,16 +3262,16 @@ body {
   border-radius: var(--radius-sm);
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
   padding: 12px 14px;
-  min-width: 220px;
-  max-width: min(280px, calc(100vw - 24px));
-  max-height: min(60vh, 320px);
-  max-height: min(60dvh, 320px);
-  overflow: auto;
+  min-width: 200px;
+  max-width: min(290px, calc(100cqw - 16px), calc(100vw - 24px));
+  max-height: min(260px, calc(100% - 64px), 60vh);
+  max-height: min(260px, calc(100% - 64px), 60dvh);
+  overflow-y: auto;
 }
 .pc-vol-pop {
-  min-width: 280px;
-  width: 290px;
-  max-width: min(340px, calc(100vw - 24px));
+  min-width: 240px;
+  width: 280px;
+  max-width: min(290px, calc(100cqw - 16px), calc(100vw - 24px));
   box-sizing: border-box;
   /* Painel curto não precisa de scroll; overflow visível deixa o caret
      aparecer e conecta o painel ao botão. */
@@ -3390,6 +3392,32 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+
+/* Container queries para o player: adapta controles em qualquer tamanho de tela e zoom */
+@container player (max-width: 680px) {
+  .pc-secondary {
+    gap: 4px;
+  }
+  .pc-group-speed,
+  .pc-group-cc {
+    display: none;
+  }
+  .pc-more-narrow {
+    display: flex;
+  }
+}
+@container player (max-width: 500px) {
+  .pc-row {
+    row-gap: 6px;
+  }
+  .pc-secondary {
+    flex-basis: 100%;
+    justify-content: space-between;
+  }
+  .pc-time {
+    font-size: 12px;
+  }
+}
 /* ============ fim controles customizados ============ */
 
 .lesson-header {
@@ -3414,6 +3442,11 @@ body {
   font-weight: 700;
   color: var(--text-dim);
   overflow-wrap: break-word;
+  min-width: 0;
+  flex: 1 1 200px;
+}
+.course-toolbar-actions .secondary-btn {
+  white-space: nowrap;
 }
 .lesson-header .lesson-title-row {
   display: flex;
@@ -4210,6 +4243,105 @@ body {
   padding: 8px 18px;
   border-radius: 8px;
   font-weight: 500;
+}
+
+/* Sidebar em telas médias, tablets ou janelas desktop com zoom (≤1024px):
+   Colapsa em 1 coluna e converte o sumário em gaveta retrátil (drawer) para
+   evitar o esmagamento do player de vídeo. */
+@media (max-width: 1024px) {
+  .course-view {
+    grid-template-columns: 1fr;
+    gap: var(--gap-col);
+  }
+  .course-view.theater,
+  .course-view.theater.summary-open {
+    grid-template-columns: 1fr;
+  }
+  .lesson-sidebar-toggle {
+    display: inline-flex;
+  }
+  .course-view .sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(360px, 88vw);
+    max-width: min(360px, 88vw);
+    height: 100%;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding: 10px;
+    border-radius: 0;
+    border-top-left-radius: var(--radius);
+    border-bottom-left-radius: var(--radius);
+    border: none;
+    border-left: 1px solid var(--border);
+    z-index: 60;
+    visibility: hidden;
+    transform: translateX(102%);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.28s ease;
+    box-shadow: -16px 0 40px rgba(0, 0, 0, 0.55);
+    overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg,
+      rgba(18, 24, 35, 0.98),
+      rgba(14, 20, 31, 0.98)
+    );
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .course-view.drawer-host:not(.drawer-open) .sidebar,
+  .course-view.theater:not(.summary-open):not(.drawer-open) .sidebar,
+  .course-view.theater:not(.drawer-open) .sidebar,
+  .course-view:not(.drawer-open) .sidebar {
+    visibility: hidden;
+    transform: translateX(102%);
+    pointer-events: none;
+  }
+  .course-view.drawer-host.drawer-open .sidebar,
+  .course-view.theater.drawer-open .sidebar,
+  .course-view.theater:not(.summary-open).drawer-open .sidebar,
+  .course-view.drawer-open .sidebar {
+    visibility: visible;
+    transform: translateX(0);
+    pointer-events: auto;
+    width: min(360px, 88vw);
+    max-width: min(360px, 88vw);
+    height: 100%;
+    height: 100dvh;
+    display: flex;
+  }
+  .course-view.drawer-host.drawer-open #tree-slot,
+  .course-view.theater.drawer-open #tree-slot,
+  .course-view.drawer-open #tree-slot {
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex: 1 1 auto;
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+  }
+  .course-view .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 59;
+    background: rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+  .course-view.drawer-host.drawer-open .sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+    touch-action: none;
+  }
 }
 
 @media (max-width: 900px) {
@@ -5073,6 +5205,20 @@ body {
     /* Sem safe-area no player inline (ver nota na regra ≤640px): só
        :fullscreen usa env() — aqui é padding fixo rente à base. */
     padding: 10px 10px 10px;
+  }
+}
+
+/* Header em janelas médias ou com zoom (≤768px): esconde o texto do botão Atualizar para liberar espaço na busca */
+@media (max-width: 768px) {
+  .topbar-rescan-btn .rescan-label {
+    display: none;
+  }
+  .topbar-rescan-btn {
+    padding: 0;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    justify-content: center;
   }
 }
 
@@ -6097,7 +6243,8 @@ body {
   top: 0;
   right: 0;
   bottom: 0;
-  width: clamp(460px, 42vw, 700px);
+  width: clamp(320px, 40vw, 600px);
+  max-width: min(600px, 90vw);
   background: #0d1117;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   z-index: 100;
