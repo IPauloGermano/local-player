@@ -586,6 +586,9 @@ function syncSubtitleCcUi() {
 // Badge não-bloqueante sobre o player: feedback VISÍVEL de que a legenda está
 // sendo gerada (ou aguardando a fonte) — o dot do botão CC sozinho era sutil
 // demais. Some quando pronto/desativado; exibe aviso claro em falha.
+let subtitleBadgeDismissTimer = null;
+let subtitleBadgeDismissedMsg = null;
+
 function updateSubtitleBadge() {
   const badge = document.getElementById("player-substatus");
   if (!badge) return;
@@ -627,10 +630,59 @@ function updateSubtitleBadge() {
     msg = `⚠ ${shortReason} — abra o menu CC para detalhes`;
     isError = true;
   }
+
+  // Se o aviso de erro já foi dispensado (timeout ou clique), não reexibe
+  // em sincronizações passivas da UI (ex.: hover ou abertura de menus).
+  if (isError && msg && msg === subtitleBadgeDismissedMsg) {
+    return;
+  }
+
+  // Listener para fechamento imediato ao clicar no badge de erro
+  if (!badge._hasDismissListener) {
+    badge._hasDismissListener = true;
+    badge.addEventListener("click", () => {
+      if (badge.classList.contains("is-error")) {
+        const textEl = badge.querySelector("#player-substatus-text");
+        if (textEl && textEl.textContent) {
+          subtitleBadgeDismissedMsg = textEl.textContent;
+        }
+        if (subtitleBadgeDismissTimer) {
+          clearTimeout(subtitleBadgeDismissTimer);
+          subtitleBadgeDismissTimer = null;
+        }
+        badge.classList.add("fade-out");
+        setTimeout(() => {
+          badge.hidden = true;
+          badge.classList.remove("fade-out");
+        }, 250);
+      }
+    });
+  }
+
+  if (subtitleBadgeDismissTimer) {
+    clearTimeout(subtitleBadgeDismissTimer);
+    subtitleBadgeDismissTimer = null;
+  }
+  badge.classList.remove("fade-out");
   badge.classList.toggle("is-error", isError);
   badge.hidden = !msg;
   const textEl = badge.querySelector("#player-substatus-text");
   if (textEl && textEl.textContent !== msg) textEl.textContent = msg;
+
+  // Avisos transitórios em erro: somem após 5s para não ficarem fixos na tela
+  if (isError && msg) {
+    subtitleBadgeDismissTimer = setTimeout(() => {
+      subtitleBadgeDismissedMsg = msg;
+      badge.classList.add("fade-out");
+      setTimeout(() => {
+        badge.hidden = true;
+        badge.classList.remove("fade-out");
+      }, 250);
+      subtitleBadgeDismissTimer = null;
+    }, 5000);
+  } else if (!isError) {
+    subtitleBadgeDismissedMsg = null;
+  }
 }
 
 // Dispara a geração/regeneração da legenda da aula atual a partir do menu CC.
@@ -1695,6 +1747,16 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   subtitleState.percent = null;
   subtitleGenerateApi = null;
   subtitleCheckApi = null;
+  if (subtitleBadgeDismissTimer) {
+    clearTimeout(subtitleBadgeDismissTimer);
+    subtitleBadgeDismissTimer = null;
+  }
+  subtitleBadgeDismissedMsg = null;
+  const substatusEl = document.getElementById("player-substatus");
+  if (substatusEl) {
+    substatusEl.hidden = true;
+    substatusEl.classList.remove("fade-out");
+  }
   fetchSubtitleTranslations(video.path, video.libId);
   const overlayEl = document.getElementById("subtitle-overlay");
   if (overlayEl) overlayEl.hidden = true;
@@ -1717,6 +1779,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   // Ação do menu CC (Gerar/Regenerar): registrada para o delegation do player.
   // Força regeneração quando solicitado pelo usuário; cancela jobs órfãos e re-sonda até ficar pronta.
   subtitleGenerateApi = async () => {
+    subtitleBadgeDismissedMsg = null;
     subtitleState.lastError = null;
     subtitleState.ccKind = "generating";
     syncSubtitleCcUi();

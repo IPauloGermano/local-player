@@ -2254,14 +2254,21 @@ body {
   font-size: 12px;
   white-space: nowrap;
   pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
 }
 .player-substatus[hidden] {
   display: none;
+}
+.player-substatus.fade-out {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 .player-substatus.is-error {
   border-color: rgba(239, 68, 68, 0.45);
   background: rgba(24, 10, 10, 0.88);
   color: #fca5a5;
+  pointer-events: auto;
+  cursor: pointer;
 }
 .player-substatus.is-error .pc-preparing-spinner {
   display: none;
