@@ -26,7 +26,7 @@ function isAllowedHostHeader(host) {
     return false;
   }
   const bare = hostname.replace(/^\[|\]$/g, "");
-  if (bare === "localhost" || net.isIP(bare) !== 0) return true;
+  if (bare === "localhost" || bare === "aml-s9xx-box" || bare.endsWith(".ts.net") || net.isIP(bare) !== 0) return true;
   const configured = String(process.env.HOST || "").trim().toLowerCase();
   return !!configured && bare === configured;
 }

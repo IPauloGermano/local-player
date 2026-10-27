@@ -1883,7 +1883,7 @@ function setupVideoTracking(video) {
           el.removeAttribute("data-fallback");
           el.removeAttribute("data-resume");
           fallbackPreparing = false;
-          prepareTranscoded(video, el, saved);
+          prepareTranscoded(video, el, initialSaved);
         },
       );
       hidePreparingBadge();
@@ -1902,7 +1902,7 @@ function setupVideoTracking(video) {
     if (fallbackPreparing) return;
     fallbackPreparing = true;
     setPlayerStatus("");
-    prepareTranscoded(video, el, saved);
+    prepareTranscoded(video, el, initialSaved);
   });
   el.addEventListener("ended", () => {
     persist(true);
