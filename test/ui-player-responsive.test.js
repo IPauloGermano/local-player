@@ -30,6 +30,12 @@ test("styles.css: popovers possuem limite de altura dinâmico para telas baixas 
     /\.pc-pop\s*\{[^}]*max-height:\s*min\(/s,
     "pc-pop deve usar min() com viewport/container para evitar corte vertical"
   );
+  assert.doesNotMatch(
+    STYLES_CSS,
+    /\.pc-pop\s*\{[^}]*max-height:[^;]*100%/s,
+    "pc-pop não deve usar 100% em max-height (o pai .pc-group tem 40px de altura, o que esmaga o menu)"
+  );
+
 });
 
 test("player.js: ajusta dinamicamente a posição do popover aberto para evitar vazamento lateral", () => {
@@ -42,5 +48,35 @@ test("player.js: ajusta dinamicamente a posição do popover aberto para evitar 
     PLAYER_JS,
     /getBoundingClientRect/,
     "Deve calcular limites para impedir que popovers transbordem o player"
+  );
+  assert.doesNotMatch(
+    PLAYER_JS,
+    /if\s*\(\s*!willOpen\s*\)\s*\{?\s*constrainPopover/,
+    "constrainPopover deve ser chamado quando willOpen for verdadeiro (ao abrir o popover)"
+  );
+
+});
+
+test("subtitles.js e styles.css: overlay de legendas contido nos limites do player", () => {
+  const SUBTITLES_JS = fs.readFileSync(path.join(ROOT, "public", "js", "subtitles.js"), "utf8");
+  assert.match(
+    STYLES_CSS,
+    /\.subtitle-overlay\s*\{[^}]*overflow:\s*hidden/s,
+    "subtitle-overlay deve ter overflow: hidden"
+  );
+  assert.match(
+    STYLES_CSS,
+    /\.subtitle-overlay\s+\.subtitle-overlay-text\s*\{[^}]*overflow-wrap:\s*break-word/s,
+    "subtitle-overlay-text deve quebrar linhas longas"
+  );
+  assert.doesNotMatch(
+    SUBTITLES_JS,
+    /function\s+applySubtitleGeometry\s*\([^)]*\)\s*\{[\s\S]*?if\s*\([^)]*overlay\.hidden\)\s*return/,
+    "applySubtitleGeometry não deve abortar quando overlay.hidden for true"
+  );
+  assert.match(
+    SUBTITLES_JS,
+    /function\s+updateSubtitleOverlay[\s\S]*?overlay\.hidden\s*=\s*false;\s*applySubtitleGeometry\(\)/,
+    "updateSubtitleOverlay deve recalcular a geometria ao exibir novo segmento"
   );
 });

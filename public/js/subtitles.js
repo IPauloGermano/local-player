@@ -1128,29 +1128,36 @@ function syncSubtitleStylePanel(panel) {
 // "Aa Aparência" (absolute dentro do .lesson-header); no mobile (<600px) o
 // botão sai da toolbar e o acesso vira o item ⋮ > Aparência da legenda —
 // o painel abre centralizado na tela (position: fixed, via CSS).
-function subtitleStyleOpen() {
-  const panel = document.getElementById("subtitle-style-panel");
-  const btn = document.getElementById("subtitle-style-btn");
-  if (!panel) return;
-  sspCurrentView = "root";
-  renderSubtitleStyleView(panel, "root");
+function positionSubtitleStylePanel(panel) {
+  if (!panel || panel.hidden) return;
   if (window.matchMedia("(max-width: 600px)").matches) {
     panel.style.top = "";
     panel.style.left = "";
-    panel.hidden = false;
     return;
   }
-  panel.hidden = false;
-  const br = btn ? btn.getBoundingClientRect() : null;
+  const btn = document.getElementById("subtitle-style-btn");
+  const br = btn && btn.offsetWidth ? btn.getBoundingClientRect() : null;
   const pw = panel.offsetWidth || 300;
   const ph = panel.offsetHeight || 320;
   if (br && panel.parentElement) {
-    const topVp = Math.max(8, Math.min(br.bottom + 6, window.innerHeight - ph - 8));
+    const fitsBelow = br.bottom + 6 + ph <= window.innerHeight - 8;
+    const fitsAbove = br.top - 6 - ph >= 8;
+    const rawTop = !fitsBelow && fitsAbove ? br.top - ph - 6 : br.bottom + 6;
+    const topVp = Math.max(8, Math.min(rawTop, window.innerHeight - ph - 8));
     const leftVp = Math.max(8, Math.min(br.right - pw, window.innerWidth - pw - 8));
     const ar = panel.parentElement.getBoundingClientRect();
     panel.style.top = Math.round(topVp - ar.top) + "px";
     panel.style.left = Math.round(leftVp - ar.left) + "px";
   }
+}
+
+function subtitleStyleOpen() {
+  const panel = document.getElementById("subtitle-style-panel");
+  if (!panel) return;
+  sspCurrentView = "root";
+  renderSubtitleStyleView(panel, "root");
+  panel.hidden = false;
+  positionSubtitleStylePanel(panel);
 }
 
 function subtitleStyleClose() {
@@ -1198,6 +1205,7 @@ function wireSubtitleStylePanel(wrap) {
     // 2. Botão de voltar do submenu -> retorna ao menu raiz
     if (e.target.closest("#ssp-back-btn")) {
       renderSubtitleStyleView(panel, "root");
+      positionSubtitleStylePanel(panel);
       return;
     }
 
@@ -1205,6 +1213,7 @@ function wireSubtitleStylePanel(wrap) {
     const menuItem = e.target.closest(".ssp-item[data-view]");
     if (menuItem) {
       renderSubtitleStyleView(panel, menuItem.dataset.view);
+      positionSubtitleStylePanel(panel);
       return;
     }
 
@@ -1385,36 +1394,44 @@ function computeSubtitleGeometry(videoEl, wrap) {
   // provisório — nunca renderiza a legenda solta no topo. O repositionamento
   // real acontece via loadedmetadata/ResizeObserver quando os metadados chegam.
   if (!vw || !vh) {
-    const fw = box.width;
-    const fh = box.height;
+    const left = Math.max(0, box.left - wrapRect.left);
+    const top = Math.max(0, box.top - wrapRect.top);
+    const fw = Math.max(0, Math.min(box.width, wrapRect.width - left));
+    const fh = Math.max(0, Math.min(box.height, wrapRect.height - top));
+    const refH = Math.min(fh, fw * (9 / 16));
     return {
       frame: {
-        left: box.left - wrapRect.left,
-        top: box.top - wrapRect.top,
+        left,
+        top,
         width: fw,
         height: fh,
       },
-      fontPx: Math.max(subtitleMinFontPx(), Math.min(36, Math.round(fh * 0.04))),
+      fontPx: Math.max(subtitleMinFontPx(), Math.min(36, Math.round(refH * 0.04))),
       bottomInset: ctrlH > 0 ? ctrlH + Math.max(6, Math.round(fh * 0.02)) : Math.max(6, Math.round(fh * 0.02)),
     };
   }
   // object-fit: contain → escala única que cabe dentro do box; o resto é
   // letterbox. O quadro real é o retângulo centralizado por essa escala.
   const scale = Math.min(box.width / vw, box.height / vh);
-  const fw = vw * scale;
-  const fh = vh * scale;
-  const fl = box.left + (box.width - fw) / 2;
-  const ft = box.top + (box.height - fh) / 2;
+  const rawFw = vw * scale;
+  const rawFh = vh * scale;
+  const fl = box.left + (box.width - rawFw) / 2;
+  const ft = box.top + (box.height - rawFh) / 2;
+  const left = Math.max(0, fl - wrapRect.left);
+  const top = Math.max(0, ft - wrapRect.top);
+  const fw = Math.max(0, Math.min(rawFw, wrapRect.width - left));
+  const fh = Math.max(0, Math.min(rawFh, wrapRect.height - top));
+  const refH = Math.min(fh, fw * (9 / 16));
   // Fonte proporcional ao quadro (padrão sutil ≈ 4% da altura), com clamp.
   // A preferência de "Tamanho" (sm/md/lg) escala este valor em
   // applySubtitleGeometry — a base aqui é sempre a do tamanho "Normal".
-  const fontPx = Math.max(subtitleMinFontPx(), Math.min(36, Math.round(fh * 0.04)));
+  const fontPx = Math.max(subtitleMinFontPx(), Math.min(36, Math.round(refH * 0.04)));
   const margin = Math.max(6, Math.round(fh * 0.02));
   const bottomInset = ctrlH > 0 ? ctrlH + margin : margin;
   return {
     frame: {
-      left: fl - wrapRect.left,
-      top: ft - wrapRect.top,
+      left,
+      top,
       width: fw,
       height: fh,
     },
@@ -1431,7 +1448,7 @@ function applySubtitleGeometry() {
   const videoEl = document.getElementById("video-el");
   const wrap = document.getElementById("player-wrap");
   const textEl = overlay && overlay.querySelector(".subtitle-overlay-text");
-  if (!overlay || !videoEl || !wrap || !textEl || overlay.hidden) return;
+  if (!overlay || !videoEl || !wrap || !textEl) return;
   applySubtitleStyle(overlay);
   const g = computeSubtitleGeometry(videoEl, wrap);
   const scale = SUBTITLE_STYLE_SCALE[loadSubtitleStyle().size] || 1;
@@ -1447,13 +1464,15 @@ function applySubtitleGeometry() {
   // Posição arrastável (YouTube): `pos` normalizada vira inset real, clampada
   // para a legenda nunca sair do quadro nem ficar ATRÁS da barra de controles
   // (o mínimo é o inset padrão, que já descola da barra). Sem `pos` → padrão.
-  let bottomInset = g.bottomInset;
+  const fh = g.frame.height;
+  const fw = g.frame.width;
+  const textH = !overlay.hidden && textEl.offsetHeight ? textEl.offsetHeight : Math.ceil(fontPx * 1.35);
+  const maxAllowedInset = Math.max(6, fh - textH - 6);
+  let bottomInset = Math.min(g.bottomInset, maxAllowedInset);
   let hOff = 0;
   if (subtitleState.pos) {
-    const fh = g.frame.height;
-    const fw = g.frame.width;
-    const minInset = g.bottomInset; // nunca abaixo da barra de controles
-    const maxV = Math.max(minInset, fh - fontPx * 1.3 - 6);
+    const minInset = Math.min(g.bottomInset, maxAllowedInset); // nunca abaixo da barra de controles
+    const maxV = Math.max(minInset, maxAllowedInset);
     bottomInset = Math.min(maxV, Math.max(minInset, subtitleState.pos.v * fh));
     // Laterais: o texto inteiro (largura real medida) fica dentro do quadro,
     // respeitando o padding de 3% do overlay — nunca atrás do player.
@@ -1510,6 +1529,9 @@ function wireSubtitleGeometry() {
   };
   addL(document, "fullscreenchange", applySubtitleGeometry);
   addL(window, "resize", applySubtitleGeometry);
+  addL(videoEl, "loadedmetadata", applySubtitleGeometry);
+  addL(videoEl, "loadeddata", applySubtitleGeometry);
+  addL(videoEl, "resize", applySubtitleGeometry);
   wireSubtitleDrag();
 }
 
@@ -1667,6 +1689,7 @@ function updateSubtitleOverlay(time) {
   if (!overlay.hidden && inner.textContent === text) return; // segmento igual
   inner.textContent = text;
   overlay.hidden = false;
+  applySubtitleGeometry();
 }
 
 // Carrega o documento editável do backend e liga o overlay à reprodução.

@@ -2516,6 +2516,9 @@ body {
   align-items: flex-end;
   justify-content: center;
   padding: 0 3%;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
   box-sizing: border-box;
   text-align: center;
   transform: translateZ(0);
@@ -2526,7 +2529,12 @@ body {
 .subtitle-overlay .subtitle-overlay-text {
   display: inline-block;
   position: relative;
+  min-width: 0;
   max-width: 100%;
+  max-height: calc(100% - 12px);
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+  word-break: break-word;
   /* margin-bottom é setado inline pelo JS (altura dos controles + margem).
      A transição suaviza a descida da legenda quando a barra some (pc-idle):
      a legenda desliza para perto da base em vez de "saltar". */
@@ -3264,8 +3272,8 @@ body {
   padding: 12px 14px;
   min-width: 200px;
   max-width: min(290px, calc(100cqw - 16px), calc(100vw - 24px));
-  max-height: min(260px, calc(100% - 64px), 60vh);
-  max-height: min(260px, calc(100% - 64px), 60dvh);
+  max-height: min(320px, calc(56.25cqw - 64px), 60vh);
+  max-height: min(320px, calc(56.25cqw - 64px), 60dvh);
   overflow-y: auto;
 }
 .pc-vol-pop {
@@ -4257,7 +4265,8 @@ body {
   .course-view.theater.summary-open {
     grid-template-columns: 1fr;
   }
-  .lesson-sidebar-toggle {
+  .lesson-sidebar-toggle,
+  .sidebar-close-btn {
     display: inline-flex;
   }
   .course-view .sidebar {
@@ -4313,6 +4322,8 @@ body {
     max-width: min(360px, 88vw);
     height: 100%;
     height: 100dvh;
+    max-height: none;
+    padding: 10px;
     display: flex;
   }
   .course-view.drawer-host.drawer-open #tree-slot,
