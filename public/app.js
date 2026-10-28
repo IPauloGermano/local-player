@@ -994,7 +994,7 @@ function toggleSummaryPanel() {
 // comportamento desejado. A classe .drawer-open no .course-view comanda a
 // visibilidade; o backdrop fecha ao tocar fora; Esc fecha também.
 function isMobileDrawer() {
-  return window.matchMedia("(max-width: 900px)").matches;
+  return window.matchMedia("(max-width: 1024px)").matches;
 }
 function setDrawerOpen(open) {
   const view = document.querySelector(".course-view");
@@ -2465,7 +2465,7 @@ async function init() {
     e.preventDefault();
     e.stopPropagation();
     const favPath = favBtn.dataset.fav ? decodeURIComponent(favBtn.dataset.fav) : null;
-    const favLib = favBtn.dataset.lib ? decodeURIComponent(favLib.dataset.lib) : "";
+    const favLib = favBtn.dataset.lib ? decodeURIComponent(favBtn.dataset.lib) : "";
     if (!favPath) return;
     toggleFavorite(favPath, favLib);
     const on = isFavorite(favPath, favLib);

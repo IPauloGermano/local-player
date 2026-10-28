@@ -840,6 +840,13 @@ function wirePlayerUI(videoEl) {
   };
 
   const closePopovers = () => {
+    [volPop, speedMenu, ccMenu, moreMenu].forEach((pop) => {
+      if (pop) {
+        pop.style.right = "";
+        pop.style.maxHeight = "";
+        pop.style.overflowY = "";
+      }
+    });
     if (volPop) volPop.hidden = true;
     if (speedMenu) speedMenu.hidden = true;
     if (ccMenu) ccMenu.hidden = true;
@@ -1162,8 +1169,8 @@ function wirePlayerUI(videoEl) {
       const willOpen = volPop.hidden;
       closePopovers();
       volPop.hidden = !willOpen;
-      volBtn.setAttribute("aria-expanded", String(!willOpen));
-      if (!willOpen) {
+      volBtn.setAttribute("aria-expanded", String(willOpen));
+      if (willOpen) {
         constrainPopover(volPop);
         volRange?.focus();
       }
@@ -1209,8 +1216,8 @@ function wirePlayerUI(videoEl) {
       const willOpen = speedMenu.hidden;
       closePopovers();
       speedMenu.hidden = !willOpen;
-      speedBtn.setAttribute("aria-expanded", String(!willOpen));
-      if (!willOpen) constrainPopover(speedMenu);
+      speedBtn.setAttribute("aria-expanded", String(willOpen));
+      if (willOpen) constrainPopover(speedMenu);
     });
   }
   if (ccBtn && ccMenu) {
@@ -1219,8 +1226,8 @@ function wirePlayerUI(videoEl) {
       const willOpen = ccMenu.hidden;
       closePopovers();
       ccMenu.hidden = !willOpen;
-      ccBtn.setAttribute("aria-expanded", String(!willOpen));
-      if (!willOpen) constrainPopover(ccMenu);
+      ccBtn.setAttribute("aria-expanded", String(willOpen));
+      if (willOpen) constrainPopover(ccMenu);
     });
   }
   if (moreBtn && moreMenu) {
@@ -1229,8 +1236,8 @@ function wirePlayerUI(videoEl) {
       const willOpen = moreMenu.hidden;
       closePopovers();
       moreMenu.hidden = !willOpen;
-      moreBtn.setAttribute("aria-expanded", String(!willOpen));
-      if (!willOpen) constrainPopover(moreMenu);
+      moreBtn.setAttribute("aria-expanded", String(willOpen));
+      if (willOpen) constrainPopover(moreMenu);
     });
   }
   // Velocidade: um único binding para os itens dos dois menus (barra + ⋮),
