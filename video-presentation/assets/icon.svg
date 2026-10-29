@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background: Dark Obsidian Canvas -->
+    <linearGradient id="bgBase" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#161b26"/>
+      <stop offset="100%" stop-color="#0a0c12"/>
+    </linearGradient>
+
+    <!-- Outer Squircle Hairline Stroke -->
+    <linearGradient id="squircleStroke" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="60%" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.01"/>
+    </linearGradient>
+
+    <!-- Inner Well / Recessed Disc -->
+    <linearGradient id="innerWell" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0e121a"/>
+      <stop offset="100%" stop-color="#192030"/>
+    </linearGradient>
+
+    <!-- Inner Disc Border -->
+    <linearGradient id="innerStroke" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.12"/>
+    </linearGradient>
+
+    <!-- Brand Vibrant Orange Gradient -->
+    <linearGradient id="playOrange" x1="10%" y1="0%" x2="90%" y2="100%">
+      <stop offset="0%" stop-color="#ffa05c"/>
+      <stop offset="45%" stop-color="#ff8a3d"/>
+      <stop offset="100%" stop-color="#e65100"/>
+    </linearGradient>
+
+    <!-- Soft Ambient Cast Shadow -->
+    <filter id="playShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.55"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Base Squircle (448x448 with 108px radius) -->
+  <rect x="32" y="32" width="448" height="448" rx="108" ry="108" fill="url(#bgBase)"/>
+  <rect x="32" y="32" width="448" height="448" rx="108" ry="108" fill="none" stroke="url(#squircleStroke)" stroke-width="2"/>
+
+  <!-- Inner Recessed Disc (Radius 164 centered at 256, 256) -->
+  <circle cx="256" cy="256" r="164" fill="url(#innerWell)"/>
+  <circle cx="256" cy="256" r="164" fill="none" stroke="url(#innerStroke)" stroke-width="1.5"/>
+
+  <!-- Play Symbol: Centered with optical compensation (Apex at 346, Base at 202, center 260) -->
+  <path d="M 216,170
+           C 202,162 192,169 192,185
+           L 192,327
+           C 192,343 202,350 216,342
+           L 338,271
+           C 352,263 352,249 338,241
+           Z"
+        fill="url(#playOrange)"
+        filter="url(#playShadow)"/>
+</svg>

@@ -8,6 +8,22 @@ disco — módulos, treinamentos, cursos e bibliotecas de vídeo no **Linux**. L
 tudo direto do armazenamento local ou externo (HD, SSD, pendrive, cartão SD),
 sem envio para a internet.
 
+---
+
+<p align="center">
+  <video src="https://raw.githubusercontent.com/IPauloGermano/local-player/main/docs/presentation.mp4" width="100%" controls poster="docs/images/presentation-cover.png"></video>
+</p>
+
+<p align="center">
+  <a href="https://raw.githubusercontent.com/IPauloGermano/local-player/main/docs/presentation.mp4">
+    <img src="docs/images/presentation-cover.png" alt="Apresentação do Local Player" width="100%">
+  </a>
+  <br>
+  <em>▶️ Clique na imagem para assistir ao vídeo de apresentação (MP4 de 72s)</em>
+</p>
+
+---
+
 ## Funcionalidades
 
 - **Boot instantâneo e scan concorrente**: cache de árvore persistente em disco

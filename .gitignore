@@ -47,3 +47,9 @@ dist/
 builder-debug.yml
 builder-effective-config.yaml
 .playwright-mcp/
+
+# ===== Vídeo / HyperFrames =====
+.hyperframes/
+video-presentation/.hyperframes/
+test_render.sh
+

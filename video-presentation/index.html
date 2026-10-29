@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920, height=1080" />
+  <title>Local Player — Launch Film</title>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0a0b0e;
+      --bg-surface: #13151b;
+      --bg-elevated: #181b24;
+      --accent: #ff8a3d;
+      --accent-glow: rgba(255, 138, 61, 0.35);
+      --accent-soft: rgba(255, 138, 61, 0.12);
+      --text-white: #ffffff;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --border-subtle: rgba(255, 255, 255, 0.09);
+      --border-accent: rgba(255, 138, 61, 0.3);
+      --font-display: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    html, body {
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      background: var(--bg-dark);
+      font-family: var(--font-body);
+      color: var(--text-main);
+    }
+
+    #composition-root {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      background-color: var(--bg-dark);
+    }
+
+    /* Ambient dynamic background glow */
+    .ambient-glow {
+      position: absolute;
+      width: 1200px;
+      height: 800px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 138, 61, 0.11) 0%, rgba(230, 81, 0, 0.04) 45%, transparent 75%);
+      filter: blur(90px);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .glow-center { top: 140px; left: 360px; }
+    .glow-right  { top: 100px; right: -100px; }
+    .glow-left   { top: 180px; left: -100px; }
+
+    /* Scene full screen clip container */
+    .scene {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 1920px;
+      height: 1080px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Typography styles */
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-display);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px solid var(--border-accent);
+      border-radius: 999px;
+      padding: 8px 18px;
+      margin-bottom: 22px;
+      box-shadow: 0 4px 20px rgba(255, 138, 61, 0.15);
+    }
+
+    .headline {
+      font-family: var(--font-display);
+      font-size: 58px;
+      font-weight: 800;
+      line-height: 1.14;
+      letter-spacing: -0.035em;
+      color: var(--text-white);
+      margin-bottom: 24px;
+    }
+
+    .headline-large {
+      font-size: 80px;
+      line-height: 1.08;
+      letter-spacing: -0.04em;
+    }
+
+    .accent-gradient {
+      background: linear-gradient(135deg, #ffa05c 0%, #ff8a3d 50%, #e65100 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .text-gradient {
+      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .description {
+      font-family: var(--font-body);
+      font-size: 21px;
+      font-weight: 400;
+      line-height: 1.55;
+      color: var(--text-muted);
+      max-width: 580px;
+    }
+
+    /* Two-column layout */
+    .split-layout {
+      width: 1720px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 70px;
+    }
+
+    .text-column {
+      flex: 0 0 560px;
+    }
+
+    .visual-column {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    /* Window / Device mockups */
+    .mockup-window {
+      position: relative;
+      width: 1040px;
+      height: 650px;
+      background: var(--bg-surface);
+      border-radius: 16px;
+      border: 1px solid var(--border-subtle);
+      box-shadow: 0 35px 90px -15px rgba(0, 0, 0, 0.85),
+                  0 0 0 1px rgba(255, 255, 255, 0.08),
+                  0 0 50px -10px var(--accent-glow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .window-header {
+      height: 42px;
+      background: #111319;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      padding: 0 18px;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .window-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.18);
+    }
+
+    .window-dot.red { background: #ff5f56; }
+    .window-dot.yellow { background: #ffbd2e; }
+    .window-dot.green { background: #27c93f; }
+
+    .window-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #64748b;
+      margin-left: 12px;
+      font-family: var(--font-body);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .window-viewport {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #0d0f14;
+    }
+
+    .window-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top center;
+      display: block;
+    }
+
+    /* Floating callout pills & cards */
+    .callout-pills {
+      margin-top: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .pill-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      background: rgba(24, 27, 36, 0.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 12px 20px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    }
+
+    .pill-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--accent-soft);
+      border: 1px solid var(--border-accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .pill-text {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-white);
+      letter-spacing: -0.01em;
+    }
+
+    .pill-sub {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+
+    /* Floating feature cards (Scene 5 - AI) */
+    .feature-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      width: 600px;
+    }
+
+    .feature-card {
+      background: rgba(19, 21, 27, 0.88);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 18px;
+      padding: 26px 30px;
+      display: flex;
+      align-items: flex-start;
+      gap: 22px;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.55),
+                  0 0 0 1px rgba(255, 255, 255, 0.06);
+    }
+
+    .feature-card.highlight {
+      border-color: var(--border-accent);
+      background: linear-gradient(135deg, rgba(255, 138, 61, 0.07) 0%, rgba(19, 21, 27, 0.95) 100%);
+    }
+
+    .feature-icon-box {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(255, 160, 92, 0.2) 0%, rgba(230, 81, 0, 0.1) 100%);
+      border: 1px solid var(--border-accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+
+    .feature-title {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-white);
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+
+    .feature-desc {
+      font-size: 15px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    /* Scene 1 & 7 Center Hero */
+    .center-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      max-width: 980px;
+      position: relative;
+    }
+
+    .hero-logo-box {
+      position: relative;
+      width: 150px;
+      height: 150px;
+      margin-bottom: 40px;
+      isolation: isolate;
+    }
+
+    .hero-logo-img {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      filter: drop-shadow(0 20px 40px rgba(255, 138, 61, 0.45));
+    }
+
+    .hero-logo-pulse {
+      position: absolute;
+      top: -20px;
+      left: -20px;
+      right: -20px;
+      bottom: -20px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 138, 61, 0.25) 0%, transparent 70%);
+      filter: blur(25px);
+      z-index: 1;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      padding: 10px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #e2e8f0;
+      margin-top: 36px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 10px #22c55e;
+    }
+
+  </style>
+</head>
+<body>
+
+  <div data-hf-id="hf-0qg6"
+    id="composition-root"
+    data-composition-id="main"
+    data-start="0"
+    data-duration="72"
+    data-width="1920"
+    data-height="1080"
+  >
+    <!-- Background Soundtrack (72s duration) -->
+    <audio data-hf-id="hf-0zen"
+      id="bgm"
+      class="clip"
+      data-start="0"
+      data-duration="72"
+      src="assets/soundtrack.mp3"
+      data-volume="1.0"
+      data-has-audio="true"
+    ></audio>
+
+    <!-- Background dynamic ambient glow -->
+    <div data-hf-id="hf-sbru" id="ambientGlow" class="ambient-glow glow-center"></div>
+
+    <!-- ==========================================
+         SCENE 1: Introduction & Brand Reveal (0s - 9.5s)
+         ========================================== -->
+    <div data-hf-id="hf-b28f" id="scene1" class="scene clip" data-start="0" data-duration="9.5">
+      <div data-hf-id="hf-ydnw" class="center-hero">
+        <div data-hf-id="hf-4l0h" id="scene1-logo" class="hero-logo-box">
+          <div data-hf-id="hf-oipk" class="hero-logo-pulse"></div>
+          <img data-hf-id="hf-r3w1" id="scene1-logo-img" src="assets/icon.svg" alt="Local Player" class="hero-logo-img" />
+        </div>
+        <div data-hf-id="hf-h55y" id="scene1-kicker" class="kicker">
+          <span data-hf-id="hf-ald6">●</span> UMA NOVA EXPERIÊNCIA DE ESTUDO
+        </div>
+        <h1 data-hf-id="hf-2la9" id="scene1-headline" class="headline headline-large">
+          Seu conhecimento.<br data-hf-id="hf-x5px" />
+          <span data-hf-id="hf-we2b" class="accent-gradient">No seu ritmo.</span>
+        </h1>
+        <p data-hf-id="hf-x29x" id="scene1-sub" class="description" style="max-width: 720px; font-size: 24px;">
+          Um ambiente desktop de alta performance projetado para transformar suas aulas locais em domínio real e contínuo.
+        </p>
+      </div>
+    </div>
+
+    <!-- ==========================================
+         SCENE 2: The Personal Library (9.5s - 20s)
+         ========================================== -->
+    <div data-hf-id="hf-t6zw" id="scene2" class="scene clip" data-start="9.5" data-duration="10.5">
+      <div data-hf-id="hf-5hxz" class="split-layout">
+        <div data-hf-id="hf-nzng" id="scene2-text" class="text-column">
+          <div data-hf-id="hf-lub8" class="kicker">BIBLIOTECA PESSOAL</div>
+          <h2 data-hf-id="hf-i4j8" class="headline">
+            Toda a sua jornada<br data-hf-id="hf-rsrt" />
+            <span data-hf-id="hf-3396" class="text-gradient">em um só lugar.</span>
+          </h2>
+          <p data-hf-id="hf-tyer" class="description">
+            Conecte suas pastas locais com um clique. O Local Player detecta automaticamente novos cursos, organiza módulos e calcula seu progresso em tempo real.
+          </p>
+          <div data-hf-id="hf-r7vn" class="callout-pills">
+            <div data-hf-id="hf-qzw3" class="pill-item">
+              <div data-hf-id="hf-6061" class="pill-icon">✦</div>
+              <div data-hf-id="hf-yeow">
+                <div data-hf-id="hf-sdkv" class="pill-text">Múltiplas Bibliotecas Locais</div>
+                <div data-hf-id="hf-vhvk" class="pill-sub">Escaneamento instantâneo sem nuvem</div>
+              </div>
+            </div>
+            <div data-hf-id="hf-68b7" class="pill-item">
+              <div data-hf-id="hf-g9ae" class="pill-icon">📊</div>
+              <div data-hf-id="hf-y7yw">
+                <div data-hf-id="hf-e73z" class="pill-text">Progresso Unificado</div>
+                <div data-hf-id="hf-9qqx" class="pill-sub">Estatísticas detalhadas de tempo e aulas</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div data-hf-id="hf-5z1g" id="scene2-visual" class="visual-column">
+          <div data-hf-id="hf-36a2" class="mockup-window">
+            <div data-hf-id="hf-c5py" class="window-header">
+              <div data-hf-id="hf-9p9f" class="window-dot red"></div>
+              <div data-hf-id="hf-hn9y" class="window-dot yellow"></div>
+              <div data-hf-id="hf-lxqv" class="window-dot green"></div>
+              <div data-hf-id="hf-bdyi" class="window-title">Local Player — Minha Biblioteca</div>
+            </div>
+            <div data-hf-id="hf-lseb" class="window-viewport">
+              <img data-hf-id="hf-tuis" id="scene2-img" src="assets/home.png" alt="Library" class="window-img" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==========================================
+         SCENE 3: Continuous Learning & Flow (20s - 30.5s)
+         ========================================== -->
+    <div data-hf-id="hf-vg0d" id="scene3" class="scene clip" data-start="20" data-duration="10.5">
+      <div data-hf-id="hf-juvr" class="split-layout">
+        <div data-hf-id="hf-yx1v" id="scene3-visual" class="visual-column">
+          <div data-hf-id="hf-2o9a" class="mockup-window">
+            <div data-hf-id="hf-j3oa" class="window-header">
+              <div data-hf-id="hf-vacj" class="window-dot red"></div>
+              <div data-hf-id="hf-38je" class="window-dot yellow"></div>
+              <div data-hf-id="hf-11xz" class="window-dot green"></div>
+              <div data-hf-id="hf-0f5h" class="window-title">Local Player — Estrutura Modular do Curso</div>
+            </div>
+            <div data-hf-id="hf-xklf" class="window-viewport">
+              <img data-hf-id="hf-qhgn" id="scene3-img" src="assets/course.png" alt="Course" class="window-img" />
+            </div>
+          </div>
+        </div>
+
+        <div data-hf-id="hf-4ran" id="scene3-text" class="text-column">
+          <div data-hf-id="hf-p23s" class="kicker">CONTINUIDADE TOTAL</div>
+          <h2 data-hf-id="hf-qvqi" class="headline">
+            Retome no segundo exato<br data-hf-id="hf-szow" />
+            <span data-hf-id="hf-2olf" class="accent-gradient">onde você parou.</span>
+          </h2>
+          <p data-hf-id="hf-5ycr" class="description">
+            Fileira dedicada de continuidade imediata, marcação automática de conclusão e transição fluida para a próxima aula sem interromper seu foco.
+          </p>
+          <div data-hf-id="hf-kyw3" class="callout-pills">
+            <div data-hf-id="hf-5u06" class="pill-item">
+              <div data-hf-id="hf-e58p" class="pill-icon">▶</div>
+              <div data-hf-id="hf-x11t">
+                <div data-hf-id="hf-4w3p" class="pill-text">Retomada Instantânea</div>
+                <div data-hf-id="hf-scfd" class="pill-sub">Timestamp gravado automaticamente</div>
+              </div>
+            </div>
+            <div data-hf-id="hf-5fp5" class="pill-item">
+              <div data-hf-id="hf-b65e" class="pill-icon">✓</div>
+              <div data-hf-id="hf-xfcu">
+                <div data-hf-id="hf-jwyn" class="pill-text">Módulos Inteligentes</div>
+                <div data-hf-id="hf-9es9" class="pill-sub">Visualização clara do que falta para concluir</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==========================================
+         SCENE 4: The Cinema-Grade Player (30.5s - 42.5s)
+         ========================================== -->
+    <div data-hf-id="hf-wpar" id="scene4" class="scene clip" data-start="30.5" data-duration="12">
+      <div data-hf-id="hf-jgkq" class="split-layout">
+        <div data-hf-id="hf-bi1i" id="scene4-text" class="text-column">
+          <div data-hf-id="hf-66mw" class="kicker">EXPERIÊNCIA DE REPRODUÇÃO</div>
+          <h2 data-hf-id="hf-3ix4" class="headline">
+            Construído para foco<br data-hf-id="hf-sldv" />
+            <span data-hf-id="hf-b27a" class="text-gradient">e velocidade.</span>
+          </h2>
+          <p data-hf-id="hf-u5rs" class="description">
+            Interface limpa e imersiva. Atalhos precisos de teclado, amplificação de áudio para gravações silenciosas e controle refinado de velocidade de reprodução.
+          </p>
+          <div data-hf-id="hf-kkl2" class="callout-pills">
+            <div data-hf-id="hf-51e4" class="pill-item">
+              <div data-hf-id="hf-7why" class="pill-icon">🔊</div>
+              <div data-hf-id="hf-w8fr">
+                <div data-hf-id="hf-50eh" class="pill-text">Audio Boost até 200%</div>
+                <div data-hf-id="hf-ho4p" class="pill-sub">Equalização limpa para aulas com som baixo</div>
+              </div>
+            </div>
+            <div data-hf-id="hf-4n33" class="pill-item">
+              <div data-hf-id="hf-mbfw" class="pill-icon">⚡</div>
+              <div data-hf-id="hf-wmqs">
+                <div data-hf-id="hf-zt5a" class="pill-text">Velocidade Contínua (0.25x – 3x)</div>
+                <div data-hf-id="hf-78g4" class="pill-sub">Ajuste milimétrico sem distorção de tom</div>
+              </div>
+            </div>
+            <div data-hf-id="hf-48s2" class="pill-item">
+              <div data-hf-id="hf-t6on" class="pill-icon">⌨</div>
+              <div data-hf-id="hf-vftp">
+                <div data-hf-id="hf-la0w" class="pill-text">Atalhos Ágeis</div>
+                <div data-hf-id="hf-7hbc" class="pill-sub">Pular 5s, 10s, alternar materiais e zoom</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div data-hf-id="hf-vtlu" id="scene4-visual" class="visual-column">
+          <div data-hf-id="hf-32kb" class="mockup-window">
+            <div data-hf-id="hf-jhzb" class="window-header">
+              <div data-hf-id="hf-uw1i" class="window-dot red"></div>
+              <div data-hf-id="hf-3muf" class="window-dot yellow"></div>
+              <div data-hf-id="hf-0nmy" class="window-dot green"></div>
+              <div data-hf-id="hf-myjs" class="window-title">Local Player — Player Imersivo</div>
+            </div>
+            <div data-hf-id="hf-x6ae" class="window-viewport">
+              <img data-hf-id="hf-u6mk" id="scene4-img" src="assets/player.png" alt="Player" class="window-img" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==========================================
+         SCENE 5: AI-Assisted Study Companion (42.5s - 54.5s)
+         ========================================== -->
+    <div data-hf-id="hf-vb0h" id="scene5" class="scene clip" data-start="42.5" data-duration="12">
+      <div data-hf-id="hf-j29p" class="split-layout">
+        <div data-hf-id="hf-w5sh" id="scene5-text" class="text-column">
+          <div data-hf-id="hf-yeov" class="kicker">INTELIGÊNCIA DE ESTUDO</div>
+          <h2 data-hf-id="hf-t1nd" class="headline">
+            Entenda. Pratique.<br data-hf-id="hf-qluq" />
+            <span data-hf-id="hf-u92k" class="accent-gradient">Memorize.</span>
+          </h2>
+          <p data-hf-id="hf-xaud" class="description">
+            Vá muito além de apenas assistir. Ferramentas cognitivas com IA trabalham com você para fixar cada conceito essencial da aula.
+          </p>
+          <div data-hf-id="hf-k6a1" class="callout-pills">
+            <div data-hf-id="hf-3uh1" class="pill-item">
+              <div data-hf-id="hf-nx77" class="pill-icon">🧠</div>
+              <div data-hf-id="hf-vu4q">
+                <div data-hf-id="hf-kouq" class="pill-text">Aprendizado Ativo Integrado</div>
+                <div data-hf-id="hf-lwql" class="pill-sub">Do conteúdo ao domínio duradouro</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div data-hf-id="hf-rrqx" id="scene5-visual" class="visual-column">
+          <div data-hf-id="hf-tjqf" class="feature-grid">
+            <div data-hf-id="hf-g4y8" id="feat-card-1" class="feature-card highlight">
+              <div data-hf-id="hf-hvd9" class="feature-icon-box">💬</div>
+              <div data-hf-id="hf-1043">
+                <div data-hf-id="hf-cvpt" class="feature-title">Tutor de IA Contextual</div>
+                <div data-hf-id="hf-3gy7" class="feature-desc">Tire dúvidas em tempo real sobre a explicação do professor com contexto exato do vídeo.</div>
+              </div>
+            </div>
+
+            <div data-hf-id="hf-gvyz" id="feat-card-2" class="feature-card">
+              <div data-hf-id="hf-sml9" class="feature-icon-box">🎯</div>
+              <div data-hf-id="hf-1ef4">
+                <div data-hf-id="hf-u5ki" class="feature-title">Quizzes Gerados na Hora</div>
+                <div data-hf-id="hf-a7qh" class="feature-desc">Teste sua retenção instantaneamente com questões de múltipla escolha geradas a partir da aula.</div>
+              </div>
+            </div>
+
+            <div data-hf-id="hf-cxuy" id="feat-card-3" class="feature-card">
+              <div data-hf-id="hf-yyjg" class="feature-icon-box">📇</div>
+              <div data-hf-id="hf-c4s8">
+                <div data-hf-id="hf-q8yx" class="feature-title">Flashcards com Repetição Espaçada</div>
+                <div data-hf-id="hf-tmdv" class="feature-desc">Crie cards de memorização para termos técnicos, códigos e fórmulas com revisão cronometrada.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==========================================
+         SCENE 6: Sovereign Local Privacy (54.5s - 64s)
+         ========================================== -->
+    <div data-hf-id="hf-wqrs" id="scene6" class="scene clip" data-start="54.5" data-duration="9.5">
+      <div data-hf-id="hf-luew" class="split-layout">
+        <div data-hf-id="hf-t3oo" id="scene6-visual" class="visual-column">
+          <div data-hf-id="hf-3gvc" class="mockup-window">
+            <div data-hf-id="hf-jwac" class="window-header">
+              <div data-hf-id="hf-uhqh" class="window-dot red"></div>
+              <div data-hf-id="hf-415g" class="window-dot yellow"></div>
+              <div data-hf-id="hf-09bx" class="window-dot green"></div>
+              <div data-hf-id="hf-izi1" class="window-title">Local Player — Preferências & Dados Locais</div>
+            </div>
+            <div data-hf-id="hf-wrzd" class="window-viewport">
+              <img data-hf-id="hf-09k2" id="scene6-img" src="assets/settings.png" alt="Settings" class="window-img" />
+            </div>
+          </div>
+        </div>
+
+        <div data-hf-id="hf-aqpc" id="scene6-text" class="text-column">
+          <div data-hf-id="hf-o9bh" class="kicker">SOBERANIA & PRIVACIDADE</div>
+          <h2 data-hf-id="hf-f01f" class="headline">
+            100% no seu computador.<br data-hf-id="hf-q7jp" />
+            <span data-hf-id="hf-uwwn" class="text-gradient">Zero telemetria.</span>
+          </h2>
+          <p data-hf-id="hf-1ayw" class="description">
+            Sem contas obrigatórias. Sem rastreamento de navegação. Seus arquivos permanecem no seu disco rígido, acessíveis mesmo sem conexão com a internet.
+          </p>
+          <div data-hf-id="hf-jrz0" class="callout-pills">
+            <div data-hf-id="hf-3g60" class="pill-item">
+              <div data-hf-id="hf-lrqj" class="pill-icon">🛡</div>
+              <div data-hf-id="hf-bqh7">
+                <div data-hf-id="hf-amqy" class="pill-text">Privacidade Absoluta</div>
+                <div data-hf-id="hf-27f1" class="pill-sub">Nenhum dado de estudo sai da sua máquina</div>
+              </div>
+            </div>
+            <div data-hf-id="hf-31uz" class="pill-item">
+              <div data-hf-id="hf-v66c" class="pill-icon">⚡</div>
+              <div data-hf-id="hf-bc66">
+                <div data-hf-id="hf-f82t" class="pill-text">Desempenho Instantâneo Offline</div>
+                <div data-hf-id="hf-i91n" class="pill-sub">Acesso imediato a gigabytes de aulas sem carregar</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==========================================
+         SCENE 7: Closing Call To Action (64s - 72s)
+         ========================================== -->
+    <div data-hf-id="hf-3q5t" id="scene7" class="scene clip" data-start="64" data-duration="8">
+      <div data-hf-id="hf-sqis" class="center-hero">
+        <div data-hf-id="hf-1x46" id="scene7-logo" class="hero-logo-box" style="width: 170px; height: 170px; margin-bottom: 30px;">
+          <div data-hf-id="hf-uopp" class="hero-logo-pulse" style="background: radial-gradient(circle, rgba(255, 138, 61, 0.4) 0%, transparent 70%);"></div>
+          <img data-hf-id="hf-j0o3" id="scene7-logo-img" src="assets/icon.svg" alt="Local Player" class="hero-logo-img" />
+        </div>
+        <h1 data-hf-id="hf-5avq" id="scene7-title" class="headline headline-large" style="margin-bottom: 14px;">
+          Local Player
+        </h1>
+        <p data-hf-id="hf-aexg" id="scene7-tagline" class="headline" style="font-size: 32px; font-weight: 600; color: var(--accent); margin-bottom: 18px;">
+          Seu conhecimento. Seu ritmo. Localmente.
+        </p>
+        <p data-hf-id="hf-rqly" id="scene7-sub" class="description" style="max-width: 650px; font-size: 20px;">
+          O reprodutor desktop definitivo para sua biblioteca pessoal de estudos.
+        </p>
+        <div data-hf-id="hf-ryww" id="scene7-badge" class="badge-pill">
+          <div data-hf-id="hf-fgmz" class="badge-dot"></div>
+          <span data-hf-id="hf-51lb">EXPERIMENTE HOJE</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- GSAP Animation Engine -->
+  <script>
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+    window.__timelines["main"] = tl;
+
+    // ==============================================
+    // SCENE 1: 0.0s -> 9.5s (Introduction & Brand Reveal)
+    // ==============================================
+    tl.to("#scene1", { opacity: 1, duration: 0.1 }, 0.0);
+    tl.fromTo("#scene1-logo", { opacity: 0, scale: 0.82 }, { opacity: 1, scale: 1.0, duration: 1.4, ease: "power3.out" }, 0.3);
+    tl.fromTo("#scene1-kicker", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 0.6);
+    tl.fromTo("#scene1-headline", { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 1.0, ease: "power3.out" }, 0.8);
+    tl.fromTo("#scene1-sub", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 1.0, ease: "power3.out" }, 1.0);
+    // Exit
+    tl.to("#scene1", { opacity: 0, scale: 1.03, duration: 1.0, ease: "power2.in" }, 8.5);
+
+    // ==============================================
+    // SCENE 2: 9.5s -> 20.0s (Library)
+    // ==============================================
+    tl.to("#scene2", { opacity: 1, duration: 0.1 }, 9.5);
+    tl.fromTo("#scene2-text", { opacity: 0, x: -50 }, { opacity: 1, x: 0, duration: 1.2, ease: "power3.out" }, 9.7);
+    tl.fromTo("#scene2-visual", { opacity: 0, x: 70, scale: 0.94 }, { opacity: 1, x: 0, scale: 1.0, duration: 1.3, ease: "power3.out" }, 9.9);
+    // Exit
+    tl.to("#scene2", { opacity: 0, scale: 0.97, duration: 0.9, ease: "power2.in" }, 19.1);
+
+    // ==============================================
+    // SCENE 3: 20.0s -> 30.5s (Continuous Learning)
+    // ==============================================
+    tl.to("#scene3", { opacity: 1, duration: 0.1 }, 20.0);
+    tl.fromTo("#scene3-visual", { opacity: 0, x: -70, scale: 0.94 }, { opacity: 1, x: 0, scale: 1.0, duration: 1.3, ease: "power3.out" }, 20.2);
+    tl.fromTo("#scene3-text", { opacity: 0, x: 50 }, { opacity: 1, x: 0, duration: 1.2, ease: "power3.out" }, 20.4);
+    // Exit
+    tl.to("#scene3", { opacity: 0, scale: 0.97, duration: 0.9, ease: "power2.in" }, 29.6);
+
+    // ==============================================
+    // SCENE 4: 30.5s -> 42.5s (Cinema Player)
+    // ==============================================
+    tl.to("#scene4", { opacity: 1, duration: 0.1 }, 30.5);
+    tl.fromTo("#scene4-text", { opacity: 0, x: -50 }, { opacity: 1, x: 0, duration: 1.2, ease: "power3.out" }, 30.7);
+    tl.fromTo("#scene4-visual", { opacity: 0, x: 70, scale: 0.94 }, { opacity: 1, x: 0, scale: 1.0, duration: 1.3, ease: "power3.out" }, 30.9);
+    // Exit
+    tl.to("#scene4", { opacity: 0, scale: 0.97, duration: 0.9, ease: "power2.in" }, 41.6);
+
+    // ==============================================
+    // SCENE 5: 42.5s -> 54.5s (AI Intelligence)
+    // ==============================================
+    tl.to("#scene5", { opacity: 1, duration: 0.1 }, 42.5);
+    tl.fromTo("#scene5-text", { opacity: 0, x: -40 }, { opacity: 1, x: 0, duration: 1.1, ease: "power3.out" }, 42.7);
+    // Staggered cards entrance
+    tl.fromTo("#feat-card-1", { opacity: 0, y: 30, scale: 0.96 }, { opacity: 1, y: 0, scale: 1.0, duration: 0.7, ease: "power3.out" }, 42.9);
+    tl.fromTo("#feat-card-2", { opacity: 0, y: 30, scale: 0.96 }, { opacity: 1, y: 0, scale: 1.0, duration: 0.7, ease: "power3.out" }, 43.2);
+    tl.fromTo("#feat-card-3", { opacity: 0, y: 30, scale: 0.96 }, { opacity: 1, y: 0, scale: 1.0, duration: 0.7, ease: "power3.out" }, 43.5);
+    // Exit
+    tl.to("#scene5", { opacity: 0, scale: 0.97, duration: 0.9, ease: "power2.in" }, 53.6);
+
+    // ==============================================
+    // SCENE 6: 54.5s -> 64.0s (Sovereignty & Privacy)
+    // ==============================================
+    tl.to("#scene6", { opacity: 1, duration: 0.1 }, 54.5);
+    tl.fromTo("#scene6-visual", { opacity: 0, x: -70, scale: 0.94 }, { opacity: 1, x: 0, scale: 1.0, duration: 1.3, ease: "power3.out" }, 54.7);
+    tl.fromTo("#scene6-text", { opacity: 0, x: 50 }, { opacity: 1, x: 0, duration: 1.1, ease: "power3.out" }, 54.9);
+    // Exit
+    tl.to("#scene6", { opacity: 0, scale: 0.97, duration: 0.9, ease: "power2.in" }, 63.1);
+
+    // ==============================================
+    // SCENE 7: 64.0s -> 72.0s (Closing / Brand Anthem)
+    // ==============================================
+    tl.to("#scene7", { opacity: 1, duration: 0.1 }, 64.0);
+    tl.fromTo("#scene7-logo", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1.0, duration: 1.3, ease: "power3.out" }, 64.3);
+    tl.fromTo("#scene7-title", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.9, ease: "power3.out" }, 64.7);
+    tl.fromTo("#scene7-tagline", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.9, ease: "power3.out" }, 65.0);
+    tl.fromTo("#scene7-sub", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.9, ease: "power3.out" }, 65.3);
+    tl.fromTo("#scene7-badge", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1.0, duration: 0.8, ease: "power3.out" }, 65.6);
+    // Elegant final fade out to obsidian black
+    tl.to("#scene7", { opacity: 0, duration: 1.6, ease: "power2.inOut" }, 70.4);
+
+    tl.seek(0);
+  </script>
+</body>
+</html>

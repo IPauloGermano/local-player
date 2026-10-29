@@ -4,6 +4,22 @@
 
 Local/offline player in Node.js + Express (single orchestrator backend `server.js`, pure JS SPA in `public/`, **no build step**) to organize and play disk media — modules, trainings, courses, and video libraries on **Linux**. Reads everything directly from local or external storage (HDD, SSD, USB flash drive, SD card), with zero telemetry and without sending anything to the internet.
 
+---
+
+<p align="center">
+  <video src="https://raw.githubusercontent.com/IPauloGermano/local-player/main/docs/presentation.mp4" width="100%" controls poster="docs/images/presentation-cover.png"></video>
+</p>
+
+<p align="center">
+  <a href="https://raw.githubusercontent.com/IPauloGermano/local-player/main/docs/presentation.mp4">
+    <img src="docs/images/presentation-cover.png" alt="Local Player Video Presentation" width="100%">
+  </a>
+  <br>
+  <em>▶️ Click on the image to watch the presentation film (72s MP4)</em>
+</p>
+
+---
+
 ## Features
 
 - **Instant Boot and Concurrent Scan**: persistent on-disk tree cache (`data/tree-cache-<libId>.json`) and parallel directory scanning with controlled concurrency, loading libraries with thousands of lessons in milliseconds even on USB flash drives or external drives.
