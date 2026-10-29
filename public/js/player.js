@@ -522,6 +522,7 @@ function constrainPopover(popoverEl) {
 }
 
 function renderPlayerAndLesson() {
+  cancelAutoAdvance();
   const wrap = document.getElementById("player-wrap");
   const header = document.getElementById("lesson-header");
   const materialsSlot = document.getElementById("materials-slot");
@@ -568,6 +569,18 @@ function renderPlayerAndLesson() {
     <div class="player-progress-warning" id="progress-save-warning" hidden>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:4px;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
       <span>Falha ao salvar progresso</span>
+    </div>
+    <div class="player-auto-advance" id="player-auto-advance" hidden role="region" aria-label="Próxima aula">
+      <div class="paa-card">
+        <div class="paa-info">
+          <span class="paa-label">Próxima aula em <strong id="paa-countdown">8</strong>s</span>
+          <span class="paa-title" id="paa-next-title"></span>
+        </div>
+        <div class="paa-actions">
+          <button type="button" class="paa-btn paa-cancel" id="paa-cancel-btn">Cancelar</button>
+          <button type="button" class="paa-btn paa-now" id="paa-now-btn">Assistir agora</button>
+        </div>
+      </div>
     </div>
     <div class="player-ui" id="player-ui">
       <button class="pc-center hidden" id="pc-play-center" type="button" aria-label="Reproduzir">${ICON_PLAY_CENTER}</button>
@@ -630,7 +643,7 @@ function renderPlayerAndLesson() {
               <button class="pc-btn pc-more-btn" id="pc-more-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Mais opções" title="Mais opções">${ICON_MORE}</button>
               <div class="pc-pop pc-more-menu" id="pc-more-menu" hidden>
                 <button type="button" class="pc-menu-item" data-more="theater">Modo teatro</button>
-                <button type="button" class="pc-menu-item" data-more="summary">Resumo da aula</button>
+                <button type="button" class="pc-menu-item" data-more="summary" aria-label="Lista de aulas">Lista de aulas</button>
                 <button type="button" class="pc-menu-item pc-more-narrow" data-more="subtitle-style">Aparência da legenda</button>
                 <div class="pc-menu-group pc-more-narrow">
                   <span class="pc-menu-label">Velocidade</span>
@@ -649,34 +662,12 @@ function renderPlayerAndLesson() {
       </div>
     </div>`;
 
-  const breadcrumb = video.path.split("/").slice(0, -1).join(" / ");
-  // Breadcrumb com truncamento inteligente: o prefixo (curso/módulos) encolhe
-  // com "…", a última pasta (da aula) fica sempre visível; o caminho completo
-  // vai no title para o hover. Nunca força o layout lateralmente.
-  const crumbParts = video.path.split("/").slice(0, -1);
-  const crumbLeaf = crumbParts.pop() || "";
-  // Mobile (<600px): o breadcrumb mostra só o último segmento do prefixo com
-  // "…" na frente (ex.: "… / 04 - Projetos / 01 - Introdução ao projeto") —
-  // ocupa menos espaço vertical/horizontal. O path real não muda e o caminho
-  // completo continua no title do elemento.
-  const narrowHeader = window.matchMedia("(max-width: 600px)").matches;
-  const showFullPrefix = !narrowHeader || crumbParts.length <= 1;
-  const crumbPrefix = showFullPrefix
-    ? crumbParts.join(" / ")
-    : crumbParts[crumbParts.length - 1];
-  const crumbLead =
-    showFullPrefix || !crumbParts.length ? "" : "… / ";
-  const breadcrumbHtml =
-    (crumbPrefix
-      ? `<span class="breadcrumb-prefix">${escapeHtml(crumbLead + crumbPrefix)}</span><span class="breadcrumb-sep"> / </span>`
-      : ``) + `<span class="breadcrumb-leaf">${escapeHtml(crumbLeaf)}</span>`;
   const p = progFor(video);
   const isDone = !!(p && p.completed);
   header.innerHTML = `
     <div class="lesson-title-row">
       <div class="lesson-title-block">
         <h2 title="${escapeHtml(lessonTitle(video))}">${escapeHtml(lessonTitle(video))}</h2>
-        <div class="breadcrumb" title="${escapeHtml(breadcrumb)}">${breadcrumbHtml}</div>
       </div>
       <button id="lesson-sidebar-toggle" class="lesson-sidebar-toggle" type="button" aria-expanded="false" title="Abrir a lista de aulas" aria-label="Abrir a lista de aulas">
         <svg class="sidebar-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1328,6 +1319,7 @@ function wirePlayerUI(videoEl) {
 // Legendas e Overlay movidos para public/js/subtitles.js
 
 function navigateToLesson(lessonPath) {
+  cancelAutoAdvance();
   const video = state.flatVideos.find((v) => v.path === lessonPath);
   if (!video) return;
   location.hash = courseHref(state.currentCourseNode, lessonPath);
@@ -1395,6 +1387,104 @@ async function togglePlayerFullscreen(videoEl) {
   }
 }
 
+// ---------- Avanço Automático de Aula ----------
+let autoAdvanceTimer = null;
+let autoAdvanceCountdown = 8;
+let autoAdvanceTarget = null;
+
+function isAutoplayEnabled() {
+  return localStorage.getItem("course-player-autoplay") !== "0";
+}
+
+function cancelAutoAdvance() {
+  if (autoAdvanceTimer) {
+    clearInterval(autoAdvanceTimer);
+    autoAdvanceTimer = null;
+  }
+  autoAdvanceTarget = null;
+  const el = document.getElementById("player-auto-advance");
+  if (el) {
+    el.hidden = true;
+    el.setAttribute("hidden", "");
+  }
+}
+
+function startAutoAdvance(nextVideo) {
+  cancelAutoAdvance();
+  if (!nextVideo || !isAutoplayEnabled()) return;
+
+  autoAdvanceTarget = nextVideo;
+  autoAdvanceCountdown = 8;
+
+  const el = document.getElementById("player-auto-advance");
+  const countEl = document.getElementById("paa-countdown");
+  const titleEl = document.getElementById("paa-next-title");
+  if (!el || !countEl) return;
+
+  if (titleEl) {
+    const nextName = typeof lessonTitle === "function" ? lessonTitle(nextVideo) : (nextVideo.title || nextVideo.name || "Próxima aula");
+    titleEl.textContent = nextName;
+    titleEl.title = nextName;
+  }
+  countEl.textContent = String(autoAdvanceCountdown);
+  el.hidden = false;
+  el.removeAttribute("hidden");
+
+  const cancelBtn = document.getElementById("paa-cancel-btn");
+  const nowBtn = document.getElementById("paa-now-btn");
+  if (cancelBtn) {
+    cancelBtn.onclick = (e) => {
+      e.stopPropagation();
+      cancelAutoAdvance();
+    };
+  }
+  if (nowBtn) {
+    nowBtn.onclick = (e) => {
+      e.stopPropagation();
+      const target = autoAdvanceTarget;
+      cancelAutoAdvance();
+      if (target && typeof navigateToLesson === "function") {
+        navigateToLesson(target.path);
+      }
+    };
+  }
+
+  autoAdvanceTimer = setInterval(() => {
+    autoAdvanceCountdown--;
+    if (countEl) countEl.textContent = String(autoAdvanceCountdown);
+    if (autoAdvanceCountdown <= 0) {
+      const target = autoAdvanceTarget;
+      cancelAutoAdvance();
+      if (target && typeof navigateToLesson === "function") {
+        navigateToLesson(target.path);
+      }
+    }
+  }, 1000);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && autoAdvanceTimer) {
+    cancelAutoAdvance();
+  }
+});
+
+// Re-posiciona e restringe popovers abertos (volume, velocidade, CC, mais opções)
+// ao alterar zoom do navegador ou redimensionar a janela.
+window.addEventListener("resize", () => {
+  const popovers = [
+    document.getElementById("pc-vol-popover"),
+    document.getElementById("pc-speed-menu"),
+    document.getElementById("pc-cc-menu"),
+    document.getElementById("pc-more-menu"),
+  ];
+  for (const pop of popovers) {
+    if (pop && !pop.hidden) {
+      constrainPopover(pop);
+    }
+  }
+});
+
+window.constrainPopover = constrainPopover;
 window.prepareTranscoded = prepareTranscoded;
 window.applyVolumePrefs = applyVolumePrefs;
 window.setupVideoTracking = setupVideoTracking;
@@ -1402,3 +1492,6 @@ window.navigateToLesson = navigateToLesson;
 window.changePlaybackSpeed = changePlaybackSpeed;
 window.togglePlayerFullscreen = togglePlayerFullscreen;
 window.retryOriginal = retryOriginal;
+window.isAutoplayEnabled = isAutoplayEnabled;
+window.cancelAutoAdvance = cancelAutoAdvance;
+window.startAutoAdvance = startAutoAdvance;

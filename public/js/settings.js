@@ -414,6 +414,22 @@ function renderSettingsReproducao() {
             </button>`;
         })()}
       </div>
+
+      <div class="settings-row" id="autoplay-row">
+        <div class="settings-row-text">
+          <div class="settings-row-title">Avançar automaticamente para a próxima aula</div>
+          <div class="settings-row-desc">Ao término de uma aula, inicia contagem regressiva antes de reproduzir a aula seguinte.</div>
+        </div>
+        ${(() => {
+          const on = localStorage.getItem("course-player-autoplay") !== "0";
+          return `
+            <button class="switch ${on ? "on" : ""}" id="toggle-autoplay" type="button" role="switch"
+                    aria-checked="${on}" aria-label="Avançar automaticamente para a próxima aula">
+              <span class="switch-track"></span>
+              <span class="switch-thumb"></span>
+            </button>`;
+        })()}
+      </div>
     </section>`;
 }
 
@@ -440,6 +456,25 @@ function bindSettingsReproducao(app) {
     if (dereverbRow) {
       dereverbRow.addEventListener("click", () => {
         applyDereverb(localStorage.getItem("course-player-dereverb") !== "1");
+      });
+    }
+  }
+
+  const autoplayBtn = app.querySelector("#toggle-autoplay");
+  const autoplayRow = app.querySelector("#autoplay-row");
+  if (autoplayBtn) {
+    const applyAutoplay = (next) => {
+      localStorage.setItem("course-player-autoplay", next ? "1" : "0");
+      autoplayBtn.classList.toggle("on", next);
+      autoplayBtn.setAttribute("aria-checked", String(next));
+    };
+    autoplayBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      applyAutoplay(localStorage.getItem("course-player-autoplay") === "0");
+    });
+    if (autoplayRow) {
+      autoplayRow.addEventListener("click", () => {
+        applyAutoplay(localStorage.getItem("course-player-autoplay") === "0");
       });
     }
   }

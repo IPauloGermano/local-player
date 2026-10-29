@@ -299,6 +299,25 @@ function wireTutorDrawerEvents(video) {
 
   if (closeBtn) closeBtn.addEventListener("click", () => closeTutorDrawer());
   if (backdrop) backdrop.addEventListener("click", () => closeTutorDrawer());
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && tutorState.open) {
+      closeTutorDrawer();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (!tutorState.open) return;
+    const bd = document.getElementById("tutor-backdrop");
+    if (!bd) return;
+    const isDesk = window.matchMedia("(min-width: 1025px)").matches;
+    if (isDesk) {
+      bd.hidden = true;
+      bd.setAttribute("hidden", "");
+    } else {
+      bd.hidden = false;
+      bd.removeAttribute("hidden");
+    }
+  });
 
   document.querySelectorAll(".tutor-tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -625,8 +644,14 @@ function openTutorDrawer(video) {
     drawer.removeAttribute("hidden");
   }
   if (bd) {
-    bd.hidden = false;
-    bd.removeAttribute("hidden");
+    const isDesktop = window.matchMedia("(min-width: 1025px)").matches;
+    if (isDesktop) {
+      bd.hidden = true;
+      bd.setAttribute("hidden", "");
+    } else {
+      bd.hidden = false;
+      bd.removeAttribute("hidden");
+    }
   }
   document.body.classList.add("tutor-open");
   tutorState.open = true;

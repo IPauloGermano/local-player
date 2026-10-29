@@ -1435,6 +1435,17 @@ body {
 /* ---------- Seções da Home: Continuar assistindo / Seu progresso ---------- */
 .home-section {
   margin-bottom: clamp(28px, 5.5vw, 52px);
+  min-width: 0;
+  max-width: 100%;
+}
+.progress-section {
+  transition: margin-bottom 0.25s ease;
+}
+.progress-section[data-progress-mode="compact"] {
+  margin-bottom: clamp(16px, 2.5vw, 24px);
+}
+.progress-section[data-progress-mode="compact"] .section-head {
+  margin-bottom: 14px;
 }
 .section-head {
   display: flex;
@@ -1491,11 +1502,38 @@ body {
 }
 
 .continue-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-  gap: clamp(16px, 2vw, 24px);
+  display: flex;
+  flex-wrap: nowrap;
+  gap: clamp(14px, 1.8vw, 22px);
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  padding: 6px 4px 14px;
+  margin: -6px -4px -6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+.continue-row::-webkit-scrollbar {
+  height: 6px;
+}
+.continue-row::-webkit-scrollbar-track {
+  background: transparent;
+}
+.continue-row::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+.continue-row::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
 }
 .continue-card {
+  flex: 0 0 clamp(280px, 28vw, 360px);
+  min-width: 260px;
+  scroll-snap-align: start;
   background: linear-gradient(180deg, var(--bg-card), var(--bg-card-2));
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1580,6 +1618,7 @@ body {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
+  overflow: hidden;
   transition:
     grid-template-rows 0.25s ease,
     opacity 0.22s ease;
@@ -1587,6 +1626,16 @@ body {
 .progress-section[data-progress-mode="compact"] .progress-summary {
   grid-template-rows: 1fr;
   opacity: 1;
+  overflow: visible;
+}
+.progress-section[data-progress-mode="expanded"] .progress-summary {
+  visibility: hidden;
+}
+.progress-section[data-progress-mode="expanded"] .progress-summary-inner {
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
 }
 .progress-summary-inner {
   min-height: 0;
@@ -1630,14 +1679,24 @@ body {
   display: grid;
   grid-template-rows: 1fr;
   opacity: 1;
+  overflow: hidden;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
   transition:
     grid-template-rows 0.25s ease,
-    opacity 0.22s ease;
+    opacity 0.22s ease,
+    box-shadow 0.22s ease;
 }
 .progress-section[data-progress-mode="compact"] .progress-panel-wrap {
   grid-template-rows: 0fr;
   opacity: 0;
+  visibility: hidden;
+  box-shadow: none;
+}
+.progress-section[data-progress-mode="compact"] .progress-panel {
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
 }
 .progress-panel {
   min-height: 0;
@@ -2068,8 +2127,8 @@ body {
 
 /* Modo Teatro: escala fluida e proporcional sem estourar a viewport */
 .course-view.theater .player-wrap {
-  max-height: min(73vh, calc(100vh - 230px), 840px);
-  max-height: min(73svh, calc(100svh - 230px), 840px);
+  max-height: min(73vh, max(240px, calc(100vh - 230px)), 840px);
+  max-height: min(73svh, max(240px, calc(100svh - 230px)), 840px);
   max-width: min(100%, calc((73vh) * 16 / 9));
   margin-left: auto;
   margin-right: auto;
@@ -2114,8 +2173,8 @@ body {
   /* Sem menu nativo de long-press (copiar/compartilhar/salvar) sobre o player. */
   -webkit-touch-callout: none;
   /* Limite vertical fluido: mantem o player confortavel e proporcional sem estourar a tela. */
-  max-height: min(72vh, calc(100vh - 230px), 780px);
-  max-height: min(72svh, calc(100svh - 230px), 780px);
+  max-height: min(72vh, max(240px, calc(100vh - 230px)), 780px);
+  max-height: min(72svh, max(240px, calc(100svh - 230px)), 780px);
   min-height: 0;
   background: linear-gradient(180deg, #020304, #0e1015);
   border-radius: calc(var(--radius) + 4px);
@@ -3426,6 +3485,99 @@ body {
     font-size: 12px;
   }
 }
+
+/* Aviso e contagem de avanço automático para a próxima aula */
+.player-auto-advance {
+  position: absolute;
+  bottom: 64px;
+  right: 18px;
+  z-index: 15;
+  pointer-events: auto;
+  max-width: min(380px, calc(100% - 36px));
+  animation: paaFadeIn 0.25s ease-out;
+}
+.player-auto-advance[hidden] {
+  display: none !important;
+}
+.paa-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(14, 18, 28, 0.94);
+  border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.16));
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.paa-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.paa-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.paa-label strong {
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.paa-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.paa-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.paa-btn {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.paa-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-mid);
+}
+.paa-cancel:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+.paa-now {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #16110b;
+}
+.paa-now:hover {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+}
+@keyframes paaFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 /* ============ fim controles customizados ============ */
 
 .lesson-header {
@@ -3439,7 +3591,7 @@ body {
 }
 .course-toolbar {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
@@ -3458,7 +3610,7 @@ body {
 }
 .lesson-header .lesson-title-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 14px;
   flex: 1 1 auto;
   min-width: 0;
@@ -3471,13 +3623,14 @@ body {
   font-size: 25px;
   font-weight: 800;
   line-height: 1.3;
-  margin: 0 0 8px;
+  margin: 0;
   overflow-wrap: break-word;
 }
 .lesson-header .breadcrumb {
   display: flex;
   align-items: baseline;
   min-width: 0;
+  flex-wrap: wrap;
   font-size: 14.5px;
   color: var(--text-dim);
 }
@@ -3487,10 +3640,15 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lesson-header .breadcrumb-sep,
-.lesson-header .breadcrumb-leaf {
+.lesson-header .breadcrumb-sep {
   flex-shrink: 0;
   white-space: nowrap;
+}
+.lesson-header .breadcrumb-leaf {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .player-controls {
@@ -4811,14 +4969,17 @@ body {
     right: 6px;
   }
 
-  /* "Continuar assistindo": cards com boa área de toque */
+  /* "Continuar assistindo": linha horizontal com scroll fluido no mobile */
   .continue-row {
-    grid-template-columns: 1fr;
-    gap: 8px;
+    gap: 10px;
+    padding: 4px 2px 10px;
+    margin: -4px -2px -4px;
   }
   .continue-card {
-    padding: 12px 14px;
-    gap: 8px;
+    flex: 0 0 clamp(230px, 76vw, 300px);
+    min-width: 220px;
+    padding: 14px 16px;
+    gap: 10px;
     border-radius: 14px;
     min-height: 52px;
   }
@@ -4925,7 +5086,7 @@ body {
   }
   .lesson-header h2 {
     font-size: 15.5px;
-    margin: 0 0 2px;
+    margin: 0;
   }
   .lesson-header .breadcrumb {
     font-size: 11.5px;
@@ -5120,7 +5281,7 @@ body {
   }
   .lesson-title-block h2 {
     font-size: 15.5px;
-    margin: 0 0 3px;
+    margin: 0;
     line-height: 1.35;
   }
   .lesson-header .breadcrumb {
@@ -5171,6 +5332,8 @@ body {
     padding: 10px 14px;
     font-size: 13px;
     border-radius: 10px;
+    white-space: nowrap;
+    box-sizing: border-box;
   }
   /* "Aa Aparência" sai da toolbar → menu ⋮ > Aparência da legenda. */
   #subtitle-style-btn {
@@ -5193,6 +5356,8 @@ body {
     .player-tools .tutor-btn {
       width: 100%;
       justify-content: center;
+      white-space: nowrap;
+      box-sizing: border-box;
     }
   }
   .subtitle-style-panel {
@@ -6222,6 +6387,12 @@ body {
   padding: 7px 14px;
   border-radius: 8px;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.tutor-btn span {
+  white-space: nowrap;
 }
 .tutor-btn:hover {
   background: rgba(255, 138, 61, 0.22);
@@ -6247,6 +6418,39 @@ body {
 
 .tutor-backdrop[hidden] {
   display: none !important;
+}
+
+/* No desktop (>1024px): Tutor IA atua como painel lateral não-bloqueante mantendo o vídeo visível e amplo */
+@media (min-width: 1025px) {
+  .tutor-backdrop {
+    display: none !important;
+    pointer-events: none !important;
+  }
+
+  body.tutor-open .tutor-drawer {
+    width: clamp(400px, 30vw, 480px);
+    max-width: 480px;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.45);
+    z-index: 30;
+  }
+
+  body.tutor-open .course-view {
+    grid-template-columns: minmax(0, 1fr) 0px !important;
+    column-gap: 0 !important;
+    padding-right: clamp(400px, 30vw, 480px);
+    transition: padding-right 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  body.tutor-open .course-view .sidebar {
+    display: none !important;
+  }
+
+  body.tutor-open .course-view .player-wrap,
+  body.tutor-open .course-view .course-toolbar,
+  body.tutor-open .course-view .lesson-header,
+  body.tutor-open .course-view .materials {
+    max-width: 100% !important;
+  }
 }
 
 .tutor-drawer {
@@ -6331,6 +6535,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .tutor-title-main {
@@ -6946,6 +7152,7 @@ body {
   gap: 10px;
   min-height: 40px;
   box-sizing: border-box;
+  flex-wrap: wrap;
 }
 
 .tutor-video-meta {
@@ -6953,7 +7160,7 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 150px;
 }
 
 .tutor-video-meta .tutor-yt-icon {
@@ -7893,6 +8100,8 @@ body {
   flex-direction: column;
   justify-content: space-between;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .tutor-fc-front {
@@ -7969,10 +8178,12 @@ body {
   display: flex;
   gap: 10px;
   justify-content: center;
+  flex-wrap: wrap;
 }
 
 .tutor-fc-rate-btn {
-  flex: 1;
+  flex: 1 1 85px;
+  min-width: 0;
   padding: 10px 12px;
   border-radius: 12px;
   font-size: 13.5px;
@@ -8065,7 +8276,7 @@ body {
    rolam abaixo do player. Só layout/visibilidade — nenhuma cor, ID, seletor
    de evento ou data-* muda; ao rotacionar de volta tudo reaparece (CSS puro,
    sem JS). */
-@media (orientation: landscape) and (max-height: 550px) {
+@media (orientation: landscape) and (max-height: 550px) and (pointer: coarse) {
   /* Header principal oculto (busca/Atualizar/config): volta ao rotacionar. */
   .topbar {
     display: none;
@@ -8233,8 +8444,7 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .tutor-header-actions .tutor-icon-btn,
-  .tutor-btn {
+  .tutor-header-actions .tutor-icon-btn {
     padding: 0;
     width: 30px;
     height: 30px;

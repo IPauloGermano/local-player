@@ -945,7 +945,7 @@ function applyViewModeToDOM() {
   const summaryItem = document.querySelector('[data-more="summary"]');
   if (summaryItem) {
     if (isMobileDrawer()) {
-      // Mobile: o item ⋮ > Resumo da aula é o controle do drawer. O rótulo
+      // Mobile: o item ⋮ > Lista de aulas é o controle do drawer. O rótulo
       // reflete o estado real do drawer (setDrawerOpen também o atualiza) e
       // não depende do teatro — evita que alternar teatro sobrescreva o
       // estado do drawer com um estado paralelo desatualizado.
@@ -954,13 +954,13 @@ function applyViewModeToDOM() {
       summaryItem.hidden = false;
       summaryItem.classList.toggle("is-active", open);
       summaryItem.setAttribute("aria-pressed", String(open));
-      summaryItem.textContent = open ? "Fechar sumário" : "Resumo da aula";
+      summaryItem.textContent = open ? "Fechar lista de aulas" : "Lista de aulas";
     } else {
       const open = theater && getSummaryOpen();
       summaryItem.hidden = !theater;
       summaryItem.classList.toggle("is-active", open);
       summaryItem.setAttribute("aria-pressed", String(open));
-      summaryItem.textContent = open ? "Fechar sumário" : "Resumo da aula";
+      summaryItem.textContent = open ? "Fechar lista de aulas" : "Lista de aulas";
     }
   }
   const lessonToggle = document.getElementById("lesson-sidebar-toggle");
@@ -979,6 +979,9 @@ function toggleTheaterMode() {
 }
 
 function toggleSummaryPanel() {
+  if (typeof closeTutorDrawer === "function" && window.tutorState && window.tutorState.open) {
+    closeTutorDrawer();
+  }
   if (isMobileDrawer()) {
     toggleDrawer();
     return;
@@ -1006,10 +1009,10 @@ function setDrawerOpen(open) {
     btn.classList.toggle("is-active", open);
     btn.title = open ? "Fechar lista de aulas" : "Abrir lista de aulas";
   }
-  // Reflete o estado no item ⋮ > Resumo da aula (o mesmo controle no mobile).
+  // Reflete o estado no item ⋮ > Lista de aulas (o mesmo controle no mobile).
   const summaryItem = document.querySelector('[data-more="summary"]');
   if (summaryItem) {
-    summaryItem.textContent = open ? "Fechar sumário" : "Resumo da aula";
+    summaryItem.textContent = open ? "Fechar lista de aulas" : "Lista de aulas";
     summaryItem.setAttribute("aria-pressed", String(open));
   }
   // Ao abrir, refresca a árvore: o updateProgressUI pausa os re-renders com o
@@ -1693,18 +1696,64 @@ function renderTree(course, resetExpanded) {
   }
 }
 
+function updateFolderStatsInPlace(slot, courseNode) {
+  if (!slot || !courseNode) return;
+  slot.querySelectorAll(".tree-folder-head").forEach((head) => {
+    const folderPath = decodeURIComponent(head.dataset.folder || "");
+    const folderNode = findNodeByPath(courseNode, folderPath);
+    if (folderNode) {
+      const stats = countStats(folderNode);
+      const isCompleted = stats.total > 0 && stats.done === stats.total;
+      const progEl = head.querySelector(".folder-progress");
+      if (progEl) {
+        progEl.textContent = `${stats.done}/${stats.total}`;
+      }
+      head.classList.toggle("completed", isCompleted);
+      const folderEl = head.closest(".tree-folder");
+      if (folderEl) {
+        folderEl.classList.toggle("completed", isCompleted);
+      }
+    }
+  });
+}
+
+function updateActiveLessonProgressInPlace(slot, video) {
+  if (!slot || !video) return;
+  const p = progFor(video);
+  if (!p) return;
+  const done = !!p.completed;
+  const pct = done
+    ? 100
+    : p.duration
+      ? Math.min(100, Math.round((p.position / p.duration) * 100))
+      : 0;
+  const videoPathEncoded = encodeURIComponent(video.path);
+  const lessonEl =
+    slot.querySelector(`.tree-lesson[data-lesson="${CSS.escape(videoPathEncoded)}"]`) ||
+    slot.querySelector(".tree-lesson.active");
+  if (lessonEl) {
+    const miniBar = lessonEl.querySelector(".lesson-mini-progress span");
+    if (miniBar) miniBar.style.width = `${pct}%`;
+    const wasDone = lessonEl.classList.contains("done");
+    if (wasDone !== done) {
+      lessonEl.classList.toggle("done", done);
+      const checkBtn = lessonEl.querySelector(".check");
+      if (checkBtn) {
+        checkBtn.setAttribute("aria-label", done ? "Desmarcar como assistido" : "Marcar como assistido");
+        checkBtn.innerHTML = done
+          ? '<svg class="check-svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+          : "";
+      }
+      updateFolderStatsInPlace(slot, state.currentCourseNode);
+    }
+  }
+}
+
 function updateProgressUI() {
   const slot = document.getElementById("tree-slot");
-  // No touch não existe :hover, então a guarda antiga re-renderizava a árvore
-  // a cada timeupdate (~5s) mesmo com o drawer aberto — o innerHTML resetava
-  // o scroll do usuário no meio da leitura da lista. Enquanto o drawer mobile
-  // está aberto, o re-render da árvore é pausado (o cabeçalho do sidebar — %,
-  // contadores — continua atualizando); a lista volta a atualizar quando o
-  // drawer fecha ou ao trocar de aula (o setDrawerOpen ao abrir já refresca).
-  const view = document.querySelector(".course-view");
-  const drawerOpen = !!(view && view.classList.contains("drawer-open"));
-  if (!slot || (!slot.matches(":hover") && !drawerOpen)) {
-    renderTree(state.currentCourseNode, false);
+  // Atualização pontual e incremental no DOM (sem destruir innerHTML durante reprodução)
+  if (slot && state.currentVideoNode) {
+    updateActiveLessonProgressInPlace(slot, state.currentVideoNode);
   }
   const stats = getNodeProgressStats(state.currentCourseNode, progFor);
   const pct = stats.pct;
@@ -1912,7 +1961,15 @@ function setupVideoTracking(video) {
     if (!wasPlaying) return;
     const idx = state.flatVideos.indexOf(video);
     const next = state.flatVideos[idx + 1];
-    if (next) navigateToLesson(next.path);
+    if (next) {
+      if (typeof startAutoAdvance === "function" && isAutoplayEnabled()) {
+        startAutoAdvance(next);
+      } else if (!isAutoplayEnabled()) {
+        // Autoplay desativado: permanece na aula atual concluída
+      } else {
+        navigateToLesson(next.path);
+      }
+    }
   });
 }
 
@@ -2200,11 +2257,9 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
     : "";
 
   app.innerHTML = `
-    <div class="back-link" id="back-link">← Voltar aos cursos</div>
     <div class="course-view drawer-host ${theater ? "theater" : ""} ${summaryOpen ? "summary-open" : ""}">
       <div class="player-col">
         <div class="course-toolbar">
-          <div class="course-toolbar-title">${escapeHtml(courseTitle(course))}</div>
           <div class="course-toolbar-actions">
             <button class="secondary-btn" id="toggle-fav-course">${isFavorite(course.path, course.libId) ? "★ Favorito" : "☆ Favoritar"}</button>
             ${courseSubtitleBtn}
@@ -2243,9 +2298,6 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
     <div id="tutor-drawer-slot"></div>
     <div class="tutor-backdrop" id="tutor-backdrop" hidden></div>`;
 
-  document.getElementById("back-link").addEventListener("click", () => {
-    location.hash = "/";
-  });
   document
     .getElementById("sidebar-close-btn")
     ?.addEventListener("click", () => closeMobileDrawer());
@@ -2304,6 +2356,7 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
 
 // ---------- Roteamento ----------
 function route() {
+  if (typeof cancelAutoAdvance === "function") cancelAutoAdvance();
   // Guarda de "alterações não salvas" do editor: se a navegação tentar sair
   // de um editor sujo, o hash é restaurado para o editor e o usuário decide.
   // (location.hash já mudou quando o hashchange dispara; restaurar re-renderiza
@@ -2404,8 +2457,6 @@ function refreshCourseViewInPlace() {
   state.currentCourseNode = newCourse;
   state.flatVideos = newFlat;
   state.currentVideoNode = newVideo;
-  const titleEl = document.querySelector(".course-toolbar-title");
-  if (titleEl) titleEl.textContent = courseTitle(newCourse);
   renderTree(newCourse, false);
   updateProgressUI();
   return true;

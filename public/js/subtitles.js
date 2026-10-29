@@ -1337,6 +1337,12 @@ function wireSubtitleStylePanel(wrap) {
 
   if (!sspDocListenersAttached) {
     sspDocListenersAttached = true;
+    window.addEventListener("resize", () => {
+      const p = document.getElementById("subtitle-style-panel");
+      if (p && !p.hidden) {
+        positionSubtitleStylePanel(p);
+      }
+    });
     document.addEventListener("click", (e) => {
       const p = document.getElementById("subtitle-style-panel");
       const b = document.getElementById("subtitle-style-btn");
