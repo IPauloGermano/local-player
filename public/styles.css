@@ -498,6 +498,13 @@ body {
   align-items: center;
   gap: 10px;
 }
+.settings-title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
 .settings-subtitle {
   font-size: 13.5px;
   color: var(--text-dim);
@@ -523,6 +530,42 @@ body {
   border-color: rgba(255, 255, 255, 0.18);
   color: #ffffff;
   transform: translateX(-2px);
+}
+
+/* Toast de feedback de auto-save das configurações */
+.settings-toast {
+  position: fixed;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  right: max(24px, env(safe-area-inset-right));
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(16, 21, 34, 0.95);
+  border: 1px solid rgba(51, 201, 111, 0.35);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 10px 18px;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.settings-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.settings-toast-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--success, #33c96f);
+  flex-shrink: 0;
 }
 
 /* Layout de Configurações */
@@ -730,18 +773,27 @@ body {
   margin: 0 0 8px;
 }
 .settings-select {
-  background: #0f131a;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #101522 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239aa8bf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 12px center;
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
-  height: 38px;
+  height: 40px;
+  min-width: 150px;
   box-sizing: border-box;
-  padding: 0 12px;
+  padding: 0 38px 0 14px;
   font-size: 13.5px;
+  font-weight: 500;
   font-family: inherit;
   cursor: pointer;
   outline: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   transition: all 0.15s ease;
+}
+.settings-select:hover {
+  border-color: rgba(255, 255, 255, 0.26);
+  background-color: #141a28;
 }
 .settings-select:focus {
   border-color: var(--accent);
@@ -1031,10 +1083,10 @@ body {
 
 /* ---------- Atalhos de teclado (Settings) ---------- */
 .shortcut-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
 }
 .shortcut-row {
   display: flex;
@@ -4897,10 +4949,47 @@ body {
   .settings-title {
     font-size: 20px;
   }
-  .settings-section {
-    padding: 14px 16px;
+  .settings-section,
+  .settings-card {
+    padding: 16px 14px;
     margin-bottom: 14px;
     border-radius: 14px;
+  }
+  .shortcut-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lib-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .lib-row-main {
+    width: 100%;
+  }
+  .lib-row-path {
+    white-space: normal;
+  }
+  .lib-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+  .lib-btn {
+    flex: 1 1 calc(50% - 6px);
+    text-align: center;
+    justify-content: center;
+    min-height: 34px;
+  }
+  .settings-toast {
+    left: 16px;
+    right: 16px;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    justify-content: center;
+    transform: translateY(12px) scale(0.96);
+  }
+  .settings-toast.is-visible {
+    transform: translateY(0) scale(1);
   }
   .settings-row {
     padding: 10px 8px;
@@ -6321,6 +6410,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  word-break: break-all;
   max-width: 100%;
 }
 .lib-tag {

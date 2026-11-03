@@ -47,6 +47,35 @@ function stopCapture(preserveMsg) {
 // transcrição vive em "Inteligência Artificial" e o status/fila/logs em
 // "Diagnóstico".
 
+// ---------- Micro-feedback de auto-salvamento (Toast SaaS) ----------
+let settingsToastTimer = null;
+function showSettingsToast(msg = "Configuração salva com sucesso") {
+  let toast = document.getElementById("settings-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "settings-toast";
+    toast.className = "settings-toast";
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+    toast.innerHTML = `
+      <span class="settings-toast-icon" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </span>
+      <span class="settings-toast-text"></span>
+    `;
+    document.body.appendChild(toast);
+  }
+  const textEl = toast.querySelector(".settings-toast-text");
+  if (textEl) textEl.textContent = msg;
+  toast.classList.add("is-visible");
+  if (settingsToastTimer) clearTimeout(settingsToastTimer);
+  settingsToastTimer = setTimeout(() => {
+    toast.classList.remove("is-visible");
+  }, 2200);
+}
+
 const SETTINGS_CATS = [
   {
     id: "geral",
@@ -119,13 +148,22 @@ function renderSettings(app, rawCat) {
     <div class="settings-header">
       <div class="settings-header-main">
         <h1 class="settings-title">
-          <span style="color: var(--accent); display: flex; align-items: center;">⚙</span>
+          <span class="settings-title-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </span>
           Central de Configurações
         </h1>
         <p class="settings-subtitle">Gerencie preferências, inteligência artificial, bibliotecas de mídia e armazenamento do sistema.</p>
       </div>
       <button class="settings-back-btn" id="settings-back" type="button" aria-label="Voltar para a tela inicial">
-        ← Voltar ao Início
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>Voltar ao Início</span>
       </button>
     </div>
     <div class="settings-layout">
@@ -240,8 +278,8 @@ function renderSettingsGeral() {
           <div class="settings-row-title">Desligamento automático por inatividade</div>
           <div class="settings-row-desc" id="idle-status-desc">O servidor encerra com segurança após o tempo configurado sem nenhuma aba aberta e sem jobs ativos.</div>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <select id="select-idle-timeout" class="topbar-search-input" style="width: auto; max-width: 220px; padding: 6px 12px; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; cursor: pointer;">
+        <div class="settings-row-control">
+          <select id="select-idle-timeout" class="settings-select" aria-label="Tempo para desligamento automático por inatividade">
             <option value="15">15 minutos</option>
             <option value="30">30 minutos (recomendado)</option>
             <option value="60">1 hora</option>
@@ -259,6 +297,7 @@ function bindSettingsGeral(app) {
     setSetting("closeOtherModules", next);
     switchBtn.classList.toggle("on", next);
     switchBtn.setAttribute("aria-checked", String(next));
+    showSettingsToast(next ? "Fechar outros módulos ativado" : "Fechar outros módulos desativado");
   };
   switchBtn.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -365,6 +404,7 @@ function bindSettingsGeral(app) {
             idleDesc.textContent = `Desligamento automático configurado para ${minutes} minutos.`;
           }
         }
+        showSettingsToast(minutes === 0 ? "Desligamento automático desativado" : `Desligamento definido para ${minutes} min`);
       } catch (err) {
         if (idleDesc) idleDesc.textContent = "Erro ao atualizar configuração de inatividade.";
       }
@@ -438,6 +478,7 @@ function bindSettingsReproducao(app) {
   if (speedSel) {
     speedSel.addEventListener("change", () => {
       localStorage.setItem("course-player-speed", String(speedSel.value));
+      showSettingsToast(`Velocidade padrão definida para ${speedSel.value}×`);
     });
   }
 
@@ -448,6 +489,7 @@ function bindSettingsReproducao(app) {
       localStorage.setItem("course-player-dereverb", next ? "1" : "0");
       dereverbBtn.classList.toggle("on", next);
       dereverbBtn.setAttribute("aria-checked", String(next));
+      showSettingsToast(next ? "Redução de eco ativada" : "Redução de eco desativada");
     };
     dereverbBtn.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -467,6 +509,7 @@ function bindSettingsReproducao(app) {
       localStorage.setItem("course-player-autoplay", next ? "1" : "0");
       autoplayBtn.classList.toggle("on", next);
       autoplayBtn.setAttribute("aria-checked", String(next));
+      showSettingsToast(next ? "Avanço automático ativado" : "Avanço automático desativado");
     };
     autoplayBtn.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -530,6 +573,7 @@ function bindSettingsAtalhos(app) {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
         buildShortcutMap();
         renderSettings(app, "atalhos");
+        showSettingsToast("Atalhos restaurados para o padrão");
       },
     });
   });
