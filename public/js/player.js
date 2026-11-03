@@ -638,11 +638,11 @@ function renderPlayerAndLesson() {
                 </div>
               </div>
             </div>
-            <button class="pc-btn" id="pc-fullscreen" type="button" aria-label="Tela cheia">${ICON_FULLSCREEN}</button>
+            <button class="pc-btn" id="pc-theater-btn" type="button" aria-label="Modo teatro (t)" title="Modo teatro (t)">${ICON_THEATER}</button>
+            <button class="pc-btn" id="pc-fullscreen" type="button" aria-label="Tela cheia (f)" title="Tela cheia (f)">${ICON_FULLSCREEN}</button>
             <div class="pc-group pc-group-more">
               <button class="pc-btn pc-more-btn" id="pc-more-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Mais opções" title="Mais opções">${ICON_MORE}</button>
               <div class="pc-pop pc-more-menu" id="pc-more-menu" hidden>
-                <button type="button" class="pc-menu-item" data-more="theater">Modo teatro</button>
                 <button type="button" class="pc-menu-item" data-more="summary" aria-label="Lista de aulas">Lista de aulas</button>
                 <button type="button" class="pc-menu-item pc-more-narrow" data-more="subtitle-style">Aparência da legenda</button>
                 <div class="pc-menu-group pc-more-narrow">
@@ -813,6 +813,7 @@ function wirePlayerUI(videoEl) {
   const volWarn = document.getElementById("pc-vol-warn");
   const speedBtn = document.getElementById("pc-speed-btn");
   const speedMenu = document.getElementById("pc-speed-menu");
+  const theaterBtn = document.getElementById("pc-theater-btn");
   const fullscreenBtn = document.getElementById("pc-fullscreen");
   const ccBtn = document.getElementById("pc-cc-btn");
   const ccMenu = document.getElementById("pc-cc-menu");
@@ -1242,6 +1243,9 @@ function wirePlayerUI(videoEl) {
       closePopovers();
     });
   });
+  if (theaterBtn) {
+    theaterBtn.addEventListener("click", () => toggleTheaterMode());
+  }
   if (fullscreenBtn) {
     fullscreenBtn.addEventListener("click", () =>
       togglePlayerFullscreen(videoEl),

@@ -2090,11 +2090,10 @@ body {
   align-items: start;
 }
 
-/* ---------- Modo Teatro (padrão) ----------
-   Player em destaque; o sumário vira painel lateral colapsável. Fechado, o
-   trilho do sumário vai a 0px (com overflow hidden) — a largura anima junto
-   com grid-template-columns (0px → var(--sidebar-w)), então o player encolhe/
-   cresce suavemente em vez de pular. */
+/* ---------- Modo Teatro (Palco de Cinema com Área de Estudos Inferior) ----------
+   Player em destaque amplo ocupando a largura total (100%) da área útil;
+   abaixo do palco, o sumário e o cabeçalho da aula formam uma área de estudo
+   fluida. Fechado, o trilho do sumário vai a 0px. */
 .course-view.theater {
   grid-template-columns: minmax(0, 1fr) 0px;
   transition: grid-template-columns 0.28s ease;
@@ -2125,21 +2124,45 @@ body {
   pointer-events: none;
 }
 
-/* Modo Teatro: escala fluida e proporcional sem estourar a viewport */
-.course-view.theater .player-wrap {
-  max-height: min(73vh, max(240px, calc(100vh - 230px)), 840px);
-  max-height: min(73svh, max(240px, calc(100svh - 230px)), 840px);
-  max-width: min(100%, calc((73vh) * 16 / 9));
-  margin-left: auto;
-  margin-right: auto;
+/* Modo Teatro no Desktop: o player estende-se por toda a grade (100% de largura) */
+@media (min-width: 1025px) {
+  .course-view.theater .player-col {
+    display: contents;
+  }
+  .course-view.theater .player-wrap {
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: 100%;
+    max-height: min(82vh, max(280px, calc(100vh - 160px)), 960px);
+    max-height: min(82svh, max(280px, calc(100svh - 160px)), 960px);
+    margin: 0;
+  }
+  .course-view.theater .course-toolbar {
+    grid-column: 1 / -1;
+    max-width: 100%;
+    margin: 0 0 10px 0;
+  }
+  .course-view.theater .lesson-header,
+  .course-view.theater #materials-slot,
+  .course-view.theater #subtitle-editor-slot {
+    grid-column: 1;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+  }
+  .course-view.theater .sidebar {
+    grid-column: 2;
+    min-width: 0;
+  }
+  .course-view.theater .lesson-sidebar-toggle {
+    display: inline-flex;
+  }
 }
 
-.course-view.theater:not(.summary-open):not(.drawer-open) .course-toolbar,
-.course-view.theater:not(.summary-open):not(.drawer-open) .lesson-header,
-.course-view.theater:not(.summary-open):not(.drawer-open) .materials {
-  max-width: min(100%, calc((73vh) * 16 / 9));
-  margin-left: auto;
-  margin-right: auto;
+/* Modo Teatro geral: player amplo ocupando 100% sem margens artificiais */
+.course-view.theater .player-wrap {
+  max-width: 100%;
+  margin: 0;
 }
 
 .back-link {
@@ -4426,6 +4449,9 @@ body {
   .lesson-sidebar-toggle,
   .sidebar-close-btn {
     display: inline-flex;
+  }
+  #pc-theater-btn {
+    display: none;
   }
   .course-view .sidebar {
     position: fixed;

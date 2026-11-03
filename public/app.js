@@ -936,11 +936,12 @@ function applyViewModeToDOM() {
     view.classList.toggle("theater", theater);
     view.classList.toggle("summary-open", theater && getSummaryOpen());
   }
-  const theaterItem = document.querySelector('[data-more="theater"]');
-  if (theaterItem) {
-    theaterItem.classList.toggle("is-active", theater);
-    theaterItem.setAttribute("aria-pressed", String(theater));
-    theaterItem.textContent = theater ? "Sair do modo teatro" : "Modo teatro";
+  const theaterBtn = document.getElementById("pc-theater-btn");
+  if (theaterBtn) {
+    theaterBtn.classList.toggle("is-active", theater);
+    theaterBtn.setAttribute("aria-pressed", String(theater));
+    theaterBtn.title = theater ? "Sair do modo teatro (t)" : "Modo teatro (t)";
+    theaterBtn.setAttribute("aria-label", theater ? "Sair do modo teatro (t)" : "Modo teatro (t)");
   }
   const summaryItem = document.querySelector('[data-more="summary"]');
   if (summaryItem) {
