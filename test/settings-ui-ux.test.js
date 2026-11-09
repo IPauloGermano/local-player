@@ -83,3 +83,34 @@ test("Fatia 3: Modernização visual no styles.css com custom select, grid de at
     "lib-row-path deve usar word-break: break-all para não gerar overflow horizontal em telas pequenas"
   );
 });
+
+test("Fatia 4: Integridade da UI de bibliotecas (edição inteligente e proteção da padrão)", () => {
+  // Botão de remover não deve ser renderizado para a biblioteca padrão
+  assert.match(
+    SETTINGS_JS,
+    /if\s*\(!isDefault\)\s*\{\s*actions\.push\(.*data-action="remove"/s,
+    "Botão de remover deve ser omitido para a biblioteca padrão"
+  );
+
+  // Botão de desativar deve ser desabilitado quando é a única ativa
+  assert.match(
+    SETTINGS_JS,
+    /disableToggle\s*\?.*Não é possível desativar a única biblioteca ativa/s,
+    "Desativação deve ser bloqueada na UI quando é a única biblioteca ativa"
+  );
+
+  // Edição não deve reenviar path inalterado
+  assert.match(
+    SETTINGS_JS,
+    /path\s*!==\s*originalPath/,
+    "Edição só deve enviar body.path se o caminho tiver sido realmente modificado"
+  );
+
+  // Erros devem rolar para a visão do usuário
+  assert.match(
+    SETTINGS_JS,
+    /scrollIntoView/,
+    "Mensagem de erro deve rolar suavemente para o campo de visão"
+  );
+});
+

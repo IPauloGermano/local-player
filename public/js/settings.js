@@ -682,14 +682,18 @@ function renderSettingsBibliotecas() {
             ? `<span class="lib-badge lib-badge-warn" title="${escapeHtml(lib.error || "diretório indisponível")}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:3px;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>indisponível</span>`
             : `<span class="lib-badge lib-badge-ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:3px;"><polyline points="20 6 9 17 4 12"></polyline></svg>Disponível</span>`;
       const pathText = isDefault && !lib.path ? "Biblioteca da instalação" : lib.path;
+      const activeCount = libs.filter((l) => l.enabled !== false).length;
+      const disableToggle = lib.enabled !== false && activeCount <= 1;
       const actions = [
         `<button type="button" class="lib-btn" data-action="rescan"${lib.enabled === false ? " disabled" : ""}>Reescanear</button>`,
         `<button type="button" class="lib-btn" data-action="edit">Editar</button>`,
-        `<button type="button" class="lib-btn" data-action="toggle">${
+        `<button type="button" class="lib-btn" data-action="toggle"${disableToggle ? ' disabled title="Não é possível desativar a única biblioteca ativa"' : ""}>${
           lib.enabled === false ? "Ativar" : "Desativar"
         }</button>`,
-        `<button type="button" class="lib-btn lib-btn-danger" data-action="remove">Remover</button>`,
       ];
+      if (!isDefault) {
+        actions.push(`<button type="button" class="lib-btn lib-btn-danger" data-action="remove">Remover</button>`);
+      }
       const countParts = [];
       const courses = Number.isFinite(lib.courseCount) ? lib.courseCount : 0;
       const topics = Number.isFinite(lib.topicCount) ? lib.topicCount : 0;
@@ -731,9 +735,12 @@ function renderSettingsBibliotecas() {
 function bindSettingsBibliotecas(app) {
   const showError = (msg) => {
     const err = app.querySelector("#lib-error");
-    if (!err) return;
-    err.textContent = msg;
-    err.hidden = false;
+    if (err) {
+      err.textContent = msg;
+      err.hidden = false;
+      err.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    showSettingsToast("Erro: " + msg);
   };
   const refresh = async () => {
     await loadAll();
@@ -762,7 +769,10 @@ function bindSettingsBibliotecas(app) {
 
     if (action === "rescan") {
       doFetch(`/api/libraries/${encodeURIComponent(libId)}/rescan`, { method: "POST" })
-        .then(refresh)
+        .then(() => {
+          showSettingsToast("Biblioteca reescaneada com sucesso");
+          return refresh();
+        })
         .catch((err) => showError("Reescaneamento falhou: " + err.message));
       return;
     }
@@ -771,12 +781,16 @@ function bindSettingsBibliotecas(app) {
       return;
     }
     if (action === "toggle") {
+      const nextEnabled = !(lib && lib.enabled !== false);
       doFetch(`/api/libraries/${encodeURIComponent(libId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: !(lib && lib.enabled) }),
+        body: JSON.stringify({ enabled: nextEnabled }),
       })
-        .then(refresh)
+        .then(() => {
+          showSettingsToast(nextEnabled ? "Biblioteca ativada" : "Biblioteca desativada");
+          return refresh();
+        })
         .catch((err) => showError("Falha ao alternar: " + err.message));
       return;
     }
@@ -791,7 +805,10 @@ function bindSettingsBibliotecas(app) {
         danger: true,
         onConfirm: () => {
           doFetch(`/api/libraries/${encodeURIComponent(libId)}`, { method: "DELETE" })
-            .then(refresh)
+            .then(() => {
+              showSettingsToast("Biblioteca removida da configuração");
+              return refresh();
+            })
             .catch((err) => showError("Falha ao remover: " + err.message));
         },
       });
@@ -804,6 +821,7 @@ function bindSettingsBibliotecas(app) {
 function openLibraryDialog(app, { mode, libId, onSaved }) {
   const lib = libId ? getLibById(libId) : null;
   const isEdit = mode === "edit";
+  const isDefault = lib && lib.isDefault === true;
   const previousFocus = document.activeElement;
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
@@ -813,13 +831,19 @@ function openLibraryDialog(app, { mode, libId, onSaved }) {
       <div class="modal-body">
         <p class="ai-note">${
           isEdit
-            ? "Ajuste o nome, o caminho e o estado da biblioteca."
+            ? (isDefault
+                ? "Ajuste o nome ou informe uma nova pasta para a biblioteca padrão."
+                : "Ajuste o nome, o caminho e o estado da biblioteca.")
             : "Cole ou digite o caminho absoluto da pasta com o conteúdo (ex.: <code>/caminho/para/pasta</code> ou <code>~/Cursos</code>). A pasta será escaneada e aparecerá na Home, ao lado da biblioteca padrão."
         }</p>
         <div class="lib-field">
           <label class="ai-label" for="lib-path">Caminho da pasta</label>
           <div style="display:flex;gap:8px;align-items:center;">
-            <input class="ai-input" id="lib-path" type="text" value="${escapeHtml(lib ? lib.path : "")}" placeholder="/caminho/para/sua/pasta ou ~/Cursos" autocomplete="off" style="flex:1;">
+            <input class="ai-input" id="lib-path" type="text" value="${escapeHtml(lib ? (lib.path || "") : "")}" placeholder="${
+              isDefault
+                ? "Nova pasta de cursos (ou deixe em branco para manter)"
+                : "/caminho/para/sua/pasta ou ~/Cursos"
+            }" autocomplete="off" style="flex:1;">
             <button type="button" class="btn btn--secondary" id="lib-browse-btn" style="white-space:nowrap;padding:8px 12px;font-size:0.875rem;cursor:pointer;">📁 Escolher pasta…</button>
           </div>
         </div>
@@ -901,9 +925,16 @@ function openLibraryDialog(app, { mode, libId, onSaved }) {
     const name = (nameInput.value || "").trim();
     const enabled = enabledBox ? enabledBox.checked : true;
     confirmBtn.disabled = true;
-    // Edit com caminho vazio = manter o atual (evita revalidar path à toa).
     const body = { name, enabled };
-    if (!isEdit || path) body.path = path;
+    const originalPath = lib && typeof lib.path === "string" ? lib.path.trim() : "";
+    if (!isEdit) {
+      if (path) body.path = path;
+    } else {
+      // Edit: só envia body.path se o usuário preencheu e alterou em relação ao original
+      if (path && path !== originalPath) {
+        body.path = path;
+      }
+    }
     try {
       const res = await fetch(
         isEdit ? `/api/libraries/${encodeURIComponent(libId)}` : "/api/libraries",
@@ -916,6 +947,7 @@ function openLibraryDialog(app, { mode, libId, onSaved }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       close();
+      showSettingsToast(isEdit ? "Biblioteca atualizada com sucesso" : "Biblioteca adicionada com sucesso");
       if (onSaved) await onSaved();
     } catch (err) {
       confirmBtn.disabled = false;

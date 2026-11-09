@@ -109,9 +109,6 @@ function registerLibraryRoutes(app) {
     if (!lib) return res.status(404).json({ error: "library not found" });
     let newPath = null;
     if (req.body && typeof req.body.path === "string" && req.body.path.trim()) {
-      if (lib.isDefault) {
-        return res.status(403).json({ error: "o caminho da biblioteca padrão é fixo e não pode ser alterado" });
-      }
       const v = await validateLibraryPath(req.body.path, lib.id);
       if (!v.ok) return res.status(400).json({ error: v.error });
       newPath = v.path;
@@ -121,8 +118,11 @@ function registerLibraryRoutes(app) {
     }
     if (req.body && typeof req.body.enabled === "boolean") {
       if (req.body.enabled && !lib.enabled) {
-        const v = await validateLibraryPath(newPath || lib.path, lib.id);
-        if (!v.ok) return res.status(400).json({ error: v.error });
+        const targetPath = newPath || lib.path;
+        if (!lib.isDefault || targetPath !== state.ROOT) {
+          const v = await validateLibraryPath(targetPath, lib.id);
+          if (!v.ok) return res.status(400).json({ error: v.error });
+        }
       }
       lib.enabled = req.body.enabled;
       if (!lib.enabled) {
@@ -149,7 +149,9 @@ function registerLibraryRoutes(app) {
     const lib = getLibraryById(req.params.id);
     if (!lib) return res.status(404).json({ error: "library not found" });
     if (lib.isDefault || lib.id === state.DEFAULT_LIBRARY_ID) {
-      return res.status(403).json({ error: "a biblioteca padrão não pode ser removida" });
+      return res.status(403).json({
+        error: "A biblioteca padrão não pode ser removida. Se desejar usar outra pasta, edite o caminho desta biblioteca ou adicione uma nova.",
+      });
     }
     if (libraryHasActiveJobs(lib.id)) {
       return res.status(409).json({ error: "há jobs ativos para esta biblioteca" });

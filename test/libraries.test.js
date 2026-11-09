@@ -442,3 +442,121 @@ test("requestLibrary: alias libId (query/body) equivale a libraryId", () => {
   }
 });
 
+// --- Rotas HTTP de Gerenciamento de Bibliotecas ------------------------------
+
+test("PATCH /api/libraries/default: permite alterar o caminho da biblioteca padrão para nova pasta", async () => {
+  const express = require("express");
+  const http = require("node:http");
+  const { registerLibraryRoutes } = require("../server/libraries/routes");
+  const registry = require("../server/libraries/registry");
+
+  const tmpData = makeFixture([]);
+  const tmpA = makeFixture(["Curso 1/aula.mp4"]);
+  const tmpB = makeFixture(["Curso 2/aula.mp4"]);
+
+  const prevDataDir = process.env.LP_DATA_DIR;
+  process.env.LP_DATA_DIR = tmpData;
+
+  const prev = registry.librariesCache;
+  registry.librariesCache = [
+    {
+      id: "default",
+      name: "Padrao",
+      path: tmpA,
+      enabled: true,
+      isDefault: true,
+      createdAt: Date.now(),
+    },
+  ];
+  await registry.persistLibraries();
+
+  const app = express();
+  app.use(express.json());
+  registerLibraryRoutes(app);
+
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/libraries/default`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: tmpB }),
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.id, "default");
+    const updated = registry.getLibraryById("default");
+    assert.strictEqual(updated.path, tmpB);
+  } finally {
+    server.close();
+    process.env.LP_DATA_DIR = prevDataDir;
+    registry.librariesCache = prev;
+    fs.rmSync(tmpData, { recursive: true, force: true });
+    fs.rmSync(tmpA, { recursive: true, force: true });
+    fs.rmSync(tmpB, { recursive: true, force: true });
+  }
+});
+
+test("PATCH /api/libraries/default: permite desativar e reativar a biblioteca padrão sem erro de diretório proibido", async () => {
+  const express = require("express");
+  const http = require("node:http");
+  const { registerLibraryRoutes } = require("../server/libraries/routes");
+  const registry = require("../server/libraries/registry");
+  const state = require("../server/state");
+
+  const tmpData = makeFixture([]);
+  const prevDataDir = process.env.LP_DATA_DIR;
+  process.env.LP_DATA_DIR = tmpData;
+
+  const prev = registry.librariesCache;
+  registry.librariesCache = [
+    {
+      id: "default",
+      name: "Padrao",
+      path: state.ROOT,
+      enabled: true,
+      isDefault: true,
+      createdAt: Date.now(),
+    },
+  ];
+  await registry.persistLibraries();
+
+  const app = express();
+  app.use(express.json());
+  registerLibraryRoutes(app);
+
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+
+  try {
+    // 1. Desativa a padrão
+    const res1 = await fetch(`http://127.0.0.1:${port}/api/libraries/default`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    assert.strictEqual(res1.status, 200);
+    const data1 = await res1.json();
+    assert.strictEqual(data1.enabled, false);
+
+    // 2. Reativa a padrão (não deve falhar por raiz coincidente)
+    const res2 = await fetch(`http://127.0.0.1:${port}/api/libraries/default`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    assert.strictEqual(res2.status, 200);
+    const data2 = await res2.json();
+    assert.strictEqual(data2.enabled, true);
+  } finally {
+    server.close();
+    process.env.LP_DATA_DIR = prevDataDir;
+    registry.librariesCache = prev;
+    fs.rmSync(tmpData, { recursive: true, force: true });
+  }
+});
+
+
