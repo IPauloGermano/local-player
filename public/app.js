@@ -988,7 +988,7 @@ function applyViewModeToDOM() {
   const theater = getViewMode() === "theater";
   if (view) {
     view.classList.toggle("theater", theater);
-    view.classList.toggle("summary-open", theater && getSummaryOpen());
+    view.classList.remove("summary-open");
   }
   const theaterBtn = document.getElementById("pc-theater-btn");
   if (theaterBtn) {
@@ -1011,17 +1011,14 @@ function applyViewModeToDOM() {
       summaryItem.setAttribute("aria-pressed", String(open));
       summaryItem.textContent = open ? "Fechar lista de aulas" : "Lista de aulas";
     } else {
-      const open = theater && getSummaryOpen();
-      summaryItem.hidden = !theater;
-      summaryItem.classList.toggle("is-active", open);
-      summaryItem.setAttribute("aria-pressed", String(open));
-      summaryItem.textContent = open ? "Fechar lista de aulas" : "Lista de aulas";
+      // Desktop: o modo teatro não exibe a sidebar e o modo normal já a exibe ao lado
+      summaryItem.hidden = true;
     }
   }
   const lessonToggle = document.getElementById("lesson-sidebar-toggle");
   if (lessonToggle) {
     const isMobile = isMobileDrawer();
-    const open = isMobile ? !!(view && view.classList.contains("drawer-open")) : (theater && getSummaryOpen());
+    const open = isMobile ? !!(view && view.classList.contains("drawer-open")) : false;
     lessonToggle.setAttribute("aria-expanded", String(open));
     lessonToggle.classList.toggle("is-active", open);
     lessonToggle.title = open ? "Fechar lista de aulas" : "Abrir lista de aulas";
@@ -2364,9 +2361,8 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
   const pct = stats.pct;
 
   // Modo de visualização persistido aplicado no render (troca de aula mantém
-  // teatro/normal e o estado do sumário).
+  // teatro/normal).
   const theater = getViewMode() === "theater";
-  const summaryOpen = theater && getSummaryOpen();
 
   // "Gerar legendas" só existe quando o Whisper está configurado — sem
   // binário/modelo o botão não apareceria nem faria nada.
@@ -2375,7 +2371,7 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
     : "";
 
   app.innerHTML = `
-    <div class="course-view drawer-host ${theater ? "theater" : ""} ${summaryOpen ? "summary-open" : ""}">
+    <div class="course-view drawer-host ${theater ? "theater" : ""}">
       <div class="player-col">
         <div class="course-toolbar">
           <div class="course-toolbar-actions">

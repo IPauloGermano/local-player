@@ -2122,10 +2122,10 @@ body {
   align-items: start;
 }
 
-/* ---------- Modo Teatro (Palco de Cinema com Área de Estudos Inferior) ----------
+/* ---------- Modo Teatro (Palco de Cinema) ----------
    Player em destaque amplo ocupando a largura total (100%) da área útil;
-   abaixo do palco, o sumário e o cabeçalho da aula formam uma área de estudo
-   fluida. Fechado, o trilho do sumário vai a 0px. */
+   no desktop, a sidebar/sumário não aparece no modo teatro e o botão "Aulas"
+   não é exibido na UI desktop. */
 .course-view.theater {
   grid-template-columns: minmax(0, 1fr) 0px;
   transition: grid-template-columns 0.28s ease;
@@ -2135,16 +2135,17 @@ body {
   overflow: hidden;
 }
 .course-view.theater.summary-open {
-  grid-template-columns: minmax(0, 1fr) var(--sidebar-w);
+  grid-template-columns: minmax(0, 1fr) 0px;
 }
-/* Colapsado no desktop: além do trilho 0px, esconde o conteúdo para que os
-   links da árvore não fiquem tabuláveis enquanto invisíveis e zera larguras/paddings
-   para prevenir overflow horizontal. O :not(.drawer-open) preserva o drawer
-   mobile (≤900px): com o drawer aberto a regra de colapso não se aplica. */
-.course-view.theater:not(.summary-open):not(.drawer-open) {
+/* Colapsado no desktop: esconde o conteúdo para que os links da árvore não
+   fiquem tabuláveis enquanto invisíveis e zera larguras/paddings para prevenir
+   overflow horizontal. O :not(.drawer-open) preserva o drawer mobile (≤900px). */
+.course-view.theater:not(.summary-open):not(.drawer-open),
+.course-view.theater:not(.drawer-open) {
   column-gap: 0;
 }
-.course-view.theater:not(.summary-open):not(.drawer-open) .sidebar {
+.course-view.theater:not(.summary-open):not(.drawer-open) .sidebar,
+.course-view.theater:not(.drawer-open) .sidebar {
   visibility: hidden;
   width: 0;
   max-width: 0;
@@ -2154,10 +2155,15 @@ body {
   margin: 0;
   overflow: hidden;
   pointer-events: none;
+  display: none;
 }
 
 /* Modo Teatro no Desktop: o player estende-se por toda a grade (100% de largura) */
 @media (min-width: 1025px) {
+  .course-view.theater {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+  }
   .course-view.theater .player-col {
     display: contents;
   }
@@ -2177,17 +2183,17 @@ body {
   .course-view.theater .lesson-header,
   .course-view.theater #materials-slot,
   .course-view.theater #subtitle-editor-slot {
-    grid-column: 1;
+    grid-column: 1 / -1;
     min-width: 0;
     max-width: 100%;
     margin: 0;
   }
   .course-view.theater .sidebar {
-    grid-column: 2;
-    min-width: 0;
+    display: none !important;
   }
-  .course-view.theater .lesson-sidebar-toggle {
-    display: inline-flex;
+  .course-view.theater .lesson-sidebar-toggle,
+  .course-view .lesson-sidebar-toggle {
+    display: none !important;
   }
 }
 
