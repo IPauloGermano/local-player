@@ -118,6 +118,28 @@
     return items.slice(0, n);
   }
 
+  // "Aulas marcadas para revisão" ("Revisar depois"): lista as aulas individuais
+  // marcadas pelo usuário para rever mais tarde. Mantém o mesmo padrão de
+  // pureza e desacoplamento de buildContinueItems.
+  function buildReviewItems(courses, isReviewLesson, progressOf) {
+    if (!courses || !Array.isArray(courses) || typeof isReviewLesson !== "function") return [];
+    const items = [];
+    for (const course of courses) {
+      for (const video of flattenVideos(course)) {
+        const libId = video.libId || course.libId || "default";
+        if (isReviewLesson(video.path, libId)) {
+          items.push({
+            course,
+            video,
+            libId,
+            progress: (typeof progressOf === "function" ? progressOf(video) : null) || { position: 0, duration: 0, completed: false },
+          });
+        }
+      }
+    }
+    return items;
+  }
+
   // Tempo efetivamente estudado de uma aula a partir do registro de progresso.
   // Aula CONCLUÍDA conta a duração inteira: registros concluídos podem ter
   // `position` zerado (✓ manual no sidebar, dados legados) e, nesse caso, a
@@ -970,6 +992,7 @@
     collectTopicsInScope,
     collectDirectCourses,
     buildContinueItems,
+    buildReviewItems,
     getNodeProgressStats,
     getLibraryProgressSummary,
     collectOrphanRecords,

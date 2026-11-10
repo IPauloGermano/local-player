@@ -162,6 +162,8 @@ const ICON_SUBTITLE = svgIcon('<path d="M4 6h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4
 const ICON_MORE = svgIcon('<path d="M12 7.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>');
 const ICON_COMPLETE_CHECK = '<svg class="complete-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 const ICON_COMPLETE_CIRCLE = '<svg class="complete-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle></svg>';
+const ICON_FLAG_OUTLINE = '<svg class="flag-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>';
+const ICON_FLAG_FILLED = '<svg class="flag-svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>';
 
 function volumeIcon(state) {
   if (state === 0) return ICON_VOLUME_MUTED;
@@ -664,6 +666,8 @@ function renderPlayerAndLesson() {
 
   const p = progFor(video);
   const isDone = !!(p && p.completed);
+  const currentLibId = video.libId || (state.currentCourseNode && state.currentCourseNode.libId) || (typeof DEFAULT_LIB_ID !== "undefined" ? DEFAULT_LIB_ID : "default");
+  const isRev = typeof isLessonReview === "function" && isLessonReview(video.path, currentLibId);
   header.innerHTML = `
     <div class="lesson-title-row">
       <div class="lesson-title-block">
@@ -689,6 +693,11 @@ function renderPlayerAndLesson() {
         <button id="toggle-lesson-complete-btn" class="btn-nav btn-complete ${isDone ? "is-completed" : ""}" type="button" aria-label="${isDone ? "Desmarcar aula como concluída" : "Marcar aula como concluída"}" title="${isDone ? "Desmarcar aula como concluída" : "Marcar aula como concluída"}">
           <span class="complete-icon" aria-hidden="true">${isDone ? ICON_COMPLETE_CHECK : ICON_COMPLETE_CIRCLE}</span>
           <span class="complete-text">${isDone ? "Concluída" : "Concluir"}</span>
+        </button>
+        <div class="nav-sep" aria-hidden="true"></div>
+        <button id="toggle-lesson-review-btn" class="btn-nav btn-review ${isRev ? "is-review" : ""}" type="button" aria-label="${isRev ? "Remover dos marcados para revisão" : "Marcar para revisar depois"}" title="${isRev ? "Remover dos marcados para revisão" : "Marcar para revisar depois"}">
+          <span class="review-icon" aria-hidden="true">${isRev ? ICON_FLAG_FILLED : ICON_FLAG_OUTLINE}</span>
+          <span class="review-text">${isRev ? "Marcada" : "Revisar"}</span>
         </button>
         <div class="nav-sep" aria-hidden="true"></div>
         <button id="next-btn" class="btn-nav btn-nav-next" ${next ? "" : "disabled"} title="Próxima aula" aria-label="Próxima aula">
@@ -739,6 +748,15 @@ function renderPlayerAndLesson() {
     ?.addEventListener("click", (e) => {
       e.currentTarget?.blur?.();
       toggleLessonCompleted(video.path);
+    });
+  document
+    .getElementById("toggle-lesson-review-btn")
+    ?.addEventListener("click", (e) => {
+      e.currentTarget?.blur?.();
+      const currentLib = video.libId || (state.currentCourseNode && state.currentCourseNode.libId) || (typeof DEFAULT_LIB_ID !== "undefined" ? DEFAULT_LIB_ID : "default");
+      if (typeof toggleLessonReview === "function") {
+        toggleLessonReview(video.path, currentLib);
+      }
     });
   document
     .getElementById("next-btn")

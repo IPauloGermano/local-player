@@ -33,6 +33,7 @@ const {
   collectTopicsInScope,
   collectDirectCourses,
   buildContinueItems,
+  buildReviewItems: scopeBuildReviewItems,
   getNodeProgressStats,
   getLibraryProgressSummary,
   collectOrphanRecords,
@@ -143,6 +144,123 @@ function toggleFavorite(path, libId) {
 function favButtonHtml(path, libId) {
   const on = isFavorite(path, libId);
   return `<button class="fav-btn ${on ? "on" : ""}" type="button" data-fav="${encodeURIComponent(path || "")}" data-lib="${encodeURIComponent(libId || "")}" title="${on ? "Remover dos favoritos" : "Favoritar curso"}" aria-label="${on ? "Remover dos favoritos" : "Favoritar curso"}">${on ? "★" : "☆"}</button>`;
+}
+
+// Aulas marcadas para revisão ("Revisar depois"), persistidas no localStorage
+// com chaves escopadas por "<libraryId>\0<path>".
+let reviewLessons = new Set();
+try {
+  const rawRev = localStorage.getItem("review-lessons");
+  if (rawRev) {
+    const list = JSON.parse(rawRev);
+    if (Array.isArray(list)) {
+      reviewLessons = new Set(
+        list.map((k) => (typeof k === "string" && k.includes("\0") ? k : DEFAULT_LIB_ID + "\0" + k)),
+      );
+    }
+  }
+} catch {
+  reviewLessons = new Set();
+}
+
+function isLessonReview(path, libId) {
+  if (!path) return false;
+  return reviewLessons.has(progKey(path, libId));
+}
+
+function toggleLessonReview(path, libId) {
+  if (!path) return;
+  const key = progKey(path, libId);
+  if (reviewLessons.has(key)) reviewLessons.delete(key);
+  else reviewLessons.add(key);
+  try {
+    localStorage.setItem("review-lessons", JSON.stringify([...reviewLessons]));
+  } catch (err) {
+    console.warn("Falha ao persistir aulas para revisão no localStorage:", err);
+  }
+  updateLessonReviewButton();
+  updateSidebarReviewFlags();
+}
+
+const ICON_FLAG_OUTLINE = `<svg class="flag-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>`;
+const ICON_FLAG_FILLED = `<svg class="flag-svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>`;
+
+function buildReviewItems(courses) {
+  if (typeof scopeBuildReviewItems === "function") {
+    return scopeBuildReviewItems(courses, isLessonReview, progFor);
+  }
+  if (!reviewLessons.size || !Array.isArray(courses)) return [];
+  const items = [];
+  for (const course of courses) {
+    const videos = typeof flattenVideos === "function" ? flattenVideos(course) : [];
+    for (const video of videos) {
+      const libId = video.libId || course.libId || DEFAULT_LIB_ID;
+      if (isLessonReview(video.path, libId)) {
+        items.push({
+          course,
+          video,
+          libId,
+          progress: progFor(video) || { position: 0, duration: 0, completed: false },
+        });
+      }
+    }
+  }
+  return items;
+}
+
+function renderReviewCard(item, i) {
+  const pct = item.progress.duration
+    ? Math.min(
+        100,
+        Math.round((item.progress.position / item.progress.duration) * 100),
+      )
+    : (item.progress.completed ? 100 : 0);
+  const reviewHref = courseHref(item.course, item.video.path);
+  return `
+    <div class="review-card" style="--i:${i}">
+      <a class="review-card-link" href="${reviewHref}" aria-label="Revisar aula: ${escapeHtml(lessonTitle(item.video))}">
+        <div class="review-card-top">
+          <span class="review-badge" aria-hidden="true">
+            ${ICON_FLAG_FILLED}
+            <span>Revisar</span>
+          </span>
+          <span class="review-pct">${pct}%</span>
+        </div>
+        <div class="review-card-body">
+          <div class="lesson-name" title="${escapeHtml(lessonTitle(item.video))}">${escapeHtml(lessonTitle(item.video))}</div>
+          <div class="course-name" title="${escapeHtml(courseTitle(item.course))}">${escapeHtml(courseTitle(item.course))}</div>
+        </div>
+        <div class="progress-bar review-progress-bar">
+          <div class="progress-bar-fill" style="width:${pct}%"></div>
+        </div>
+      </a>
+      <button class="review-remove-btn" type="button" data-unreview="${encodeURIComponent(item.video.path)}" data-lib="${encodeURIComponent(item.libId)}" title="Remover de Revisar depois" aria-label="Remover de Revisar depois">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>`;
+}
+
+function renderReviewSection(items) {
+  if (!items || !items.length) return "";
+  let html = `
+    <section class="home-section review-section" id="review-section">
+      <div class="section-head">
+        <div>
+          <h2 class="section-heading">Aulas marcadas para revisão</h2>
+          <p class="section-subtitle">Aulas salvas com o marcador para estudar ou rever depois</p>
+        </div>
+        <span class="count">(${items.length})</span>
+      </div>
+      <div class="review-grid">`;
+  items.forEach((item, i) => {
+    html += renderReviewCard(item, i);
+  });
+  html += `</div>
+    </section>`;
+  return html;
 }
 
 // Modo da seção "Seu progresso" (expandida/compacta), persistido no
@@ -1343,6 +1461,11 @@ function renderHome(app) {
       html += renderContinueSection(topContinue, continueSummary);
     }
 
+    const reviewItems = buildReviewItems(allCourses);
+    if (reviewItems.length) {
+      html += renderReviewSection(reviewItems);
+    }
+
     if (progressScope.length) {
       html += renderProgressSection(librarySummary, progressScope.length);
     }
@@ -1416,6 +1539,26 @@ function renderHome(app) {
     });
   });
 
+  app.querySelectorAll(".review-remove-btn").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const unPath = el.dataset.unreview ? decodeURIComponent(el.dataset.unreview) : null;
+      const unLib = el.dataset.lib ? decodeURIComponent(el.dataset.lib) : "";
+      if (unPath) {
+        toggleLessonReview(unPath, unLib);
+        const card = el.closest(".review-card");
+        if (card) {
+          card.style.opacity = "0";
+          card.style.transform = "scale(0.95)";
+          setTimeout(() => renderHome(app), 150);
+        } else {
+          renderHome(app);
+        }
+      }
+    });
+  });
+
   if (search) {
     bindLoadMoreLessons(app, results.filter((r) => r.type === "lesson"));
     bindLoadMoreMaterials(app, results.filter((r) => r.type === "material"));
@@ -1464,16 +1607,61 @@ function renderFolderChildren(folderNode, depth = 1) {
       // cada aula, sempre visível para orientar a navegação.
       const lessonIndex = state.flatVideos.indexOf(child) + 1;
       const lessonTotal = state.flatVideos.length;
+      const isRev = isLessonReview(child.path, child.libId || (folderNode && folderNode.libId));
       html += `
-        <div class="tree-lesson ${done ? "done" : ""} ${active ? "active" : ""}" data-lesson="${encodeURIComponent(child.path)}">
+        <div class="tree-lesson ${done ? "done" : ""} ${active ? "active" : ""} ${isRev ? "has-review" : ""}" data-lesson="${encodeURIComponent(child.path)}">
           <button class="check" type="button" data-lesson="${encodeURIComponent(child.path)}" aria-label="${done ? "Desmarcar como assistido" : "Marcar como assistido"}">${done ? '<svg class="check-svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ""}</button>
           <span class="lesson-title" title="${escapeHtml(lessonTitle(child))}"><span class="lesson-title-inner">${escapeHtml(lessonTitle(child))}</span></span>
           <span class="lesson-mini-progress"><span style="width:${pct}%"></span></span>
+          <button class="lesson-flag-btn ${isRev ? "is-active" : ""}" type="button" data-flag-lesson="${encodeURIComponent(child.path)}" title="${isRev ? "Remover de Revisar depois" : "Marcar para revisar depois"}" aria-label="${isRev ? "Remover de Revisar depois" : "Marcar para revisar depois"}">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="${isRev ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+              <line x1="4" y1="22" x2="4" y2="15"></line>
+            </svg>
+          </button>
           <span class="lesson-counter">${lessonIndex}/${lessonTotal}</span>
         </div>`;
     }
   }
   return html;
+}
+
+function updateLessonReviewButton(videoNode) {
+  const btn = document.getElementById("toggle-lesson-review-btn");
+  if (!btn) return;
+  const targetVideo = videoNode || state.currentVideoNode;
+  if (!targetVideo) return;
+  const libId = targetVideo.libId || (state.currentCourseNode && state.currentCourseNode.libId) || DEFAULT_LIB_ID;
+  const isRev = isLessonReview(targetVideo.path, libId);
+  btn.classList.toggle("is-review", isRev);
+  const label = isRev ? "Remover dos marcados para revisão" : "Marcar para revisar depois";
+  btn.setAttribute("aria-label", label);
+  btn.setAttribute("title", label);
+  const icon = btn.querySelector(".review-icon");
+  if (icon) {
+    icon.innerHTML = isRev ? ICON_FLAG_FILLED : ICON_FLAG_OUTLINE;
+  }
+  const text = btn.querySelector(".review-text");
+  if (text) text.textContent = isRev ? "Marcada" : "Revisar";
+}
+
+function updateSidebarReviewFlags() {
+  const slot = document.getElementById("tree-slot");
+  if (!slot) return;
+  const currentLibId = (state.currentCourseNode && state.currentCourseNode.libId) || DEFAULT_LIB_ID;
+  slot.querySelectorAll(".tree-lesson").forEach((lessonEl) => {
+    const lessonPath = decodeURIComponent(lessonEl.dataset.lesson || "");
+    const flagBtn = lessonEl.querySelector(".lesson-flag-btn");
+    if (!flagBtn) return;
+    const isRev = isLessonReview(lessonPath, currentLibId);
+    lessonEl.classList.toggle("has-review", isRev);
+    flagBtn.classList.toggle("is-active", isRev);
+    const label = isRev ? "Remover de Revisar depois" : "Marcar para revisar depois";
+    flagBtn.setAttribute("title", label);
+    flagBtn.setAttribute("aria-label", label);
+    const svg = flagBtn.querySelector("svg");
+    if (svg) svg.setAttribute("fill", isRev ? "currentColor" : "none");
+  });
 }
 
 function updateLessonCompleteButton(videoNode) {
@@ -1629,6 +1817,15 @@ function attachTreeHandlers(slot) {
       toggleLessonCompleted(decodeURIComponent(el.dataset.lesson), event);
     });
   });
+  slot.querySelectorAll(".lesson-flag-btn").forEach((el) => {
+    el.addEventListener("click", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      const lessonPath = decodeURIComponent(el.dataset.flagLesson || "");
+      const libId = (state.currentCourseNode && state.currentCourseNode.libId) || DEFAULT_LIB_ID;
+      toggleLessonReview(lessonPath, libId);
+    });
+  });
   slot
     .querySelectorAll(".tree-lesson, .tree-folder-head")
     .forEach((el) => {
@@ -1773,6 +1970,7 @@ function updateProgressUI() {
   if (progressWatch)
     progressWatch.textContent = `${formatDuration(stats.watchedSeconds)} assistidos`;
   updateLessonCompleteButton();
+  updateLessonReviewButton();
 }
 
 // Player ativo (para o `beforeunload` único registrar a posição atual).
@@ -2139,6 +2337,10 @@ function renderTopic(app, topicPath, libId) {
     if (topContinue.length) {
       html += renderContinueSection(topContinue, scopeSummary);
     }
+    const topicReviewItems = buildReviewItems(scopeCourses);
+    if (topicReviewItems.length) {
+      html += renderReviewSection(topicReviewItems);
+    }
     if (scopeCourses.length) {
       html += renderProgressSection(scopeSummary, scopeCourses.length);
     }
@@ -2182,6 +2384,25 @@ function renderTopic(app, topicPath, libId) {
       if (favPath) {
         toggleFavorite(favPath, favLib);
         renderTopic(app, topicPath, libId);
+      }
+    });
+  });
+  app.querySelectorAll(".review-remove-btn").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const unPath = el.dataset.unreview ? decodeURIComponent(el.dataset.unreview) : null;
+      const unLib = el.dataset.lib ? decodeURIComponent(el.dataset.lib) : "";
+      if (unPath) {
+        toggleLessonReview(unPath, unLib);
+        const card = el.closest(".review-card");
+        if (card) {
+          card.style.opacity = "0";
+          card.style.transform = "scale(0.95)";
+          setTimeout(() => renderTopic(app, topicPath, libId), 150);
+        } else {
+          renderTopic(app, topicPath, libId);
+        }
       }
     });
   });
@@ -2910,6 +3131,14 @@ async function init() {
       }
     }
   });
+}
+
+if (typeof window !== "undefined") {
+  window.isLessonReview = isLessonReview;
+  window.toggleLessonReview = toggleLessonReview;
+  window.updateLessonReviewButton = updateLessonReviewButton;
+  window.updateSidebarReviewFlags = updateSidebarReviewFlags;
+  window.buildReviewItems = buildReviewItems;
 }
 
 init();
