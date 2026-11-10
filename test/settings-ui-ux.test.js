@@ -85,11 +85,11 @@ test("Fatia 3: Modernização visual no styles.css com custom select, grid de at
 });
 
 test("Fatia 4: Integridade da UI de bibliotecas (edição inteligente e proteção da padrão)", () => {
-  // Botão de remover não deve ser renderizado para a biblioteca padrão
+  // Botão de remover deve ser renderizado para biblioteca não padrão ou quando houver mais de uma biblioteca
   assert.match(
     SETTINGS_JS,
-    /if\s*\(!isDefault\)\s*\{\s*actions\.push\(.*data-action="remove"/s,
-    "Botão de remover deve ser omitido para a biblioteca padrão"
+    /if\s*\(!isDefault\s*\|\|\s*libs\.length\s*>\s*1\)\s*\{\s*actions\.push\(.*data-action="remove"/s,
+    "Botão de remover deve ser permitido se não for a padrão ou se houver outras bibliotecas cadastradas"
   );
 
   // Botão de desativar deve ser desabilitado quando é a única ativa

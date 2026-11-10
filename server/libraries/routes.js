@@ -42,6 +42,27 @@ function libraryHasActiveJobs(id) {
   return false;
 }
 
+function cancelAllJobsForLibrary(id) {
+  discardQueuedTranscodeJobsForLibrary(id);
+  for (const [cacheName, job] of state.transcodeJobs) {
+    if (job.libraryId === id) {
+      if (job.proc && typeof job.proc.kill === "function") {
+        try { job.proc.kill("SIGKILL"); } catch {}
+      }
+      state.transcodeJobs.delete(cacheName);
+    }
+  }
+  let changed = 0;
+  for (const [hash, job] of state.subtitleJobs) {
+    if (job.libraryId === id) {
+      cancelSubtitleJob(hash);
+      changed += 1;
+    }
+  }
+  if (changed) persistSubtitleJobs().catch(() => {});
+  state.scanningLibraryIds.delete(id);
+}
+
 function discardQueuedJobsForLibrary(id) {
   discardQueuedTranscodeJobsForLibrary(id);
   let discarded = 0;
@@ -148,15 +169,33 @@ function registerLibraryRoutes(app) {
     await loadLibraries();
     const lib = getLibraryById(req.params.id);
     if (!lib) return res.status(404).json({ error: "library not found" });
+
+    const allLibs = getLibraries();
+    const remaining = allLibs.filter((l) => l.id !== lib.id);
+
+    // Se for a biblioteca padrão:
     if (lib.isDefault || lib.id === state.DEFAULT_LIBRARY_ID) {
-      return res.status(403).json({
-        error: "A biblioteca padrão não pode ser removida. Se desejar usar outra pasta, edite o caminho desta biblioteca ou adicione uma nova.",
-      });
+      if (remaining.length === 0) {
+        // Única biblioteca no sistema: reseta para a raiz padrão da instalação (ROOT)
+        cancelAllJobsForLibrary(lib.id);
+        state.treeCaches.delete(lib.id);
+        fs.rm(libraryTreeCacheFile(lib.id), { force: true }).catch(() => {});
+        lib.id = state.DEFAULT_LIBRARY_ID;
+        lib.name = path.basename(state.ROOT) || "Biblioteca padrão";
+        lib.path = state.ROOT;
+        lib.enabled = true;
+        lib.isDefault = true;
+        await persistLibraries();
+        console.log(`[LIBRARIES] biblioteca padrão restaurada para ${state.ROOT}`);
+        return res.json({ ok: true, reset: true, library: librarySummary(lib) });
+      }
+
+      // Há outras bibliotecas: promove a próxima para default
+      const nextDefault = remaining.find((l) => l.enabled !== false) || remaining[0];
+      nextDefault.isDefault = true;
     }
-    if (libraryHasActiveJobs(lib.id)) {
-      return res.status(409).json({ error: "há jobs ativos para esta biblioteca" });
-    }
-    discardQueuedJobsForLibrary(lib.id);
+
+    cancelAllJobsForLibrary(lib.id);
     state.treeCaches.delete(lib.id);
     fs.rm(libraryTreeCacheFile(lib.id), { force: true }).catch(() => {});
     state.scanningLibraryIds.delete(lib.id);
@@ -180,5 +219,6 @@ function registerLibraryRoutes(app) {
 module.exports = {
   libraryHasActiveJobs,
   discardQueuedJobsForLibrary,
+  cancelAllJobsForLibrary,
   registerLibraryRoutes,
 };

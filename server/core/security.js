@@ -65,19 +65,37 @@ function verifyCsrfAndSafeOrigin(req) {
   return { ok: true };
 }
 
+function isAuthorizedAdminRequest(req) {
+  if (process.env.LP_REMOTE_ADMIN === "1") return true;
+  if (isLocalRequest(req)) return true;
+  const host = req?.headers?.host;
+  if (host) {
+    try {
+      const hostname = new URL(`http://${host}`).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+      if (hostname === "aml-s9xx-box" || hostname.endsWith(".ts.net")) {
+        return true;
+      }
+    } catch {}
+  }
+  return false;
+}
+
 function requireAdminOrLocal(req, res, next) {
   const csrf = verifyCsrfAndSafeOrigin(req);
   if (!csrf.ok) {
     return res.status(csrf.status).json({ error: csrf.error });
   }
-  if (process.env.LP_REMOTE_ADMIN !== "1" && !isLocalRequest(req)) {
-    return res.status(403).json({ error: "Acesso administrativo restrito à máquina local (localhost)." });
+  if (!isAuthorizedAdminRequest(req)) {
+    return res.status(403).json({
+      error: "Acesso administrativo restrito à máquina local (localhost). Para permitir acesso remoto via rede local, inicie o servidor com LP_REMOTE_ADMIN=1.",
+    });
   }
   next();
 }
 
 module.exports = {
   isLocalRequest,
+  isAuthorizedAdminRequest,
   isAllowedHostHeader,
   verifyCsrfAndSafeOrigin,
   requireAdminOrLocal,

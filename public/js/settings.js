@@ -691,8 +691,10 @@ function renderSettingsBibliotecas() {
           lib.enabled === false ? "Ativar" : "Desativar"
         }</button>`,
       ];
-      if (!isDefault) {
+      if (!isDefault || libs.length > 1) {
         actions.push(`<button type="button" class="lib-btn lib-btn-danger" data-action="remove">Remover</button>`);
+      } else if (isDefault && (lib.status === "unavailable" || lib.status === "error" || (lib.path && lib.path !== "Biblioteca da instalação"))) {
+        actions.push(`<button type="button" class="lib-btn" data-action="reset">Restaurar padrão</button>`);
       }
       const countParts = [];
       const courses = Number.isFinite(lib.courseCount) ? lib.courseCount : 0;
@@ -794,24 +796,57 @@ function bindSettingsBibliotecas(app) {
         .catch((err) => showError("Falha ao alternar: " + err.message));
       return;
     }
-    if (action === "remove") {
+    if (action === "reset") {
       openConfirmDialog({
-        title: "Remover biblioteca",
+        title: "Restaurar biblioteca padrão",
         message:
+          "O caminho da biblioteca padrão será restaurado para a pasta padrão da instalação. Nenhum arquivo será apagado.",
+        confirmLabel: "Restaurar",
+        cancelLabel: "Cancelar",
+        danger: false,
+        onConfirm: () => {
+          doFetch(`/api/libraries/${encodeURIComponent(libId)}`, { method: "DELETE" })
+            .then(() => {
+              showSettingsToast("Biblioteca padrão restaurada com sucesso");
+              return refresh();
+            })
+            .catch((err) => showError("Falha ao restaurar: " + err.message));
+        },
+      });
+      return;
+    }
+    if (action === "remove") {
+      const isDefaultLib = lib && lib.isDefault === true;
+      const otherLibs = state.libraries.filter((l) => l.id !== libId);
+      let confirmTitle = "Remover biblioteca";
+      let confirmMsg = "";
+      if (isDefaultLib && otherLibs.length > 0) {
+        const nextLib = otherLibs.find((l) => l.enabled !== false) || otherLibs[0];
+        confirmMsg = `A biblioteca "${lib && lib.name ? lib.name : "padrão"}" será removida da configuração e "${nextLib.name}" passará a ser a nova biblioteca padrão. Nenhum arquivo da pasta será apagado.`;
+      } else if (isDefaultLib && otherLibs.length === 0) {
+        confirmTitle = "Restaurar biblioteca padrão";
+        confirmMsg = `Esta é a única biblioteca cadastrada. Ao removê-la, ela será restaurada para a pasta padrão da instalação. Nenhum arquivo será apagado.`;
+      } else {
+        confirmMsg =
           `A biblioteca "${lib && lib.name ? lib.name : ""}" será removida da configuração. ` +
-          "Nenhum arquivo da pasta será apagado; progresso e caches (transcoding/legendas) são preservados. Esta ação não pode ser desfeita.",
-        confirmLabel: "Remover da configuração",
+          "Nenhum arquivo da pasta será apagado; progresso e caches (transcoding/legendas) são preservados. Esta ação não pode ser desfeita.";
+      }
+      openConfirmDialog({
+        title: confirmTitle,
+        message: confirmMsg,
+        confirmLabel: isDefaultLib && otherLibs.length === 0 ? "Restaurar" : "Remover da configuração",
         cancelLabel: "Cancelar",
         danger: true,
         onConfirm: () => {
           doFetch(`/api/libraries/${encodeURIComponent(libId)}`, { method: "DELETE" })
-            .then(() => {
-              showSettingsToast("Biblioteca removida da configuração");
+            .then((res) => {
+              showSettingsToast(res && res.reset ? "Biblioteca padrão restaurada" : "Biblioteca removida da configuração");
               return refresh();
             })
             .catch((err) => showError("Falha ao remover: " + err.message));
         },
       });
+      return;
     }
   });
 }

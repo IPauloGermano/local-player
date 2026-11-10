@@ -559,4 +559,270 @@ test("PATCH /api/libraries/default: permite desativar e reativar a biblioteca pa
   }
 });
 
+test("DELETE /api/libraries/default: reseta para raiz padrão da instalação quando for a única biblioteca", async () => {
+  const express = require("express");
+  const http = require("node:http");
+  const { registerLibraryRoutes } = require("../server/libraries/routes");
+  const registry = require("../server/libraries/registry");
+  const state = require("../server/state");
+
+  const tmpData = makeFixture([]);
+  const prevDataDir = process.env.LP_DATA_DIR;
+  process.env.LP_DATA_DIR = tmpData;
+
+  const prev = registry.librariesCache;
+  registry.librariesCache = [
+    {
+      id: "default",
+      name: "Alterada",
+      path: "/pasta/inexistente/alterada",
+      enabled: true,
+      isDefault: true,
+      createdAt: Date.now(),
+    },
+  ];
+  await registry.persistLibraries();
+
+  const app = express();
+  app.use(express.json());
+  registerLibraryRoutes(app);
+
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/libraries/default`, {
+      method: "DELETE",
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.ok, true);
+    assert.strictEqual(data.reset, true);
+
+    const updated = registry.getLibraryById("default");
+    assert.ok(updated);
+    assert.strictEqual(updated.path, state.ROOT);
+    assert.strictEqual(updated.isDefault, true);
+  } finally {
+    server.close();
+    process.env.LP_DATA_DIR = prevDataDir;
+    registry.librariesCache = prev;
+    fs.rmSync(tmpData, { recursive: true, force: true });
+  }
+});
+
+test("DELETE /api/libraries/default: remove a padrão e promove a próxima biblioteca quando houver outras", async () => {
+  const express = require("express");
+  const http = require("node:http");
+  const { registerLibraryRoutes } = require("../server/libraries/routes");
+  const registry = require("../server/libraries/registry");
+  const state = require("../server/state");
+
+  const tmpData = makeFixture([]);
+  const tmpB = makeFixture(["Curso B/aula.mp4"]);
+  const prevDataDir = process.env.LP_DATA_DIR;
+  process.env.LP_DATA_DIR = tmpData;
+
+  const prev = registry.librariesCache;
+  registry.librariesCache = [
+    {
+      id: "default",
+      name: "Padrao Velha",
+      path: state.ROOT,
+      enabled: true,
+      isDefault: true,
+      createdAt: Date.now(),
+    },
+    {
+      id: "lib-secundaria",
+      name: "Biblioteca B",
+      path: tmpB,
+      enabled: true,
+      isDefault: false,
+      createdAt: Date.now(),
+    },
+  ];
+  await registry.persistLibraries();
+
+  const app = express();
+  app.use(express.json());
+  registerLibraryRoutes(app);
+
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/libraries/default`, {
+      method: "DELETE",
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.ok, true);
+
+    assert.strictEqual(registry.getLibraryById("default"), null);
+    const promoted = registry.getLibraryById("lib-secundaria");
+    assert.ok(promoted);
+    assert.strictEqual(promoted.isDefault, true);
+  } finally {
+    server.close();
+    process.env.LP_DATA_DIR = prevDataDir;
+    registry.librariesCache = prev;
+    fs.rmSync(tmpData, { recursive: true, force: true });
+    fs.rmSync(tmpB, { recursive: true, force: true });
+  }
+});
+
+test("DELETE /api/libraries/:id: cancela jobs ativos e remove com sucesso sem bloquear com 409", async () => {
+  const express = require("express");
+  const http = require("node:http");
+  const { registerLibraryRoutes } = require("../server/libraries/routes");
+  const registry = require("../server/libraries/registry");
+  const state = require("../server/state");
+
+  const tmpData = makeFixture([]);
+  const tmpC = makeFixture(["Curso C/aula.mp4"]);
+  const prevDataDir = process.env.LP_DATA_DIR;
+  process.env.LP_DATA_DIR = tmpData;
+
+  const prev = registry.librariesCache;
+  registry.librariesCache = [
+    {
+      id: "default",
+      name: "Padrao",
+      path: state.ROOT,
+      enabled: true,
+      isDefault: true,
+      createdAt: Date.now(),
+    },
+    {
+      id: "lib-com-jobs",
+      name: "Biblioteca C",
+      path: tmpC,
+      enabled: true,
+      isDefault: false,
+      createdAt: Date.now(),
+    },
+  ];
+  await registry.persistLibraries();
+
+  // Simula jobs ativos na biblioteca
+  state.scanningLibraryIds.add("lib-com-jobs");
+  state.subtitleJobs.set("hash-test-job", {
+    libraryId: "lib-com-jobs",
+    status: "transcribing",
+    rel: "Curso C/aula.mp4",
+  });
+
+  const app = express();
+  app.use(express.json());
+  registerLibraryRoutes(app);
+
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/libraries/lib-com-jobs`, {
+      method: "DELETE",
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.ok, true);
+
+    assert.strictEqual(registry.getLibraryById("lib-com-jobs"), null);
+    assert.strictEqual(state.scanningLibraryIds.has("lib-com-jobs"), false);
+  } finally {
+    server.close();
+    process.env.LP_DATA_DIR = prevDataDir;
+    registry.librariesCache = prev;
+    state.scanningLibraryIds.delete("lib-com-jobs");
+    state.subtitleJobs.delete("hash-test-job");
+    fs.rmSync(tmpData, { recursive: true, force: true });
+    fs.rmSync(tmpC, { recursive: true, force: true });
+  }
+});
+
+test("DELETE /api/libraries/:id: autoriza remoção sob host Tailscale ou aml-s9xx-box", async () => {
+  const express = require("express");
+  const http = require("node:http");
+  const { registerLibraryRoutes } = require("../server/libraries/routes");
+  const registry = require("../server/libraries/registry");
+  const state = require("../server/state");
+
+  const tmpData = makeFixture([]);
+  const tmpD = makeFixture(["Curso D/aula.mp4"]);
+  const prevDataDir = process.env.LP_DATA_DIR;
+  process.env.LP_DATA_DIR = tmpData;
+
+  const prev = registry.librariesCache;
+  registry.librariesCache = [
+    {
+      id: "default",
+      name: "Padrao",
+      path: state.ROOT,
+      enabled: true,
+      isDefault: true,
+      createdAt: Date.now(),
+    },
+    {
+      id: "lib-tailscale",
+      name: "Biblioteca D",
+      path: tmpD,
+      enabled: true,
+      isDefault: false,
+      createdAt: Date.now(),
+    },
+  ];
+  await registry.persistLibraries();
+
+  const app = express();
+  app.use(express.json());
+  registerLibraryRoutes(app);
+
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+
+  try {
+    const res = await new Promise((resolve, reject) => {
+      const r = http.request(
+        {
+          hostname: "127.0.0.1",
+          port,
+          path: "/api/libraries/lib-tailscale",
+          method: "DELETE",
+          headers: {
+            Host: `aml-s9xx-box:${port}`,
+            Origin: `http://aml-s9xx-box:${port}`,
+          },
+        },
+        (resp) => {
+          let body = "";
+          resp.on("data", (c) => (body += c));
+          resp.on("end", () => {
+            resolve({
+              status: resp.statusCode,
+              json: () => Promise.resolve(JSON.parse(body || "{}")),
+            });
+          });
+        },
+      );
+      r.on("error", reject);
+      r.end();
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.ok, true);
+    assert.strictEqual(registry.getLibraryById("lib-tailscale"), null);
+  } finally {
+    server.close();
+    process.env.LP_DATA_DIR = prevDataDir;
+    registry.librariesCache = prev;
+    fs.rmSync(tmpData, { recursive: true, force: true });
+    fs.rmSync(tmpD, { recursive: true, force: true });
+  }
+});
+
 
