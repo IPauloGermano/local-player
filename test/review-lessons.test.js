@@ -34,10 +34,11 @@ test("Home e Tópico: NÃO possuem seção de cards de revisão", () => {
   assert.equal(stylesCss.includes(".review-grid"), false, "CSS não deve conter .review-grid");
 });
 
-test("Player: controles do player e da sidebar mantêm o marcador de revisão", () => {
-  assert.match(playerJs, /id="toggle-lesson-review-btn"/);
-  assert.match(playerJs, /btn-review/);
-  assert.match(playerJs, /toggleLessonReview\(/);
+test("Player: botão 'Revisar' removido da barra do player, mantendo marcador e calor na sidebar", () => {
+  assert.equal(playerJs.includes('id="toggle-lesson-review-btn"'), false, "Player não deve conter toggle-lesson-review-btn");
+  assert.equal(playerJs.includes('btn-review'), false, "Player não deve conter btn-review");
+  assert.match(appJs, /class="lesson-flag-btn/);
+  assert.match(appJs, /data-flag-lesson=/);
 });
 
 test("Sem colisões de identificadores no escopo global entre scripts", () => {
@@ -47,14 +48,13 @@ test("Sem colisões de identificadores no escopo global entre scripts", () => {
   assert.deepEqual(dups, [], "Não deve haver colisões de identificadores no escopo léxico global");
 });
 
-test("CSS: estilos para bandeira na sidebar e botão do player", () => {
-  // Botão de navegação do player
-  assert.match(stylesCss, /\.btn-review\s*\{/);
-  assert.match(stylesCss, /\.btn-review\.is-review\s*\{/);
-
-  // Botão de bandeira na sidebar
+test("CSS: estilos para bandeira na sidebar", () => {
+  // Botão de bandeira na sidebar mantido
   assert.match(stylesCss, /\.tree-lesson \.lesson-flag-btn\s*\{/);
   assert.match(stylesCss, /\.tree-lesson \.lesson-flag-btn\.is-active/);
+
+  // Botão btn-review do player removido
+  assert.equal(stylesCss.includes(".btn-review {"), false, "CSS não deve conter .btn-review");
 });
 
 test("Sidebar: indicador de calor / intensidade para módulos com aulas marcadas para revisão", () => {

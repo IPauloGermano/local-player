@@ -664,8 +664,6 @@ function renderPlayerAndLesson() {
 
   const p = progFor(video);
   const isDone = !!(p && p.completed);
-  const currentLibId = video.libId || (state.currentCourseNode && state.currentCourseNode.libId) || (typeof DEFAULT_LIB_ID !== "undefined" ? DEFAULT_LIB_ID : "default");
-  const isRev = typeof isLessonReview === "function" && isLessonReview(video.path, currentLibId);
   header.innerHTML = `
     <div class="lesson-title-row">
       <div class="lesson-title-block">
@@ -691,11 +689,6 @@ function renderPlayerAndLesson() {
         <button id="toggle-lesson-complete-btn" class="btn-nav btn-complete ${isDone ? "is-completed" : ""}" type="button" aria-label="${isDone ? "Desmarcar aula como concluída" : "Marcar aula como concluída"}" title="${isDone ? "Desmarcar aula como concluída" : "Marcar aula como concluída"}">
           <span class="complete-icon" aria-hidden="true">${isDone ? ICON_COMPLETE_CHECK : ICON_COMPLETE_CIRCLE}</span>
           <span class="complete-text">${isDone ? "Concluída" : "Concluir"}</span>
-        </button>
-        <div class="nav-sep" aria-hidden="true"></div>
-        <button id="toggle-lesson-review-btn" class="btn-nav btn-review ${isRev ? "is-review" : ""}" type="button" aria-label="${isRev ? "Remover dos marcados para revisão" : "Marcar para revisar depois"}" title="${isRev ? "Remover dos marcados para revisão" : "Marcar para revisar depois"}">
-          <span class="review-icon" aria-hidden="true">${isRev ? ICON_FLAG_FILLED : ICON_FLAG_OUTLINE}</span>
-          <span class="review-text">${isRev ? "Marcada" : "Revisar"}</span>
         </button>
         <div class="nav-sep" aria-hidden="true"></div>
         <button id="next-btn" class="btn-nav btn-nav-next" ${next ? "" : "disabled"} title="Próxima aula" aria-label="Próxima aula">
@@ -747,15 +740,7 @@ function renderPlayerAndLesson() {
       e.currentTarget?.blur?.();
       toggleLessonCompleted(video.path);
     });
-  document
-    .getElementById("toggle-lesson-review-btn")
-    ?.addEventListener("click", (e) => {
-      e.currentTarget?.blur?.();
-      const currentLib = video.libId || (state.currentCourseNode && state.currentCourseNode.libId) || (typeof DEFAULT_LIB_ID !== "undefined" ? DEFAULT_LIB_ID : "default");
-      if (typeof toggleLessonReview === "function") {
-        toggleLessonReview(video.path, currentLib);
-      }
-    });
+
   document
     .getElementById("next-btn")
     ?.addEventListener("click", (e) => {

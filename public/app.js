@@ -177,7 +177,6 @@ function toggleLessonReview(path, libId) {
   } catch (err) {
     console.warn("Falha ao persistir aulas para revisão no localStorage:", err);
   }
-  updateLessonReviewButton();
   updateSidebarReviewFlags();
 }
 
@@ -1538,24 +1537,7 @@ function renderFolderChildren(folderNode, depth = 1) {
   return html;
 }
 
-function updateLessonReviewButton(videoNode) {
-  const btn = document.getElementById("toggle-lesson-review-btn");
-  if (!btn) return;
-  const targetVideo = videoNode || state.currentVideoNode;
-  if (!targetVideo) return;
-  const libId = targetVideo.libId || (state.currentCourseNode && state.currentCourseNode.libId) || DEFAULT_LIB_ID;
-  const isRev = isLessonReview(targetVideo.path, libId);
-  btn.classList.toggle("is-review", isRev);
-  const label = isRev ? "Remover dos marcados para revisão" : "Marcar para revisar depois";
-  btn.setAttribute("aria-label", label);
-  btn.setAttribute("title", label);
-  const icon = btn.querySelector(".review-icon");
-  if (icon) {
-    icon.innerHTML = isRev ? ICON_FLAG_FILLED : ICON_FLAG_OUTLINE;
-  }
-  const text = btn.querySelector(".review-text");
-  if (text) text.textContent = isRev ? "Marcada" : "Revisar";
-}
+
 
 function updateSidebarReviewFlags() {
   const slot = document.getElementById("tree-slot");
@@ -1906,7 +1888,6 @@ function updateProgressUI() {
   if (progressWatch)
     progressWatch.textContent = `${formatDuration(stats.watchedSeconds)} assistidos`;
   updateLessonCompleteButton();
-  updateLessonReviewButton();
 }
 
 // Player ativo (para o `beforeunload` único registrar a posição atual).
@@ -3049,7 +3030,6 @@ async function init() {
 if (typeof window !== "undefined") {
   window.isLessonReview = isLessonReview;
   window.toggleLessonReview = toggleLessonReview;
-  window.updateLessonReviewButton = updateLessonReviewButton;
   window.updateSidebarReviewFlags = updateSidebarReviewFlags;
   window.ICON_FLAG_OUTLINE = ICON_FLAG_OUTLINE;
   window.ICON_FLAG_FILLED = ICON_FLAG_FILLED;

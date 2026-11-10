@@ -3795,34 +3795,6 @@ body {
   background: rgba(16, 185, 129, 0.18);
   border-color: rgba(16, 185, 129, 0.35);
 }
-.btn-review {
-  color: var(--text-dim);
-  font-weight: 500;
-}
-.btn-review .review-icon {
-  font-size: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.btn-review.is-review {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.3);
-  font-weight: 600;
-}
-.btn-review.is-review .review-icon {
-  color: #f59e0b;
-}
-.btn-review:hover:not(:disabled) {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.08);
-  border-color: rgba(245, 158, 11, 0.2);
-}
-.btn-review.is-review:hover:not(:disabled) {
-  background: rgba(245, 158, 11, 0.18);
-  border-color: rgba(245, 158, 11, 0.4);
-}
 .player-tools {
   display: inline-flex;
   align-items: center;
@@ -5527,9 +5499,6 @@ body {
   }
   .btn-complete {
     flex: 1.15;
-  }
-  .btn-review {
-    flex: 1;
   }
   .player-tools {
     display: inline-flex;
