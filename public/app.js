@@ -33,7 +33,6 @@ const {
   collectTopicsInScope,
   collectDirectCourses,
   buildContinueItems,
-  buildReviewItems: scopeBuildReviewItems,
   getNodeProgressStats,
   getLibraryProgressSummary,
   collectOrphanRecords,
@@ -184,84 +183,6 @@ function toggleLessonReview(path, libId) {
 
 const ICON_FLAG_OUTLINE = `<svg class="flag-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>`;
 const ICON_FLAG_FILLED = `<svg class="flag-svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>`;
-
-function buildReviewItems(courses) {
-  if (typeof scopeBuildReviewItems === "function") {
-    return scopeBuildReviewItems(courses, isLessonReview, progFor);
-  }
-  if (!reviewLessons.size || !Array.isArray(courses)) return [];
-  const items = [];
-  for (const course of courses) {
-    const videos = typeof flattenVideos === "function" ? flattenVideos(course) : [];
-    for (const video of videos) {
-      const libId = video.libId || course.libId || DEFAULT_LIB_ID;
-      if (isLessonReview(video.path, libId)) {
-        items.push({
-          course,
-          video,
-          libId,
-          progress: progFor(video) || { position: 0, duration: 0, completed: false },
-        });
-      }
-    }
-  }
-  return items;
-}
-
-function renderReviewCard(item, i) {
-  const pct = item.progress.duration
-    ? Math.min(
-        100,
-        Math.round((item.progress.position / item.progress.duration) * 100),
-      )
-    : (item.progress.completed ? 100 : 0);
-  const reviewHref = courseHref(item.course, item.video.path);
-  return `
-    <div class="review-card" style="--i:${i}">
-      <a class="review-card-link" href="${reviewHref}" aria-label="Revisar aula: ${escapeHtml(lessonTitle(item.video))}">
-        <div class="review-card-top">
-          <span class="review-badge" aria-hidden="true">
-            ${ICON_FLAG_FILLED}
-            <span>Revisar</span>
-          </span>
-          <span class="review-pct">${pct}%</span>
-        </div>
-        <div class="review-card-body">
-          <div class="lesson-name" title="${escapeHtml(lessonTitle(item.video))}">${escapeHtml(lessonTitle(item.video))}</div>
-          <div class="course-name" title="${escapeHtml(courseTitle(item.course))}">${escapeHtml(courseTitle(item.course))}</div>
-        </div>
-        <div class="progress-bar review-progress-bar">
-          <div class="progress-bar-fill" style="width:${pct}%"></div>
-        </div>
-      </a>
-      <button class="review-remove-btn" type="button" data-unreview="${encodeURIComponent(item.video.path)}" data-lib="${encodeURIComponent(item.libId)}" title="Remover de Revisar depois" aria-label="Remover de Revisar depois">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
-    </div>`;
-}
-
-function renderReviewSection(items) {
-  if (!items || !items.length) return "";
-  let html = `
-    <section class="home-section review-section" id="review-section">
-      <div class="section-head">
-        <div>
-          <h2 class="section-heading">Aulas marcadas para revisão</h2>
-          <p class="section-subtitle">Aulas salvas com o marcador para estudar ou rever depois</p>
-        </div>
-        <span class="count">(${items.length})</span>
-      </div>
-      <div class="review-grid">`;
-  items.forEach((item, i) => {
-    html += renderReviewCard(item, i);
-  });
-  html += `</div>
-    </section>`;
-  return html;
-}
 
 // Modo da seção "Seu progresso" (expandida/compacta), persistido no
 // localStorage. Padrão: compacta em qualquer resolução.
@@ -1461,11 +1382,6 @@ function renderHome(app) {
       html += renderContinueSection(topContinue, continueSummary);
     }
 
-    const reviewItems = buildReviewItems(allCourses);
-    if (reviewItems.length) {
-      html += renderReviewSection(reviewItems);
-    }
-
     if (progressScope.length) {
       html += renderProgressSection(librarySummary, progressScope.length);
     }
@@ -1535,26 +1451,6 @@ function renderHome(app) {
       if (favPath) {
         toggleFavorite(favPath, favLib);
         renderHome(app);
-      }
-    });
-  });
-
-  app.querySelectorAll(".review-remove-btn").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const unPath = el.dataset.unreview ? decodeURIComponent(el.dataset.unreview) : null;
-      const unLib = el.dataset.lib ? decodeURIComponent(el.dataset.lib) : "";
-      if (unPath) {
-        toggleLessonReview(unPath, unLib);
-        const card = el.closest(".review-card");
-        if (card) {
-          card.style.opacity = "0";
-          card.style.transform = "scale(0.95)";
-          setTimeout(() => renderHome(app), 150);
-        } else {
-          renderHome(app);
-        }
       }
     });
   });
@@ -2337,10 +2233,6 @@ function renderTopic(app, topicPath, libId) {
     if (topContinue.length) {
       html += renderContinueSection(topContinue, scopeSummary);
     }
-    const topicReviewItems = buildReviewItems(scopeCourses);
-    if (topicReviewItems.length) {
-      html += renderReviewSection(topicReviewItems);
-    }
     if (scopeCourses.length) {
       html += renderProgressSection(scopeSummary, scopeCourses.length);
     }
@@ -2384,25 +2276,6 @@ function renderTopic(app, topicPath, libId) {
       if (favPath) {
         toggleFavorite(favPath, favLib);
         renderTopic(app, topicPath, libId);
-      }
-    });
-  });
-  app.querySelectorAll(".review-remove-btn").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const unPath = el.dataset.unreview ? decodeURIComponent(el.dataset.unreview) : null;
-      const unLib = el.dataset.lib ? decodeURIComponent(el.dataset.lib) : "";
-      if (unPath) {
-        toggleLessonReview(unPath, unLib);
-        const card = el.closest(".review-card");
-        if (card) {
-          card.style.opacity = "0";
-          card.style.transform = "scale(0.95)";
-          setTimeout(() => renderTopic(app, topicPath, libId), 150);
-        } else {
-          renderTopic(app, topicPath, libId);
-        }
       }
     });
   });
@@ -3138,7 +3011,6 @@ if (typeof window !== "undefined") {
   window.toggleLessonReview = toggleLessonReview;
   window.updateLessonReviewButton = updateLessonReviewButton;
   window.updateSidebarReviewFlags = updateSidebarReviewFlags;
-  window.buildReviewItems = buildReviewItems;
   window.ICON_FLAG_OUTLINE = ICON_FLAG_OUTLINE;
   window.ICON_FLAG_FILLED = ICON_FLAG_FILLED;
 }
