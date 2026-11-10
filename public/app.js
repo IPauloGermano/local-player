@@ -466,20 +466,34 @@ function formatDuration(totalSeconds) {
 function countStats(node) {
   if (node.type === "video") {
     const p = progFor(node);
-    return { total: 1, done: p && p.completed ? 1 : 0 };
+    const libId = node.libId || (state.currentCourseNode && state.currentCourseNode.libId) || DEFAULT_LIB_ID;
+    const rev = isLessonReview(node.path, libId) ? 1 : 0;
+    return { total: 1, done: p && p.completed ? 1 : 0, review: rev };
   }
-  if (node.type === "folder") {
+  if (node.type === "folder" || node.type === "topic") {
     let total = 0;
     let done = 0;
-    for (const child of node.children) {
+    let review = 0;
+    for (const child of node.children || []) {
       if (child.type === "file") continue;
       const s = countStats(child);
       total += s.total;
       done += s.done;
+      review += s.review;
     }
-    return { total, done };
+    return { total, done, review };
   }
-  return { total: 0, done: 0 };
+  return { total: 0, done: 0, review: 0 };
+}
+
+function calculateReviewHeat(revCount, totalCount) {
+  if (!revCount || revCount <= 0) return { hasHeat: false, heat: 0, tooltip: "" };
+  const heat = Math.min(
+    1,
+    0.2 + (revCount / Math.max(1, totalCount)) * 0.6 + (Math.min(revCount, 5) / 5) * 0.2
+  ).toFixed(2);
+  const tooltip = ` • ${revCount} aula${revCount > 1 ? "s" : ""} para revisão`;
+  return { hasHeat: true, heat, tooltip };
 }
 
 function flattenMaterials(node, out = []) {
@@ -1474,14 +1488,16 @@ function renderFolderChildren(folderNode, depth = 1) {
       const stats = countStats(child);
       const isCompleted = stats.total > 0 && stats.done === stats.total;
       const isOpen = expandedFolders.has(child.path);
+      const revStats = calculateReviewHeat(stats.review, stats.total);
+      const folderTitleText = `${moduleTitle(child)}${revStats.tooltip}`;
       // data-depth permite ao CSS diferenciar módulo (1) de submódulo (2+) e
       // capar a indentação em níveis profundos. Tabindex/role/aria-expanded
       // tornam a pasta operável por teclado.
       html += `
         <div class="tree-folder ${isCompleted ? "completed" : ""}">
-          <div class="tree-folder-head ${isOpen ? "open" : ""} ${isCompleted ? "completed" : ""}" data-folder="${encodeURIComponent(child.path)}" data-depth="${Math.min(depth, 4)}" role="button" tabindex="0" aria-expanded="${isOpen}">
+          <div class="tree-folder-head ${isOpen ? "open" : ""} ${isCompleted ? "completed" : ""} ${revStats.hasHeat ? "has-review-heat" : ""}" data-folder="${encodeURIComponent(child.path)}" data-depth="${Math.min(depth, 4)}" ${revStats.hasHeat ? `data-review-count="${stats.review}" style="--rev-heat:${revStats.heat};"` : ""} role="button" tabindex="0" aria-expanded="${isOpen}">
             <svg class="chev" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
-            <span class="folder-title" title="${escapeHtml(moduleTitle(child))}"><span class="folder-title-inner">${escapeHtml(moduleTitle(child))}</span></span>
+            <span class="folder-title" title="${escapeHtml(folderTitleText)}"><span class="folder-title-inner">${escapeHtml(moduleTitle(child))}</span></span>
             <span class="folder-progress">${stats.done}/${stats.total}</span>
           </div>
           <div class="tree-folder-children ${isOpen ? "open" : ""}" data-folder-body="${encodeURIComponent(child.path)}">
@@ -1558,6 +1574,30 @@ function updateSidebarReviewFlags() {
     const svg = flagBtn.querySelector("svg");
     if (svg) svg.setAttribute("fill", isRev ? "currentColor" : "none");
   });
+
+  const courseNode = state.currentCourseNode;
+  if (courseNode) {
+    slot.querySelectorAll(".tree-folder-head").forEach((head) => {
+      const folderPath = decodeURIComponent(head.dataset.folder || "");
+      const folderNode = findNodeByPath(courseNode, folderPath);
+      if (folderNode) {
+        const stats = countStats(folderNode);
+        const revStats = calculateReviewHeat(stats.review, stats.total);
+        head.classList.toggle("has-review-heat", revStats.hasHeat);
+        if (revStats.hasHeat) {
+          head.dataset.reviewCount = String(stats.review);
+          head.style.setProperty("--rev-heat", String(revStats.heat));
+        } else {
+          delete head.dataset.reviewCount;
+          head.style.removeProperty("--rev-heat");
+        }
+        const titleEl = head.querySelector(".folder-title");
+        if (titleEl) {
+          titleEl.setAttribute("title", `${moduleTitle(folderNode)}${revStats.tooltip}`);
+        }
+      }
+    });
+  }
 }
 
 function updateLessonCompleteButton(videoNode) {

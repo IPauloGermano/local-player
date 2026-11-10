@@ -56,3 +56,23 @@ test("CSS: estilos para bandeira na sidebar e botão do player", () => {
   assert.match(stylesCss, /\.tree-lesson \.lesson-flag-btn\s*\{/);
   assert.match(stylesCss, /\.tree-lesson \.lesson-flag-btn\.is-active/);
 });
+
+test("Sidebar: indicador de calor / intensidade para módulos com aulas marcadas para revisão", () => {
+  // Contagem de aulas em revisão nas estatísticas
+  assert.match(appJs, /review:\s*rev/);
+  assert.match(appJs, /function calculateReviewHeat\(/);
+
+  // Renderização inicial com classes e CSS vars de calor
+  assert.match(appJs, /has-review-heat/);
+  assert.match(appJs, /--rev-heat/);
+  assert.match(appJs, /data-review-count/);
+
+  // Atualização dinâmica em tempo real no updateSidebarReviewFlags
+  assert.match(appJs, /head\.classList\.toggle\(["']has-review-heat["'],\s*revStats\.hasHeat\)/);
+  assert.match(appJs, /head\.style\.setProperty\(["']--rev-heat["']/);
+
+  // CSS de calor / intensidade
+  assert.match(stylesCss, /\.tree-folder-head\.has-review-heat\s*\{/);
+  assert.match(stylesCss, /var\(--rev-heat/);
+  assert.match(stylesCss, /\.tree-folder-head\.has-review-heat\.open/);
+});
