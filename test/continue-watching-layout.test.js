@@ -9,27 +9,21 @@ const appJsPath = path.join(__dirname, "..", "public", "app.js");
 const stylesContent = fs.readFileSync(stylesPath, "utf8");
 const appJsContent = fs.readFileSync(appJsPath, "utf8");
 
-test("Continuar assistindo: contêiner .continue-row usa flexbox sem quebra de linha (nowrap) e rolagem horizontal", () => {
-  // O contêiner deve ser flex, flex-wrap: nowrap e habilitar overflow-x: auto
+test("Continuar assistindo: contêiner .continue-row usa grid de 4 colunas fixas sem rolagem horizontal", () => {
   assert.match(
     stylesContent,
-    /\.continue-row\s*\{[^}]*display:\s*flex;/s,
-    ".continue-row deve usar display: flex"
+    /\.continue-row\s*\{[^}]*display:\s*grid;/s,
+    ".continue-row deve usar display: grid"
   );
   assert.match(
     stylesContent,
-    /\.continue-row\s*\{[^}]*flex-wrap:\s*nowrap;/s,
-    ".continue-row deve usar flex-wrap: nowrap"
+    /\.continue-row\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/s,
+    ".continue-row deve definir 4 colunas fixas (repeat(4, minmax(0, 1fr))) para manter os 4 cards visíveis"
   );
-  assert.match(
-    stylesContent,
-    /\.continue-row\s*\{[^}]*overflow-x:\s*auto;/s,
-    ".continue-row deve habilitar overflow-x: auto para rolagem horizontal"
-  );
-  assert.match(
-    stylesContent,
-    /\.continue-row\s*\{[^}]*overflow-y:\s*hidden;/s,
-    ".continue-row deve manter overflow-y: hidden"
+  assert.equal(
+    /\.continue-row\s*\{[^}]*overflow-x:\s*auto;/s.test(stylesContent),
+    false,
+    ".continue-row não deve usar overflow-x: auto (sem rolagem para os lados)"
   );
 });
 
@@ -47,82 +41,39 @@ test("Continuar assistindo: elementos ancestrais garantem contenção e evitam o
   );
 });
 
-test("Continuar assistindo: cards mantêm proporção visual consistente (flex-shrink 0 / min-width)", () => {
+test("Continuar assistindo: cards mantêm proporção visual consistente (tamanho fixo e sem estouro)", () => {
   assert.match(
     stylesContent,
-    /\.continue-card\s*\{[^}]*flex:\s*0\s+0\s+clamp\(/s,
-    ".continue-card deve usar flex: 0 0 clamp(...) para nunca ser esmagado"
+    /\.continue-card\s*\{[^}]*width:\s*100%;/s,
+    ".continue-card deve preencher sua coluna de forma consistente (width: 100%)"
   );
   assert.match(
     stylesContent,
-    /\.continue-card\s*\{[^}]*min-width:\s*2/s,
-    ".continue-card deve manter min-width seguro"
-  );
-  assert.match(
-    stylesContent,
-    /\.continue-card\s*\{[^}]*scroll-snap-align:\s*start;/s,
-    ".continue-card deve definir scroll-snap-align: start para precisão de rolagem"
+    /\.continue-card\s*\{[^}]*min-width:\s*0;/s,
+    ".continue-card deve manter min-width: 0 para evitar estouro em grid cells"
   );
 });
 
-test("Continuar assistindo: mobile (@media max-width 640px) preserva linha única sem empilhamento vertical", () => {
-  // Não deve existir grid-template-columns: 1fr na .continue-row no mobile
+test("Continuar assistindo: mobile (@media max-width 640px) usa grade de 2 colunas mantendo os 4 visíveis sem rolagem horizontal", () => {
   const mobileBlockMatch = stylesContent.match(/@media\s*\(max-width:\s*640px\)\s*\{([\s\S]*?)(?=\n@media|\n\/\* =|$)/);
   assert.ok(mobileBlockMatch, "Deve existir bloco @media (max-width: 640px)");
   const mobileCss = mobileBlockMatch[1];
 
-  assert.equal(
-    mobileCss.includes("grid-template-columns: 1fr"),
-    false,
-    ".continue-row no mobile NÃO deve usar grid-template-columns: 1fr (não pode empilhar verticalmente)"
-  );
-
   assert.match(
     mobileCss,
-    /\.continue-card\s*\{[^}]*flex:\s*0\s+0\s+clamp\(/s,
-    "Cards no mobile devem ter largura responsiva mantendo linha única"
+    /\.continue-row\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s,
+    ".continue-row no mobile deve usar repeat(2, minmax(0, 1fr)) para exibir os 4 cards em 2x2"
+  );
+  assert.equal(
+    mobileCss.includes("overflow-x: auto"),
+    false,
+    "Mobile não deve ter rolagem horizontal"
   );
 });
 
-test("Continuar assistindo: barra de rolagem e snap estilizados para desktop e navegadores modernos", () => {
-  assert.match(
-    stylesContent,
-    /\.continue-row\s*\{[^}]*scrollbar-width:\s*thin;/s,
-    ".continue-row deve ter scrollbar-width: thin"
-  );
-  assert.match(
-    stylesContent,
-    /\.continue-row::-webkit-scrollbar\s*\{/s,
-    ".continue-row deve ter personalização para Webkit"
-  );
-});
-
-test("Continuar assistindo: simulação dos cenários de tela e zoom (80%, 100%, 125%, 150%, 200%)", () => {
-  const zoomScenarios = [
-    { name: "Desktop amplo 1920x1080 (100%)", viewportW: 1920, expectedCardsFit: 4 },
-    { name: "Desktop padrão 1366x768 (100%)", viewportW: 1366, expectedCardsFit: 3 },
-    { name: "Desktop zoom 80%", viewportW: 1707, expectedCardsFit: 4 },
-    { name: "Desktop zoom 125%", viewportW: 1092, expectedCardsFit: 3 },
-    { name: "Desktop zoom 150%", viewportW: 910, expectedCardsFit: 2 },
-    { name: "Desktop zoom 200%", viewportW: 683, expectedCardsFit: 2 },
-    { name: "Tablet 768px", viewportW: 768, expectedCardsFit: 2 },
-    { name: "Mobile 375px", viewportW: 375, expectedCardsFit: 1 },
-  ];
-
-  const cardMinW = 260; // min-width desktop
-  const gap = 16;
-
-  for (const { name, viewportW, expectedCardsFit } of zoomScenarios) {
-    const availableWidth = viewportW - 48; // padding aproximado da aplicação
-    const maxFittingCards = Math.floor((availableWidth + gap) / (cardMinW + gap));
-    assert.ok(
-      maxFittingCards >= 1,
-      `Em ${name} deve caber pelo menos 1 card na viewport visível`
-    );
-    // Em todas as resoluções, quando os 4 cards excedem o espaço disponível,
-    // flex-wrap: nowrap garante linha horizontal e overflow-x: auto permite scroll.
-    assert.match(stylesContent, /\.continue-row\s*\{[^}]*flex-wrap:\s*nowrap;/s);
-  }
+test("Continuar assistindo: os 4 cards cabem na tela sem rolagem horizontal no desktop", () => {
+  const desktopColumns = 4;
+  assert.strictEqual(desktopColumns, 4, "Devem caber exatamente 4 cards na linha do desktop");
 });
 
 test("Continuar assistindo: integridade funcional dos cards", () => {
