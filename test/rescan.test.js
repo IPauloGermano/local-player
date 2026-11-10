@@ -109,3 +109,104 @@ test("rescan reflete arquivo novo/removido e nunca é cacheável", async () => {
     await fsp.rm(mediaDir, { recursive: true, force: true });
   }
 });
+
+test("rescan ignora pastas de sistema/dependências e extensões temporárias", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "lp-rescan-junk-"));
+  const mediaDir = fs.mkdtempSync(path.join(os.tmpdir(), "lp-media-junk-"));
+  const courseDir = path.join(mediaDir, "Curso Dev");
+  fs.mkdirSync(courseDir, { recursive: true });
+  fs.writeFileSync(path.join(courseDir, "Aula 01.mp4"), "");
+
+  // Pastas de dependência e sistema que NUNCA devem ser escaneadas:
+  fs.mkdirSync(path.join(courseDir, "node_modules", "pkg"), { recursive: true });
+  fs.writeFileSync(path.join(courseDir, "node_modules", "pkg", "ignore.mp4"), "");
+  fs.mkdirSync(path.join(courseDir, "venv", "lib"), { recursive: true });
+  fs.writeFileSync(path.join(courseDir, "venv", "lib", "ignore2.mp4"), "");
+  fs.mkdirSync(path.join(mediaDir, "$RECYCLE.BIN"), { recursive: true });
+  fs.writeFileSync(path.join(mediaDir, "$RECYCLE.BIN", "deleted.mp4"), "");
+
+  // Extensões temporárias:
+  fs.writeFileSync(path.join(courseDir, "download.part"), "");
+  fs.writeFileSync(path.join(courseDir, "cache.tmp"), "");
+
+  const srv = await startServer(dataDir);
+  try {
+    await json(`${srv.base}/api/libraries/default`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    await json(`${srv.base}/api/libraries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: mediaDir, name: "DEV_LIB" }),
+    });
+
+    const res = await json(`${srv.base}/api/rescan`, { method: "POST" });
+    assert.strictEqual(res.status, 200);
+    const bodyText = treeText(res.body);
+
+    assert.ok(bodyText.includes("Aula 01"), "inclui aula legítima");
+    assert.ok(!bodyText.includes("ignore.mp4"), "ignora node_modules");
+    assert.ok(!bodyText.includes("ignore2.mp4"), "ignora venv");
+    assert.ok(!bodyText.includes("deleted.mp4"), "ignora $RECYCLE.BIN");
+    assert.ok(!bodyText.includes("download.part"), "ignora .part");
+    assert.ok(!bodyText.includes("cache.tmp"), "ignora .tmp");
+  } finally {
+    await srv.stop();
+    await fsp.rm(dataDir, { recursive: true, force: true });
+    await fsp.rm(mediaDir, { recursive: true, force: true });
+  }
+});
+
+test("rescan com libraryId atualiza apenas a biblioteca especificada", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "lp-rescan-libid-"));
+  const mediaDir1 = fs.mkdtempSync(path.join(os.tmpdir(), "lp-media-1-"));
+  const mediaDir2 = fs.mkdtempSync(path.join(os.tmpdir(), "lp-media-2-"));
+
+  fs.mkdirSync(path.join(mediaDir1, "Curso 1"), { recursive: true });
+  fs.writeFileSync(path.join(mediaDir1, "Curso 1", "Aula 1.mp4"), "");
+
+  fs.mkdirSync(path.join(mediaDir2, "Curso 2"), { recursive: true });
+  fs.writeFileSync(path.join(mediaDir2, "Curso 2", "Aula 2.mp4"), "");
+
+  const srv = await startServer(dataDir);
+  try {
+    await json(`${srv.base}/api/libraries/default`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    const lib1 = await json(`${srv.base}/api/libraries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: mediaDir1, name: "LIB1" }),
+    });
+    const lib2 = await json(`${srv.base}/api/libraries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: mediaDir2, name: "LIB2" }),
+    });
+
+    // Estabelece o cache inicial de ambas as bibliotecas
+    const initTree = await json(`${srv.base}/api/tree`);
+    assert.strictEqual(initTree.status, 200);
+
+    // Adiciona arquivos em ambas as pastas no disco:
+    fs.writeFileSync(path.join(mediaDir1, "Curso 1", "Aula 1 - Nova.mp4"), "");
+    fs.writeFileSync(path.join(mediaDir2, "Curso 2", "Aula 2 - Nova.mp4"), "");
+
+    // Rescan direcionado apenas para LIB1:
+    const res = await json(`${srv.base}/api/rescan?libraryId=${lib1.body.id}`, { method: "POST" });
+    assert.strictEqual(res.status, 200);
+
+    const bodyText = treeText(res.body);
+    assert.ok(bodyText.includes("Aula 1 - Nova"), "LIB1 refletiu o novo arquivo");
+    assert.ok(!bodyText.includes("Aula 2 - Nova"), "LIB2 não foi re-escaneada (manteve cache)");
+  } finally {
+    await srv.stop();
+    await fsp.rm(dataDir, { recursive: true, force: true });
+    await fsp.rm(mediaDir1, { recursive: true, force: true });
+    await fsp.rm(mediaDir2, { recursive: true, force: true });
+  }
+});

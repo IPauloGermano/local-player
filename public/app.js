@@ -365,14 +365,16 @@ function initials(name) {
   return escapeHtml(chars);
 }
 
-async function loadAll() {
-  const [treeRes, progRes, aiRes] = await Promise.all([
-    // no-store: a árvore muda a cada rescan e nunca pode vir do cache.
-    fetch("/api/tree", { cache: "no-store" }),
+async function loadAll(providedTreeData = null) {
+  const treePromise = providedTreeData
+    ? Promise.resolve(providedTreeData)
+    : fetch("/api/tree", { cache: "no-store" }).then((r) => r.json());
+
+  const [treeData, progRes, aiRes] = await Promise.all([
+    treePromise,
     fetch("/api/progress"),
     fetch("/api/ai/status"),
   ]);
-  const treeData = await treeRes.json();
   const libraries = Array.isArray(treeData.libraries) ? treeData.libraries : [];
   state.libraries = libraries;
   const defaultLib = libraries.find((l) => l.isDefault) || libraries[0] || null;
@@ -2877,23 +2879,35 @@ async function init() {
     const originalHTML = btn.innerHTML;
     btn.innerHTML = `<span class="rescan-icon is-spinning" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></span> <span class="rescan-label">Atualizando...</span>`;
     try {
-      const res = await fetch("/api/rescan", {
+      const activeLibId = (state.currentCourseNode && state.currentCourseNode.libId) || null;
+      const rescanUrl = activeLibId
+        ? `/api/rescan?libraryId=${encodeURIComponent(activeLibId)}`
+        : "/api/rescan";
+      const res = await fetch(rescanUrl, {
         method: "POST",
         cache: "no-store",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      await loadAll();
+      const treeData = await res.json();
+      await loadAll(treeData);
       if (!refreshCourseViewInPlace()) route();
       // Feedback transitório de sucesso (2s), sem bloquear a interface.
       btn.innerHTML = `<span class="rescan-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg></span> <span class="rescan-label">Atualizado!</span>`;
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      btn.disabled = false;
+      rescanning = false;
+      setTimeout(() => {
+        if (!rescanning) btn.innerHTML = originalHTML;
+      }, 2000);
+      return;
     } catch (err) {
       console.error("[rescan] falha ao atualizar:", err);
       showRescanToast("Falha ao atualizar a biblioteca. Tente novamente.");
     } finally {
-      btn.innerHTML = originalHTML;
-      btn.disabled = false;
-      rescanning = false;
+      if (rescanning) {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+        rescanning = false;
+      }
     }
   });
 }

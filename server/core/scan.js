@@ -39,7 +39,33 @@ const ACTIVE_EXT = new Set([
   ".json",
 ]);
 
-const IGNORED_EXT = new Set([".ini", ".db", ".lnk"]);
+const IGNORED_EXT = new Set([
+  ".ini",
+  ".db",
+  ".lnk",
+  ".tmp",
+  ".temp",
+  ".part",
+  ".crdownload",
+  ".torrent",
+  ".ds_store",
+]);
+
+const IGNORED_DIR_NAMES = new Set([
+  "node_modules",
+  "system volume information",
+  "$recycle.bin",
+  "recycler",
+  "lost+found",
+  "__pycache__",
+  ".git",
+  ".svn",
+  ".hg",
+  ".courseplayer",
+  "venv",
+  ".venv",
+  "env",
+]);
 
 const COVER_NAME_HINTS = [
   "cover",
@@ -85,6 +111,39 @@ function chooseCoverImage(currentCover, childCovers) {
   return candidates[0].relPath;
 }
 
+// Concorrência global de I/O em disco para evitar saturação do barramento USB/SD
+// e não estourar a pool de 4 threads do libuv no Node.js durante recursão.
+class ConcurrencyLimiter {
+  constructor(limit) {
+    this.limit = limit;
+    this.active = 0;
+    this.queue = [];
+  }
+  run(fn) {
+    return new Promise((resolve, reject) => {
+      const execute = () => {
+        this.active++;
+        fn()
+          .then(resolve, reject)
+          .finally(() => {
+            this.active--;
+            if (this.queue.length > 0) {
+              const next = this.queue.shift();
+              next();
+            }
+          });
+      };
+      if (this.active < this.limit) {
+        execute();
+      } else {
+        this.queue.push(execute);
+      }
+    });
+  }
+}
+
+const globalIoLimiter = new ConcurrencyLimiter(10);
+
 // BUG-005: stats do scan com concorrência limitada. Em bibliotecas grandes o
 // fs.stat sequencial é o gargalo do scan (medido: ~5x mais lento que um pool
 // pequeno neste pendrive), mas disparar tudo de uma vez explode o número de
@@ -109,7 +168,9 @@ async function mapLimit(items, limit, fn) {
 async function scanDir(absDir, relDir) {
   let entries;
   try {
-    entries = await fs.readdir(absDir, { withFileTypes: true });
+    entries = await globalIoLimiter.run(() =>
+      fs.readdir(absDir, { withFileTypes: true }),
+    );
   } catch {
     return { children: [], videoCount: 0, coverImage: null, type: "folder" };
   }
@@ -126,6 +187,8 @@ async function scanDir(absDir, relDir) {
       if (entry.name === ".topic" && !entry.isDirectory()) hasTopicMarker = true;
       continue;
     }
+    const lowerName = entry.name.toLowerCase();
+    if (IGNORED_DIR_NAMES.has(lowerName)) continue;
     if (relDir === "" && entry.name === APP_DIR_NAME) continue;
     // Sem suporte a symlinks/junctions (invariante multiplataforma): um link
     // dentro da biblioteca pode apontar para FORA dela. Não indexar diretórios
@@ -163,13 +226,15 @@ async function scanDir(absDir, relDir) {
       const sub = await scanDir(entryAbs, entryRel);
       return { entry, entryRel, sub };
     }),
-    mapLimit(candidates, SCAN_STAT_CONCURRENCY, async (c) => {
-      try {
-        return (await fs.stat(path.join(absDir, c.entry.name))).size;
-      } catch {
-        return null;
-      }
-    }),
+    mapLimit(candidates, SCAN_STAT_CONCURRENCY, (c) =>
+      globalIoLimiter.run(async () => {
+        try {
+          return (await fs.stat(path.join(absDir, c.entry.name))).size;
+        } catch {
+          return null;
+        }
+      }),
+    ),
   ]);
 
   const children = [];
@@ -262,7 +327,7 @@ async function scanLibrary(lib) {
     // Caminho inexistente/inacessível ⇒ unavailable. O scanDir sozinho
     // engoliria ENOENT e devolveria árvore vazia com status "ok", mascarando
     // um drive desmontado como biblioteca válida sem cursos.
-    const st = await fs.stat(lib.path);
+    const st = await globalIoLimiter.run(() => fs.stat(lib.path));
     if (!st.isDirectory()) {
       return { status: "unavailable", error: "not a directory", tree: null };
     }
@@ -290,6 +355,8 @@ module.exports = {
   IMAGE_EXT,
   ACTIVE_EXT,
   IGNORED_EXT,
+  IGNORED_DIR_NAMES,
+  globalIoLimiter,
   COVER_NAME_HINTS,
   SCAN_STAT_CONCURRENCY,
   SCAN_DIR_CONCURRENCY,

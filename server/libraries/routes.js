@@ -78,7 +78,11 @@ function discardQueuedJobsForLibrary(id) {
 function registerLibraryRoutes(app) {
   app.get("/api/tree", async (req, res) => {
     const force = req.query.rescan === "1";
-    const tree = await getTree(force);
+    const targetLibId =
+      (req.query && typeof req.query.libraryId === "string" && req.query.libraryId.trim()) ||
+      (req.query && typeof req.query.libId === "string" && req.query.libId.trim()) ||
+      null;
+    const tree = await getTree(force, targetLibId);
     if (force) scheduleSubtitlePregen(tree);
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.set("Pragma", "no-cache");
@@ -87,7 +91,13 @@ function registerLibraryRoutes(app) {
   });
 
   app.post("/api/rescan", async (req, res) => {
-    const tree = await getTree(true);
+    const targetLibId =
+      (req.query && typeof req.query.libraryId === "string" && req.query.libraryId.trim()) ||
+      (req.query && typeof req.query.libId === "string" && req.query.libId.trim()) ||
+      (req.body && typeof req.body.libraryId === "string" && req.body.libraryId.trim()) ||
+      (req.body && typeof req.body.libId === "string" && req.body.libId.trim()) ||
+      null;
+    const tree = await getTree(true, targetLibId);
     scheduleSubtitlePregen(tree);
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.set("Pragma", "no-cache");

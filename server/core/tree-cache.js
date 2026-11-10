@@ -122,7 +122,7 @@ async function rescanLibrary(lib) {
 // mas são mantidas na lista (com status 'disabled' e sem árvore) para que o
 // frontend em Configurações > Bibliotecas possa exibi-las, reativá-las ou removê-las.
 // Se houver cache persistido em disco e não for `force`, o carregamento é instantâneo.
-async function getTree(force) {
+async function getTree(force, targetLibId = null) {
   let loadLibs = _loadLibraries;
   let getLibs = _getLibraries;
   if (!loadLibs || !getLibs) {
@@ -140,8 +140,9 @@ async function getTree(force) {
       results.push(librarySummary(lib, null));
       continue;
     }
+    const shouldForceThisLib = force && (!targetLibId || lib.id === targetLibId);
     let cached = treeCaches.get(lib.id);
-    if (!cached && !force) {
+    if (!cached && !shouldForceThisLib) {
       cached = await loadLibraryTreeCache(lib).catch(() => null);
       if (cached) {
         treeCaches.set(lib.id, cached);
@@ -149,7 +150,7 @@ async function getTree(force) {
     }
     // Se a biblioteca estava marcada como indisponível (ex.: pendrive conectado após o boot),
     // tenta verificar se o caminho já está acessível ou se pode ser montado agora.
-    if (cached && cached.status === "unavailable" && !force) {
+    if (cached && cached.status === "unavailable" && !shouldForceThisLib) {
       let st = await fs.stat(lib.path).catch(() => null);
       if (!st || !st.isDirectory()) {
         await ensureRemovableDrivesMounted().catch(() => false);
@@ -159,7 +160,7 @@ async function getTree(force) {
         cached = null; // Caminho da biblioteca disponível: descarta o cache indisponível e força scan
       }
     }
-    if (!cached || force) {
+    if (!cached || shouldForceThisLib) {
       results.push(await rescanLibrary(lib));
     } else {
       results.push(librarySummary(lib, cached));
