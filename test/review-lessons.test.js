@@ -108,6 +108,13 @@ test("Player js: botão de revisão nos controles do player", () => {
   assert.match(playerJs, /toggleLessonReview\(/);
 });
 
+test("Sem colisões de identificadores no escopo global entre scripts", () => {
+  const appConsts = new Set(appJs.match(/^(?:const|let)\s+([a-zA-Z0-9_]+)/gm)?.map(s => s.replace(/^(?:const|let)\s+/, "")));
+  const playerConsts = new Set(playerJs.match(/^(?:const|let)\s+([a-zA-Z0-9_]+)/gm)?.map(s => s.replace(/^(?:const|let)\s+/, "")));
+  const dups = [...appConsts].filter(id => playerConsts.has(id));
+  assert.deepEqual(dups, [], "Não deve haver colisões de identificadores no escopo léxico global");
+});
+
 test("CSS: estilos para marcador de revisão, sidebar e cards", () => {
   // Botão de navegação do player
   assert.match(stylesCss, /\.btn-review\s*\{/);

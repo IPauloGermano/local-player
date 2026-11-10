@@ -3139,6 +3139,8 @@ if (typeof window !== "undefined") {
   window.updateLessonReviewButton = updateLessonReviewButton;
   window.updateSidebarReviewFlags = updateSidebarReviewFlags;
   window.buildReviewItems = buildReviewItems;
+  window.ICON_FLAG_OUTLINE = ICON_FLAG_OUTLINE;
+  window.ICON_FLAG_FILLED = ICON_FLAG_FILLED;
 }
 
 init();
