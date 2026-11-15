@@ -71,3 +71,20 @@ test("Fatia 2: styles.css permite layout de palco com player no topo ocupando a 
     "No modo teatro, o player-wrap deve abranger todas as colunas da grade (grid-column: 1 / -1)"
   );
 });
+
+test("Modo Teatro no Desktop: sidebar e botão 'Aulas' não aparecem na UI desktop", () => {
+  // Botão Aulas não deve ter display: inline-flex no escopo desktop
+  const desktopBlock = STYLES_CSS.match(/@media\s*\(\s*min-width:\s*1025px\s*\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(desktopBlock, "Deve existir @media (min-width: 1025px)");
+  assert.doesNotMatch(
+    desktopBlock[1],
+    /\.lesson-sidebar-toggle\s*\{[^}]*display:\s*inline-flex/s,
+    "No desktop, .lesson-sidebar-toggle não deve ter display: inline-flex"
+  );
+  // Sidebar deve estar oculta no modo teatro desktop
+  assert.match(
+    desktopBlock[1],
+    /\.course-view\.theater\s+\.sidebar\s*\{[^}]*display:\s*none/s,
+    "No desktop, a sidebar deve estar com display: none no modo teatro"
+  );
+});

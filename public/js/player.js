@@ -740,6 +740,7 @@ function renderPlayerAndLesson() {
       e.currentTarget?.blur?.();
       toggleLessonCompleted(video.path);
     });
+
   document
     .getElementById("next-btn")
     ?.addEventListener("click", (e) => {

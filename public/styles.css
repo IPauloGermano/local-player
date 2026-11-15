@@ -2122,10 +2122,10 @@ body {
   align-items: start;
 }
 
-/* ---------- Modo Teatro (Palco de Cinema com Área de Estudos Inferior) ----------
+/* ---------- Modo Teatro (Palco de Cinema) ----------
    Player em destaque amplo ocupando a largura total (100%) da área útil;
-   abaixo do palco, o sumário e o cabeçalho da aula formam uma área de estudo
-   fluida. Fechado, o trilho do sumário vai a 0px. */
+   no desktop, a sidebar/sumário não aparece no modo teatro e o botão "Aulas"
+   não é exibido na UI desktop. */
 .course-view.theater {
   grid-template-columns: minmax(0, 1fr) 0px;
   transition: grid-template-columns 0.28s ease;
@@ -2135,16 +2135,17 @@ body {
   overflow: hidden;
 }
 .course-view.theater.summary-open {
-  grid-template-columns: minmax(0, 1fr) var(--sidebar-w);
+  grid-template-columns: minmax(0, 1fr) 0px;
 }
-/* Colapsado no desktop: além do trilho 0px, esconde o conteúdo para que os
-   links da árvore não fiquem tabuláveis enquanto invisíveis e zera larguras/paddings
-   para prevenir overflow horizontal. O :not(.drawer-open) preserva o drawer
-   mobile (≤900px): com o drawer aberto a regra de colapso não se aplica. */
-.course-view.theater:not(.summary-open):not(.drawer-open) {
+/* Colapsado no desktop: esconde o conteúdo para que os links da árvore não
+   fiquem tabuláveis enquanto invisíveis e zera larguras/paddings para prevenir
+   overflow horizontal. O :not(.drawer-open) preserva o drawer mobile (≤900px). */
+.course-view.theater:not(.summary-open):not(.drawer-open),
+.course-view.theater:not(.drawer-open) {
   column-gap: 0;
 }
-.course-view.theater:not(.summary-open):not(.drawer-open) .sidebar {
+.course-view.theater:not(.summary-open):not(.drawer-open) .sidebar,
+.course-view.theater:not(.drawer-open) .sidebar {
   visibility: hidden;
   width: 0;
   max-width: 0;
@@ -2154,10 +2155,15 @@ body {
   margin: 0;
   overflow: hidden;
   pointer-events: none;
+  display: none;
 }
 
 /* Modo Teatro no Desktop: o player estende-se por toda a grade (100% de largura) */
 @media (min-width: 1025px) {
+  .course-view.theater {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+  }
   .course-view.theater .player-col {
     display: contents;
   }
@@ -2177,17 +2183,17 @@ body {
   .course-view.theater .lesson-header,
   .course-view.theater #materials-slot,
   .course-view.theater #subtitle-editor-slot {
-    grid-column: 1;
+    grid-column: 1 / -1;
     min-width: 0;
     max-width: 100%;
     margin: 0;
   }
   .course-view.theater .sidebar {
-    grid-column: 2;
-    min-width: 0;
+    display: none !important;
   }
-  .course-view.theater .lesson-sidebar-toggle {
-    display: inline-flex;
+  .course-view.theater .lesson-sidebar-toggle,
+  .course-view .lesson-sidebar-toggle {
+    display: none !important;
   }
 }
 
@@ -4217,6 +4223,47 @@ body {
   opacity: 1;
 }
 
+/* Indicador de calor / intensidade para módulos com aulas marcadas para revisão */
+.tree-folder-head.has-review-heat {
+  background: linear-gradient(
+    90deg,
+    rgba(245, 158, 11, calc(0.04 + var(--rev-heat, 0.2) * 0.14)) 0%,
+    rgba(245, 158, 11, calc(0.01 + var(--rev-heat, 0.2) * 0.04)) 70%,
+    transparent 100%
+  );
+  border-left-color: rgba(245, 158, 11, calc(0.35 + var(--rev-heat, 0.2) * 0.65));
+  box-shadow:
+    inset 2px 0 0 rgba(245, 158, 11, calc(0.4 + var(--rev-heat, 0.2) * 0.6)),
+    inset 1px 0 6px rgba(245, 158, 11, calc(var(--rev-heat, 0.2) * 0.15));
+}
+
+.tree-folder-head.has-review-heat:hover {
+  background: linear-gradient(
+    90deg,
+    rgba(245, 158, 11, calc(0.08 + var(--rev-heat, 0.2) * 0.18)) 0%,
+    rgba(245, 158, 11, calc(0.02 + var(--rev-heat, 0.2) * 0.06)) 70%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  border-left-color: rgba(245, 158, 11, calc(0.55 + var(--rev-heat, 0.2) * 0.45));
+}
+
+.tree-folder-head.has-review-heat.open {
+  background: linear-gradient(
+    90deg,
+    rgba(245, 158, 11, calc(0.06 + var(--rev-heat, 0.2) * 0.16)) 0%,
+    rgba(245, 158, 11, calc(0.02 + var(--rev-heat, 0.2) * 0.05)) 75%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+}
+
+.tree-folder-head.has-review-heat .chev {
+  color: rgba(245, 158, 11, calc(0.5 + var(--rev-heat, 0.2) * 0.5));
+}
+
+.tree-folder-head.has-review-heat.open .chev {
+  color: #f59e0b;
+}
+
 .tree-folder-children {
   padding-left: 6px;
   margin-left: 14px;
@@ -4357,6 +4404,48 @@ body {
   flex-shrink: 0;
   padding-left: 2px;
   opacity: 0.8;
+}
+
+.tree-lesson .lesson-flag-btn {
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  flex-shrink: 0;
+}
+.tree-lesson:hover .lesson-flag-btn,
+.tree-lesson:focus-within .lesson-flag-btn,
+.tree-lesson .lesson-flag-btn.is-active,
+.tree-lesson.has-review .lesson-flag-btn {
+  opacity: 0.85;
+}
+.tree-lesson .lesson-flag-btn:hover {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  transform: scale(1.15);
+  opacity: 1;
+}
+.tree-lesson .lesson-flag-btn.is-active,
+.tree-lesson.has-review .lesson-flag-btn {
+  color: #f59e0b;
+  opacity: 1;
+}
+.tree-lesson .lesson-flag-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  opacity: 1;
+}
+@media (hover: none) {
+  .tree-lesson .lesson-flag-btn {
+    opacity: 0.65;
+  }
 }
 
 /* Concluída: o ícone verde já marca; título com contraste acessível */

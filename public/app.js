@@ -145,6 +145,44 @@ function favButtonHtml(path, libId) {
   return `<button class="fav-btn ${on ? "on" : ""}" type="button" data-fav="${encodeURIComponent(path || "")}" data-lib="${encodeURIComponent(libId || "")}" title="${on ? "Remover dos favoritos" : "Favoritar curso"}" aria-label="${on ? "Remover dos favoritos" : "Favoritar curso"}">${on ? "★" : "☆"}</button>`;
 }
 
+// Aulas marcadas para revisão ("Revisar depois"), persistidas no localStorage
+// com chaves escopadas por "<libraryId>\0<path>".
+let reviewLessons = new Set();
+try {
+  const rawRev = localStorage.getItem("review-lessons");
+  if (rawRev) {
+    const list = JSON.parse(rawRev);
+    if (Array.isArray(list)) {
+      reviewLessons = new Set(
+        list.map((k) => (typeof k === "string" && k.includes("\0") ? k : DEFAULT_LIB_ID + "\0" + k)),
+      );
+    }
+  }
+} catch {
+  reviewLessons = new Set();
+}
+
+function isLessonReview(path, libId) {
+  if (!path) return false;
+  return reviewLessons.has(progKey(path, libId));
+}
+
+function toggleLessonReview(path, libId) {
+  if (!path) return;
+  const key = progKey(path, libId);
+  if (reviewLessons.has(key)) reviewLessons.delete(key);
+  else reviewLessons.add(key);
+  try {
+    localStorage.setItem("review-lessons", JSON.stringify([...reviewLessons]));
+  } catch (err) {
+    console.warn("Falha ao persistir aulas para revisão no localStorage:", err);
+  }
+  updateSidebarReviewFlags();
+}
+
+const ICON_FLAG_OUTLINE = `<svg class="flag-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>`;
+const ICON_FLAG_FILLED = `<svg class="flag-svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>`;
+
 // Modo da seção "Seu progresso" (expandida/compacta), persistido no
 // localStorage. Padrão: compacta em qualquer resolução.
 const PROGRESS_MODE_KEY = "course-player-progress-mode";
@@ -427,20 +465,34 @@ function formatDuration(totalSeconds) {
 function countStats(node) {
   if (node.type === "video") {
     const p = progFor(node);
-    return { total: 1, done: p && p.completed ? 1 : 0 };
+    const libId = node.libId || (state.currentCourseNode && state.currentCourseNode.libId) || DEFAULT_LIB_ID;
+    const rev = isLessonReview(node.path, libId) ? 1 : 0;
+    return { total: 1, done: p && p.completed ? 1 : 0, review: rev };
   }
-  if (node.type === "folder") {
+  if (node.type === "folder" || node.type === "topic") {
     let total = 0;
     let done = 0;
-    for (const child of node.children) {
+    let review = 0;
+    for (const child of node.children || []) {
       if (child.type === "file") continue;
       const s = countStats(child);
       total += s.total;
       done += s.done;
+      review += s.review;
     }
-    return { total, done };
+    return { total, done, review };
   }
-  return { total: 0, done: 0 };
+  return { total: 0, done: 0, review: 0 };
+}
+
+function calculateReviewHeat(revCount, totalCount) {
+  if (!revCount || revCount <= 0) return { hasHeat: false, heat: 0, tooltip: "" };
+  const heat = Math.min(
+    1,
+    0.2 + (revCount / Math.max(1, totalCount)) * 0.6 + (Math.min(revCount, 5) / 5) * 0.2
+  ).toFixed(2);
+  const tooltip = ` • ${revCount} aula${revCount > 1 ? "s" : ""} para revisão`;
+  return { hasHeat: true, heat, tooltip };
 }
 
 function flattenMaterials(node, out = []) {
@@ -936,7 +988,7 @@ function applyViewModeToDOM() {
   const theater = getViewMode() === "theater";
   if (view) {
     view.classList.toggle("theater", theater);
-    view.classList.toggle("summary-open", theater && getSummaryOpen());
+    view.classList.remove("summary-open");
   }
   const theaterBtn = document.getElementById("pc-theater-btn");
   if (theaterBtn) {
@@ -959,17 +1011,14 @@ function applyViewModeToDOM() {
       summaryItem.setAttribute("aria-pressed", String(open));
       summaryItem.textContent = open ? "Fechar lista de aulas" : "Lista de aulas";
     } else {
-      const open = theater && getSummaryOpen();
-      summaryItem.hidden = !theater;
-      summaryItem.classList.toggle("is-active", open);
-      summaryItem.setAttribute("aria-pressed", String(open));
-      summaryItem.textContent = open ? "Fechar lista de aulas" : "Lista de aulas";
+      // Desktop: o modo teatro não exibe a sidebar e o modo normal já a exibe ao lado
+      summaryItem.hidden = true;
     }
   }
   const lessonToggle = document.getElementById("lesson-sidebar-toggle");
   if (lessonToggle) {
     const isMobile = isMobileDrawer();
-    const open = isMobile ? !!(view && view.classList.contains("drawer-open")) : (theater && getSummaryOpen());
+    const open = isMobile ? !!(view && view.classList.contains("drawer-open")) : false;
     lessonToggle.setAttribute("aria-expanded", String(open));
     lessonToggle.classList.toggle("is-active", open);
     lessonToggle.title = open ? "Fechar lista de aulas" : "Abrir lista de aulas";
@@ -1435,14 +1484,16 @@ function renderFolderChildren(folderNode, depth = 1) {
       const stats = countStats(child);
       const isCompleted = stats.total > 0 && stats.done === stats.total;
       const isOpen = expandedFolders.has(child.path);
+      const revStats = calculateReviewHeat(stats.review, stats.total);
+      const folderTitleText = `${moduleTitle(child)}${revStats.tooltip}`;
       // data-depth permite ao CSS diferenciar módulo (1) de submódulo (2+) e
       // capar a indentação em níveis profundos. Tabindex/role/aria-expanded
       // tornam a pasta operável por teclado.
       html += `
         <div class="tree-folder ${isCompleted ? "completed" : ""}">
-          <div class="tree-folder-head ${isOpen ? "open" : ""} ${isCompleted ? "completed" : ""}" data-folder="${encodeURIComponent(child.path)}" data-depth="${Math.min(depth, 4)}" role="button" tabindex="0" aria-expanded="${isOpen}">
+          <div class="tree-folder-head ${isOpen ? "open" : ""} ${isCompleted ? "completed" : ""} ${revStats.hasHeat ? "has-review-heat" : ""}" data-folder="${encodeURIComponent(child.path)}" data-depth="${Math.min(depth, 4)}" ${revStats.hasHeat ? `data-review-count="${stats.review}" style="--rev-heat:${revStats.heat};"` : ""} role="button" tabindex="0" aria-expanded="${isOpen}">
             <svg class="chev" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
-            <span class="folder-title" title="${escapeHtml(moduleTitle(child))}"><span class="folder-title-inner">${escapeHtml(moduleTitle(child))}</span></span>
+            <span class="folder-title" title="${escapeHtml(folderTitleText)}"><span class="folder-title-inner">${escapeHtml(moduleTitle(child))}</span></span>
             <span class="folder-progress">${stats.done}/${stats.total}</span>
           </div>
           <div class="tree-folder-children ${isOpen ? "open" : ""}" data-folder-body="${encodeURIComponent(child.path)}">
@@ -1464,16 +1515,68 @@ function renderFolderChildren(folderNode, depth = 1) {
       // cada aula, sempre visível para orientar a navegação.
       const lessonIndex = state.flatVideos.indexOf(child) + 1;
       const lessonTotal = state.flatVideos.length;
+      const isRev = isLessonReview(child.path, child.libId || (folderNode && folderNode.libId));
       html += `
-        <div class="tree-lesson ${done ? "done" : ""} ${active ? "active" : ""}" data-lesson="${encodeURIComponent(child.path)}">
+        <div class="tree-lesson ${done ? "done" : ""} ${active ? "active" : ""} ${isRev ? "has-review" : ""}" data-lesson="${encodeURIComponent(child.path)}">
           <button class="check" type="button" data-lesson="${encodeURIComponent(child.path)}" aria-label="${done ? "Desmarcar como assistido" : "Marcar como assistido"}">${done ? '<svg class="check-svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ""}</button>
           <span class="lesson-title" title="${escapeHtml(lessonTitle(child))}"><span class="lesson-title-inner">${escapeHtml(lessonTitle(child))}</span></span>
           <span class="lesson-mini-progress"><span style="width:${pct}%"></span></span>
+          <button class="lesson-flag-btn ${isRev ? "is-active" : ""}" type="button" data-flag-lesson="${encodeURIComponent(child.path)}" title="${isRev ? "Remover de Revisar depois" : "Marcar para revisar depois"}" aria-label="${isRev ? "Remover de Revisar depois" : "Marcar para revisar depois"}">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="${isRev ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+              <line x1="4" y1="22" x2="4" y2="15"></line>
+            </svg>
+          </button>
           <span class="lesson-counter">${lessonIndex}/${lessonTotal}</span>
         </div>`;
     }
   }
   return html;
+}
+
+
+
+function updateSidebarReviewFlags() {
+  const slot = document.getElementById("tree-slot");
+  if (!slot) return;
+  const currentLibId = (state.currentCourseNode && state.currentCourseNode.libId) || DEFAULT_LIB_ID;
+  slot.querySelectorAll(".tree-lesson").forEach((lessonEl) => {
+    const lessonPath = decodeURIComponent(lessonEl.dataset.lesson || "");
+    const flagBtn = lessonEl.querySelector(".lesson-flag-btn");
+    if (!flagBtn) return;
+    const isRev = isLessonReview(lessonPath, currentLibId);
+    lessonEl.classList.toggle("has-review", isRev);
+    flagBtn.classList.toggle("is-active", isRev);
+    const label = isRev ? "Remover de Revisar depois" : "Marcar para revisar depois";
+    flagBtn.setAttribute("title", label);
+    flagBtn.setAttribute("aria-label", label);
+    const svg = flagBtn.querySelector("svg");
+    if (svg) svg.setAttribute("fill", isRev ? "currentColor" : "none");
+  });
+
+  const courseNode = state.currentCourseNode;
+  if (courseNode) {
+    slot.querySelectorAll(".tree-folder-head").forEach((head) => {
+      const folderPath = decodeURIComponent(head.dataset.folder || "");
+      const folderNode = findNodeByPath(courseNode, folderPath);
+      if (folderNode) {
+        const stats = countStats(folderNode);
+        const revStats = calculateReviewHeat(stats.review, stats.total);
+        head.classList.toggle("has-review-heat", revStats.hasHeat);
+        if (revStats.hasHeat) {
+          head.dataset.reviewCount = String(stats.review);
+          head.style.setProperty("--rev-heat", String(revStats.heat));
+        } else {
+          delete head.dataset.reviewCount;
+          head.style.removeProperty("--rev-heat");
+        }
+        const titleEl = head.querySelector(".folder-title");
+        if (titleEl) {
+          titleEl.setAttribute("title", `${moduleTitle(folderNode)}${revStats.tooltip}`);
+        }
+      }
+    });
+  }
 }
 
 function updateLessonCompleteButton(videoNode) {
@@ -1627,6 +1730,15 @@ function attachTreeHandlers(slot) {
   slot.querySelectorAll(".check").forEach((el) => {
     el.addEventListener("click", (event) => {
       toggleLessonCompleted(decodeURIComponent(el.dataset.lesson), event);
+    });
+  });
+  slot.querySelectorAll(".lesson-flag-btn").forEach((el) => {
+    el.addEventListener("click", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      const lessonPath = decodeURIComponent(el.dataset.flagLesson || "");
+      const libId = (state.currentCourseNode && state.currentCourseNode.libId) || DEFAULT_LIB_ID;
+      toggleLessonReview(lessonPath, libId);
     });
   });
   slot
@@ -2249,9 +2361,8 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
   const pct = stats.pct;
 
   // Modo de visualização persistido aplicado no render (troca de aula mantém
-  // teatro/normal e o estado do sumário).
+  // teatro/normal).
   const theater = getViewMode() === "theater";
-  const summaryOpen = theater && getSummaryOpen();
 
   // "Gerar legendas" só existe quando o Whisper está configurado — sem
   // binário/modelo o botão não apareceria nem faria nada.
@@ -2260,7 +2371,7 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
     : "";
 
   app.innerHTML = `
-    <div class="course-view drawer-host ${theater ? "theater" : ""} ${summaryOpen ? "summary-open" : ""}">
+    <div class="course-view drawer-host ${theater ? "theater" : ""}">
       <div class="player-col">
         <div class="course-toolbar">
           <div class="course-toolbar-actions">
@@ -2910,6 +3021,14 @@ async function init() {
       }
     }
   });
+}
+
+if (typeof window !== "undefined") {
+  window.isLessonReview = isLessonReview;
+  window.toggleLessonReview = toggleLessonReview;
+  window.updateSidebarReviewFlags = updateSidebarReviewFlags;
+  window.ICON_FLAG_OUTLINE = ICON_FLAG_OUTLINE;
+  window.ICON_FLAG_FILLED = ICON_FLAG_FILLED;
 }
 
 init();
