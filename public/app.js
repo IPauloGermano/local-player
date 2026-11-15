@@ -1474,8 +1474,19 @@ function renderHome(app) {
 }
 
 // ---------- Curso ----------
-function renderFolderChildren(folderNode, depth = 1) {
+function getActiveAncestorPaths() {
+  if (!state.currentVideoNode || !state.currentCourseNode) return new Set();
+  const list =
+    findAncestorFolders(state.currentCourseNode, state.currentVideoNode.path) || [];
+  return new Set(list);
+}
+
+function renderFolderChildren(folderNode, depth = 1, activeAncestors = null) {
   let html = "";
+  if (!folderNode.children) return html;
+  if (!activeAncestors) {
+    activeAncestors = getActiveAncestorPaths();
+  }
   for (const child of folderNode.children) {
     // A sidebar é de NAVEGAÇÃO de aulas: só módulos/pastas e vídeos entram.
     // Arquivos/material (type "file") aparecem apenas em "Materiais da aula".
@@ -1484,20 +1495,22 @@ function renderFolderChildren(folderNode, depth = 1) {
       const stats = countStats(child);
       const isCompleted = stats.total > 0 && stats.done === stats.total;
       const isOpen = expandedFolders.has(child.path);
+      const hasActiveLesson = activeAncestors.has(child.path);
       const revStats = calculateReviewHeat(stats.review, stats.total);
       const folderTitleText = `${moduleTitle(child)}${revStats.tooltip}`;
       // data-depth permite ao CSS diferenciar módulo (1) de submódulo (2+) e
       // capar a indentação em níveis profundos. Tabindex/role/aria-expanded
       // tornam a pasta operável por teclado.
       html += `
-        <div class="tree-folder ${isCompleted ? "completed" : ""}">
-          <div class="tree-folder-head ${isOpen ? "open" : ""} ${isCompleted ? "completed" : ""} ${revStats.hasHeat ? "has-review-heat" : ""}" data-folder="${encodeURIComponent(child.path)}" data-depth="${Math.min(depth, 4)}" ${revStats.hasHeat ? `data-review-count="${stats.review}" style="--rev-heat:${revStats.heat};"` : ""} role="button" tabindex="0" aria-expanded="${isOpen}">
+        <div class="tree-folder ${isCompleted ? "completed" : ""} ${hasActiveLesson ? "has-active-lesson" : ""}">
+          <div class="tree-folder-head ${isOpen ? "open" : ""} ${isCompleted ? "completed" : ""} ${hasActiveLesson ? "has-active-lesson" : ""} ${revStats.hasHeat ? "has-review-heat" : ""}" data-folder="${encodeURIComponent(child.path)}" data-depth="${Math.min(depth, 4)}" ${revStats.hasHeat ? `data-review-count="${stats.review}" style="--rev-heat:${revStats.heat};"` : ""} role="button" tabindex="0" aria-expanded="${isOpen}">
             <svg class="chev" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
             <span class="folder-title" title="${escapeHtml(folderTitleText)}"><span class="folder-title-inner">${escapeHtml(moduleTitle(child))}</span></span>
+            ${hasActiveLesson ? '<span class="folder-active-badge" title="Módulo com a aula em reprodução">Em reprodução</span>' : ""}
             <span class="folder-progress">${stats.done}/${stats.total}</span>
           </div>
           <div class="tree-folder-children ${isOpen ? "open" : ""}" data-folder-body="${encodeURIComponent(child.path)}">
-            ${renderFolderChildren(child, depth + 1)}
+            ${renderFolderChildren(child, depth + 1, activeAncestors)}
           </div>
         </div>`;
     } else if (child.type === "video") {
@@ -1505,6 +1518,13 @@ function renderFolderChildren(folderNode, depth = 1) {
       const done = p && p.completed;
       const active =
         state.currentVideoNode && state.currentVideoNode.path === child.path;
+      const playingIndicator = active
+        ? `<span class="lesson-playing-indicator" title="Em reprodução" aria-label="Aula em reprodução">
+            <span class="playing-bar"></span>
+            <span class="playing-bar"></span>
+            <span class="playing-bar"></span>
+          </span>`
+        : "";
       const pct =
         done
           ? 100
@@ -1519,6 +1539,7 @@ function renderFolderChildren(folderNode, depth = 1) {
       html += `
         <div class="tree-lesson ${done ? "done" : ""} ${active ? "active" : ""} ${isRev ? "has-review" : ""}" data-lesson="${encodeURIComponent(child.path)}">
           <button class="check" type="button" data-lesson="${encodeURIComponent(child.path)}" aria-label="${done ? "Desmarcar como assistido" : "Marcar como assistido"}">${done ? '<svg class="check-svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ""}</button>
+          ${playingIndicator}
           <span class="lesson-title" title="${escapeHtml(lessonTitle(child))}"><span class="lesson-title-inner">${escapeHtml(lessonTitle(child))}</span></span>
           <span class="lesson-mini-progress"><span style="width:${pct}%"></span></span>
           <button class="lesson-flag-btn ${isRev ? "is-active" : ""}" type="button" data-flag-lesson="${encodeURIComponent(child.path)}" title="${isRev ? "Remover de Revisar depois" : "Marcar para revisar depois"}" aria-label="${isRev ? "Remover de Revisar depois" : "Marcar para revisar depois"}">

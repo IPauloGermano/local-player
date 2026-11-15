@@ -4264,6 +4264,63 @@ body {
   color: #f59e0b;
 }
 
+/* Feedback de Módulo Ativo: destaque para o módulo que contém a aula atual */
+.tree-folder-head.has-active-lesson {
+  color: #fff;
+  border-left: 2px solid var(--accent);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 138, 61, 0.09) 0%,
+    rgba(255, 138, 61, 0.02) 75%,
+    transparent 100%
+  );
+}
+
+.tree-folder-head.has-active-lesson .folder-title-inner {
+  color: #fff;
+  font-weight: 600;
+}
+
+.tree-folder-head.has-active-lesson .chev {
+  color: var(--accent);
+}
+
+/* Módulo recolhido/fechado contendo a aula ativa: destaque reforçado para fácil localização */
+.tree-folder-head.has-active-lesson:not(.open) {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 138, 61, 0.14) 0%,
+    rgba(255, 138, 61, 0.04) 80%,
+    transparent 100%
+  );
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.folder-active-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(255, 138, 61, 0.14);
+  border: 1px solid rgba(255, 138, 61, 0.28);
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-right: 6px;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.tree-folder-head.has-active-lesson.open .folder-active-badge {
+  display: none;
+}
+
+.tree-folder.has-active-lesson > .tree-folder-children {
+  border-left-color: rgba(255, 138, 61, 0.25);
+}
+
 .tree-folder-children {
   padding-left: 6px;
   margin-left: 14px;
@@ -4324,6 +4381,53 @@ body {
   color: var(--accent);
   opacity: 0.95;
   font-weight: 600;
+}
+
+/* Indicador de áudio/reprodução para aula ativa */
+.lesson-playing-indicator {
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  width: 13px;
+  height: 12px;
+  flex-shrink: 0;
+  padding-bottom: 1px;
+}
+.tree-lesson.active .lesson-playing-indicator {
+  display: inline-flex;
+}
+.lesson-playing-indicator .playing-bar {
+  width: 2px;
+  background-color: var(--accent);
+  border-radius: 1px;
+  animation: playingBarPulse 1s ease-in-out infinite alternate;
+}
+.lesson-playing-indicator .playing-bar:nth-child(1) {
+  height: 45%;
+  animation-delay: 0s;
+}
+.lesson-playing-indicator .playing-bar:nth-child(2) {
+  height: 100%;
+  animation-delay: 0.25s;
+}
+.lesson-playing-indicator .playing-bar:nth-child(3) {
+  height: 60%;
+  animation-delay: 0.5s;
+}
+@keyframes playingBarPulse {
+  0% {
+    height: 25%;
+  }
+  100% {
+    height: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lesson-playing-indicator .playing-bar {
+    animation: none;
+    height: 70%;
+  }
 }
 
 .tree-lesson .check {
@@ -4451,6 +4555,12 @@ body {
 /* Concluída: o ícone verde já marca; título com contraste acessível */
 .tree-lesson.done .lesson-title-inner {
   color: var(--text-mid);
+}
+
+/* Quando a aula estiver ativa (mesmo se concluída), o título mantém o destaque e contraste */
+.tree-lesson.active.done .lesson-title-inner {
+  color: #fff;
+  font-weight: 600;
 }
 
 /* Foco visível (teclado) sem sacrificar densidade */
