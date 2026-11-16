@@ -14,6 +14,7 @@
     "start:web": "node server.js",
     "dist": "electron-builder --linux AppImage",
     "dist:win": "electron-builder --win portable --x64",
+    "dist:win:setup": "electron-builder --win nsis --x64",
     "dist:dir": "electron-builder --linux dir --dir",
     "shortcut:install": "./instalar-atalho.sh",
     "shortcut:remove": "./remover-atalho.sh",
@@ -30,6 +31,7 @@
   },
   "build": {
     "appId": "com.localplayer.app",
+    "compression": "store",
     "productName": "Local Player",
     "directories": {
       "output": "dist",

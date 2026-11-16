@@ -18,13 +18,20 @@ let serverProcess = null;
 let powerSaveId = null;
 
 // 1. Resolução do diretório de dados (durabilidade e portabilidade)
+// Diretório do executável empacotado (AppImage ou .exe portable do electron-builder)
+function getLauncherDir() {
+  if (process.env.APPIMAGE) return path.dirname(process.env.APPIMAGE);
+  if (process.env.PORTABLE_EXECUTABLE_DIR) return process.env.PORTABLE_EXECUTABLE_DIR;
+  return null;
+}
+
 function resolveDataDir() {
   if (process.env.LP_DATA_DIR) {
     return path.resolve(process.env.LP_DATA_DIR);
   }
   // Se estiver executando como AppImage empacotado:
-  if (process.env.APPIMAGE) {
-    const appImageDir = path.dirname(process.env.APPIMAGE);
+  if (getLauncherDir() || app.isPackaged) {
+    const appImageDir = getLauncherDir() || path.dirname(process.execPath);
     const portableMarker = path.join(appImageDir, ".portable");
     const portableDataDir = path.join(appImageDir, "data");
     // Modo portátil explícito (pendrive com .portable ou pasta data/ já existente)
@@ -51,8 +58,8 @@ function resolveRootDir() {
   if (process.env.LP_ROOT_DIR) {
     return path.resolve(process.env.LP_ROOT_DIR);
   }
-  if (process.env.APPIMAGE) {
-    const appImageDir = path.dirname(process.env.APPIMAGE);
+  if (getLauncherDir() || app.isPackaged) {
+    const appImageDir = getLauncherDir() || path.dirname(process.execPath);
     const coursesDir = path.join(appImageDir, "courses");
     const portableMarker = path.join(appImageDir, ".portable");
     // Se houver pasta courses/ no mesmo diretório do AppImage:
@@ -109,7 +116,7 @@ async function waitForServer(url, maxTimeoutMs = 15000) {
       const res = await fetch(url);
       if (res.ok) return true;
     } catch {}
-    await new Promise((r) => setTimeout(r, 150));
+    await new Promise((r) => setTimeout(r, 50));
   }
   return false;
 }
@@ -175,9 +182,7 @@ async function startApp() {
   const resourcesDir = process.resourcesPath || __dirname;
   const embeddedBin = path.join(resourcesDir, "bin");
   const embeddedModels = path.join(resourcesDir, "models");
-  const appImageDir = process.env.APPIMAGE
-    ? path.dirname(process.env.APPIMAGE)
-    : __dirname;
+  const appImageDir = getLauncherDir() || __dirname;
   const portableModels = path.join(appImageDir, "models");
   const userDataModels = path.join(dataDir, "models");
 
@@ -231,7 +236,7 @@ async function startApp() {
   } else if (fs.existsSync(portableModels)) {
     activeModelsDir = portableModels;
   } else {
-    activeModelsDir = process.env.APPIMAGE ? portableModels : userDataModels;
+    activeModelsDir = getLauncherDir() ? portableModels : userDataModels;
   }
   serverEnv.WHISPER_MODEL_DIR = activeModelsDir;
 
@@ -344,7 +349,7 @@ async function startApp() {
   });
 
   // Aguarda o servidor estar pronto
-  const ready = await waitForServer(`${serverUrl}api/tree`, 20000);
+  const ready = await waitForServer(`${serverUrl}app.js`, 20000);
   if (!ready) {
     console.error("[DESKTOP] O servidor interno demorou a responder.");
   }
