@@ -8945,3 +8945,10 @@ body {
     display: none !important;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .tutor-typing-dots span {
+    animation: none;
+    opacity: 0.7;
+  }
+}
