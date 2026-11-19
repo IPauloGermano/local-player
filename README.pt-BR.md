@@ -8,6 +8,16 @@ disco — módulos, treinamentos, cursos e bibliotecas de vídeo no **Linux**. L
 tudo direto do armazenamento local ou externo (HD, SSD, pendrive, cartão SD),
 sem envio para a internet.
 
+<!--
+  Vídeo inline no GitHub: edite este README pelo site, arraste docs/media/demo.mp4
+  para o editor e o GitHub gera uma URL https://github.com/user-attachments/assets/...
+  Cole essa URL sozinha numa linha (no lugar do bloco <p> abaixo) para tocar inline.
+-->
+<p align="center">
+  <a href="docs/media/demo.mp4"><img src="docs/media/demo.webp" alt="Demonstração do Local Player" width="800"></a><br>
+  <sub><a href="docs/media/demo.mp4">Clique para assistir à demonstração (MP4, 37 s, sem áudio)</a></sub>
+</p>
+
 ## Funcionalidades
 
 - **Boot instantâneo e scan concorrente**: cache de árvore persistente em disco
