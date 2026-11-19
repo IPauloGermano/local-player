@@ -191,6 +191,9 @@ body {
   font-size: 15px;
 }
 
+.topbar-search input::placeholder {
+  color: var(--text-dim);
+}
 .topbar-search input:focus {
   border-color: var(--accent);
 }
@@ -336,7 +339,8 @@ body {
   margin-left: auto;
   background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: white;
+  /* Texto escuro sobre o laranja: branco dava 2.3:1 (abaixo do AA); #1a0d03 dá ≥ 6:1. */
+  color: #1a0d03;
   padding: 10px 16px;
   border-radius: 999px;
   cursor: pointer;
@@ -345,11 +349,18 @@ body {
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease;
-  box-shadow: 0 8px 18px rgba(255, 138, 61, 0.2);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.32);
 }
 .btn-ghost:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 22px rgba(255, 138, 61, 0.24);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.38);
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-ghost,
+  .btn-ghost:hover {
+    transition: none;
+    transform: none;
+  }
 }
 .btn-ghost:focus-visible {
   outline: 2px solid #fff;
@@ -3668,6 +3679,14 @@ body {
 }
 .course-toolbar-actions .secondary-btn {
   white-space: nowrap;
+  /* Ações do curso ficam em segundo plano: o vídeo é o protagonista. */
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+}
+.course-toolbar-actions .secondary-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
 }
 .lesson-header .lesson-title-row {
   display: flex;
@@ -5373,7 +5392,7 @@ body {
   .course-toolbar-actions .secondary-btn {
     padding: 8px 12px;
     font-size: 12px;
-    min-height: 38px;
+    min-height: 44px;
   }
   .lesson-header {
     margin-top: 10px;
@@ -5717,7 +5736,7 @@ body {
   }
   .topbar-search input {
     font-size: 16px;
-    min-height: 40px;
+    min-height: 44px;
   }
 }
 
@@ -5739,11 +5758,11 @@ body {
     font-size: 13.5px;
   }
   .course-toolbar-actions .secondary-btn {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 38px;
+    min-height: 44px;
     padding: 8px 10px;
     font-size: 12px;
     white-space: nowrap;
