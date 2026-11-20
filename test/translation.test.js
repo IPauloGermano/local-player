@@ -1288,5 +1288,659 @@ test("Tradução: translations informa sourceLanguage null quando a origem é s�
   }
 });
 
+// ---------------------------------------------------------------------------
+// 3. Testes de Regressão da Auditoria Técnica de Tradução via LLM
+// ---------------------------------------------------------------------------
+
+test("Tradução: rejeita resposta vazia, texto não-JSON e truncamento sem corromper VTT ou cache anterior", async () => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-trans-corrupt-data-"));
+  const libDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-trans-corrupt-lib-"));
+
+  const courseRel = "Curso Integridade";
+  const lessonRel = `${courseRel}/Aula 01.mp4`;
+  const courseAbs = path.join(libDir, courseRel);
+  await fs.mkdir(courseAbs, { recursive: true });
+  await fs.writeFile(path.join(libDir, lessonRel), Buffer.from("video"));
+
+  let mockMode = "valid";
+  let mockCalls = 0;
+  const mockLlmServer = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      mockCalls++;
+      const segs = extractSegmentsFromRequestBody(body);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      if (mockMode === "valid") {
+        return res.end(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content: JSON.stringify(segs.map((s) => ({ id: s.id, text: `EN: ${s.text}` }))),
+                },
+              },
+            ],
+          }),
+        );
+      }
+      if (mockMode === "non_json") {
+        return res.end(
+          JSON.stringify({
+            choices: [{ finish_reason: "stop", message: { content: "Desculpe, não posso traduzir este conteúdo." } }],
+          }),
+        );
+      }
+      if (mockMode === "empty") {
+        return res.end(
+          JSON.stringify({
+            choices: [{ finish_reason: "stop", message: { content: "" } }],
+          }),
+        );
+      }
+      if (mockMode === "truncated_length") {
+        return res.end(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: "length",
+                message: {
+                  content: JSON.stringify([{ id: segs[0].id, text: `EN: ${segs[0].text}` }]),
+                },
+              },
+            ],
+          }),
+        );
+      }
+      if (mockMode === "too_incomplete") {
+        return res.end(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content: JSON.stringify([{ id: segs[0].id, text: `EN: ${segs[0].text}` }]),
+                },
+              },
+            ],
+          }),
+        );
+      }
+    });
+  });
+  await new Promise((r) => mockLlmServer.listen(0, "127.0.0.1", r));
+  const mockPort = mockLlmServer.address().port;
+
+  const srv = await startTestServer(dataDir);
+
+  try {
+    const libRes = await fetch(`${srv.base}/api/libraries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: libDir }),
+    });
+    const { id: libId } = await libRes.json();
+
+    await fetch(`${srv.base}/api/ai/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        llm: {
+          providers: [
+            {
+              id: "mock-integrity",
+              type: "openai-compatible",
+              name: "Mock Integrity",
+              baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+              defaultModel: "mock-model",
+            },
+          ],
+        },
+        translation: { providerId: "mock-integrity", model: "mock-model" },
+      }),
+    });
+
+    const hash = subtitleCacheName(libId, lessonRel);
+    const sourceStat = await fs.stat(path.join(libDir, lessonRel));
+    const processedDir = path.join(dataDir, "subtitles", "processed");
+    await fs.mkdir(processedDir, { recursive: true });
+    const originalSegments = [
+      { id: "s1", start: 0, end: 2, text: "Primeira frase em português" },
+      { id: "s2", start: 2, end: 4, text: "Segunda frase em português" },
+      { id: "s3", start: 4, end: 6, text: "Terceira frase em português" },
+      { id: "s4", start: 6, end: 8, text: "Quarta frase em português" },
+    ];
+    await fs.writeFile(
+      path.join(processedDir, `${hash}.json`),
+      JSON.stringify({
+        version: 1,
+        source: { mtimeMs: sourceStat.mtimeMs, size: sourceStat.size },
+        segments: originalSegments,
+        language: "pt",
+      }),
+    );
+
+    const vttPath = path.join(courseAbs, ".courseplayer", "subtitles", `${hash}-en.vtt`);
+    const jsonPath = path.join(dataDir, "subtitles", `${hash}-en.json`);
+
+    // 1. Texto não-JSON -> deve retornar 502 e NÃO gravar VTT/JSON
+    mockMode = "non_json";
+    mockCalls = 0;
+    const nonJsonRes = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(nonJsonRes.status, 502, "Texto não-JSON deve falhar com 502");
+    assert.ok(mockCalls >= 2, "Deve tentar retry antes de desistir");
+    assert.strictEqual(await fs.stat(vttPath).catch(() => null), null, "Não deve criar VTT corrompido");
+    assert.strictEqual(await fs.stat(jsonPath).catch(() => null), null, "Não deve criar JSON corrompido");
+
+    // 2. Resposta vazia -> deve retornar 502
+    mockMode = "empty";
+    const emptyRes = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(emptyRes.status, 502, "Resposta vazia deve falhar com 502");
+    assert.strictEqual(await fs.stat(vttPath).catch(() => null), null);
+
+    // 3. Truncamento por finish_reason=length -> deve retornar 502
+    mockMode = "truncated_length";
+    const truncRes = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(truncRes.status, 502, "Resposta truncada por length deve falhar com 502");
+    const truncData = await truncRes.json();
+    assert.match(truncData.error || "", /truncad|limite/i);
+
+    // 4. Lote severamente incompleto (1 de 4) -> deve retornar 502
+    mockMode = "too_incomplete";
+    const incRes = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(incRes.status, 502, "Lote com menos de 50% traduzido deve falhar com 502");
+
+    // 5. Tradução válida grava VTT; depois force=1 com erro não-JSON NÃO pode destruir a tradução anterior válida
+    mockMode = "valid";
+    const okRes = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(okRes.status, 200);
+    const vttBefore = await fs.readFile(vttPath, "utf8");
+    assert.ok(vttBefore.includes("EN: Primeira frase em português"));
+
+    mockMode = "non_json";
+    const forceFailRes = await fetch(`${srv.base}/api/subtitles/translate?force=1`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(forceFailRes.status, 502);
+    const vttAfter = await fs.readFile(vttPath, "utf8");
+    assert.strictEqual(vttAfter, vttBefore, "Falha em force=1 não pode sobrescrever tradução anterior válida");
+  } finally {
+    await srv.stop();
+    await new Promise((r) => mockLlmServer.close(r));
+    await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(libDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("Tradução: mascara chaves de API e tokens sensíveis em erros do provedor upstream", async () => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-trans-sec-data-"));
+  const libDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-trans-sec-lib-"));
+
+  const courseRel = "Curso Seguranca";
+  const lessonRel = `${courseRel}/Aula 01.mp4`;
+  await fs.mkdir(path.join(libDir, courseRel), { recursive: true });
+  await fs.writeFile(path.join(libDir, lessonRel), Buffer.from("video"));
+
+  const secretKey = "sk-proj-superSecretKey9876543210";
+  const mockLlmServer = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: {
+            message: `Incorrect API key provided: ${secretKey}. Header was Bearer ${secretKey}`,
+          },
+        }),
+      );
+    });
+  });
+  await new Promise((r) => mockLlmServer.listen(0, "127.0.0.1", r));
+  const mockPort = mockLlmServer.address().port;
+
+  const srv = await startTestServer(dataDir);
+
+  try {
+    const libRes = await fetch(`${srv.base}/api/libraries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: libDir }),
+    });
+    const { id: libId } = await libRes.json();
+
+    await fetch(`${srv.base}/api/ai/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        llm: {
+          providers: [
+            {
+              id: "mock-sec",
+              type: "openai-compatible",
+              name: "Mock Sec",
+              baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+              apiKey: secretKey,
+              defaultModel: "mock-model",
+            },
+          ],
+        },
+        translation: { providerId: "mock-sec", model: "mock-model" },
+      }),
+    });
+
+    const hash = subtitleCacheName(libId, lessonRel);
+    const sourceStat = await fs.stat(path.join(libDir, lessonRel));
+    const processedDir = path.join(dataDir, "subtitles", "processed");
+    await fs.mkdir(processedDir, { recursive: true });
+    await fs.writeFile(
+      path.join(processedDir, `${hash}.json`),
+      JSON.stringify({
+        version: 1,
+        source: { mtimeMs: sourceStat.mtimeMs, size: sourceStat.size },
+        segments: [{ id: "s1", start: 0, end: 2, text: "Olá" }],
+        language: "pt",
+      }),
+    );
+
+    const res = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(res.status, 401);
+    const data = await res.json();
+    assert.strictEqual(data.ok, false);
+    assert.ok(!String(data.error).includes(secretKey), `Chave vazou no erro: ${data.error}`);
+    assert.ok(!String(data.error).includes("superSecretKey"), `Trecho da chave vazou no erro: ${data.error}`);
+    assert.ok(String(data.error).includes("[REDACTED]"), `Deve conter [REDACTED]: ${data.error}`);
+  } finally {
+    await srv.stop();
+    await new Promise((r) => mockLlmServer.close(r));
+    await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(libDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("Tradução: respeita cfg.translation.batchSize configurado na UI quando TRANSLATE_BATCH_SIZE não está definido", async () => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-trans-batch-data-"));
+  const libDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-trans-batch-lib-"));
+
+  const courseRel = "Curso BatchSize";
+  const lessonRel = `${courseRel}/Aula 01.mp4`;
+  await fs.mkdir(path.join(libDir, courseRel), { recursive: true });
+  await fs.writeFile(path.join(libDir, lessonRel), Buffer.from("video"));
+
+  const receivedChunkSizes = [];
+  const mockLlmServer = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      const segs = extractSegmentsFromRequestBody(body);
+      receivedChunkSizes.push(segs.length);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify(segs.map((s) => ({ id: s.id, text: `EN: ${s.text}` }))),
+              },
+            },
+          ],
+        }),
+      );
+    });
+  });
+  await new Promise((r) => mockLlmServer.listen(0, "127.0.0.1", r));
+  const mockPort = mockLlmServer.address().port;
+
+  // Sem TRANSLATE_BATCH_SIZE no env (simulando produção)
+  const srv = await startTestServer(dataDir, { TRANSLATE_BATCH_SIZE: "" });
+
+  try {
+    const libRes = await fetch(`${srv.base}/api/libraries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: libDir }),
+    });
+    const { id: libId } = await libRes.json();
+
+    await fetch(`${srv.base}/api/ai/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        llm: {
+          providers: [
+            {
+              id: "mock-batch",
+              type: "openai-compatible",
+              name: "Mock Batch",
+              baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+              defaultModel: "mock-model",
+            },
+          ],
+        },
+        translation: { providerId: "mock-batch", model: "mock-model", batchSize: 15 },
+      }),
+    });
+
+    const hash = subtitleCacheName(libId, lessonRel);
+    const sourceStat = await fs.stat(path.join(libDir, lessonRel));
+    const processedDir = path.join(dataDir, "subtitles", "processed");
+    await fs.mkdir(processedDir, { recursive: true });
+    const segments = Array.from({ length: 35 }, (_, i) => ({
+      id: `s${i + 1}`,
+      start: i * 2,
+      end: i * 2 + 1.5,
+      text: `Frase ${i + 1}`,
+    }));
+    await fs.writeFile(
+      path.join(processedDir, `${hash}.json`),
+      JSON.stringify({
+        version: 1,
+        source: { mtimeMs: sourceStat.mtimeMs, size: sourceStat.size },
+        segments,
+        language: "pt",
+      }),
+    );
+
+    const res = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(res.status, 200);
+    assert.deepEqual(receivedChunkSizes, [15, 15, 5], "Deve dividir 35 segmentos em lotes de 15, 15 e 5");
+  } finally {
+    await srv.stop();
+    await new Promise((r) => mockLlmServer.close(r));
+    await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(libDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("Tradução: invalida cache automaticamente quando a legenda original é editada ou alterada", async () => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-trans-cache-data-"));
+  const libDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-trans-cache-lib-"));
+
+  const courseRel = "Curso Cache";
+  const lessonRel = `${courseRel}/Aula 01.mp4`;
+  await fs.mkdir(path.join(libDir, courseRel), { recursive: true });
+  await fs.writeFile(path.join(libDir, lessonRel), Buffer.from("video"));
+
+  let mockCalls = 0;
+  const mockLlmServer = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      mockCalls++;
+      const segs = extractSegmentsFromRequestBody(body);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify(segs.map((s) => ({ id: s.id, text: `TR(v${mockCalls}): ${s.text}` }))),
+              },
+            },
+          ],
+        }),
+      );
+    });
+  });
+  await new Promise((r) => mockLlmServer.listen(0, "127.0.0.1", r));
+  const mockPort = mockLlmServer.address().port;
+
+  const srv = await startTestServer(dataDir);
+
+  try {
+    const libRes = await fetch(`${srv.base}/api/libraries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: libDir }),
+    });
+    const { id: libId } = await libRes.json();
+
+    await fetch(`${srv.base}/api/ai/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        llm: {
+          providers: [
+            {
+              id: "mock-cache",
+              type: "openai-compatible",
+              name: "Mock Cache",
+              baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+              defaultModel: "mock-model",
+            },
+          ],
+        },
+        translation: { providerId: "mock-cache", model: "mock-model" },
+      }),
+    });
+
+    const hash = subtitleCacheName(libId, lessonRel);
+    const sourceStat = await fs.stat(path.join(libDir, lessonRel));
+    const processedDir = path.join(dataDir, "subtitles", "processed");
+    await fs.mkdir(processedDir, { recursive: true });
+    await fs.writeFile(
+      path.join(processedDir, `${hash}.json`),
+      JSON.stringify({
+        version: 1,
+        source: { mtimeMs: sourceStat.mtimeMs, size: sourceStat.size },
+        segments: [
+          { id: "s1", start: 0, end: 2, text: "Versão original 1" },
+          { id: "s2", start: 2, end: 4, text: "Versão original 2" },
+        ],
+        language: "pt",
+      }),
+    );
+
+    // 1. Primeira tradução -> chama LLM (call #1)
+    const r1 = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(r1.status, 200);
+    assert.strictEqual(mockCalls, 1);
+
+    // 2. Segunda chamada sem edição -> usa cache (continua call #1)
+    const r2 = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(r2.status, 200);
+    assert.strictEqual(mockCalls, 1);
+
+    // 3. Edita a legenda original via editor (muda o texto de s1)
+    const editRes = await fetch(
+      `${srv.base}/api/subtitles/save?path=${encodeURIComponent(lessonRel)}&libId=${libId}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: 0,
+          segments: [
+            { id: "s1", start: 0, end: 2, text: "Texto editado pelo usuário" },
+            { id: "s2", start: 2, end: 4, text: "Versão original 2" },
+          ],
+        }),
+      },
+    );
+    assert.strictEqual(editRes.status, 200);
+
+    // 4. GET /api/subtitles/translations deve marcar 'en' como não pronto (stale)
+    const infoRes = await fetch(
+      `${srv.base}/api/subtitles/translations?path=${encodeURIComponent(lessonRel)}&libId=${libId}`,
+    );
+    const info = await infoRes.json();
+    const enItem = info.available.find((a) => a.lang === "en");
+    assert.strictEqual(enItem.ready, false, "Tradução antiga deve ser marcada como não pronta após edição da origem");
+
+    // 5. POST /api/subtitles/translate (sem force) deve invalidar cache e chamar LLM novamente (call #2)
+    const r3 = await fetch(`${srv.base}/api/subtitles/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: lessonRel, targetLang: "en", libId }),
+    });
+    assert.strictEqual(r3.status, 200);
+    assert.strictEqual(mockCalls, 2, "Deve re-traduzir automaticamente após alteração da legenda original");
+    const r3Data = await r3.json();
+    assert.strictEqual(r3Data.segments[0].text, "TR(v2): Texto editado pelo usuário");
+  } finally {
+    await srv.stop();
+    await new Promise((r) => mockLlmServer.close(r));
+    await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(libDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("Tradução: bloqueia requisições concorrentes duplicadas com 409 e libera lock ao concluir", async () => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-trans-lock-data-"));
+  const libDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-trans-lock-lib-"));
+
+  const courseRel = "Curso Lock";
+  const lessonRel = `${courseRel}/Aula 01.mp4`;
+  await fs.mkdir(path.join(libDir, courseRel), { recursive: true });
+  await fs.writeFile(path.join(libDir, lessonRel), Buffer.from("video"));
+
+  let mockCalls = 0;
+  const mockLlmServer = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      mockCalls++;
+      const segs = extractSegmentsFromRequestBody(body);
+      setTimeout(() => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content: JSON.stringify(segs.map((s) => ({ id: s.id, text: `EN: ${s.text}` }))),
+                },
+              },
+            ],
+          }),
+        );
+      }, 250);
+    });
+  });
+  await new Promise((r) => mockLlmServer.listen(0, "127.0.0.1", r));
+  const mockPort = mockLlmServer.address().port;
+
+  const srv = await startTestServer(dataDir);
+
+  try {
+    const libRes = await fetch(`${srv.base}/api/libraries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: libDir }),
+    });
+    const { id: libId } = await libRes.json();
+
+    await fetch(`${srv.base}/api/ai/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        llm: {
+          providers: [
+            {
+              id: "mock-lock",
+              type: "openai-compatible",
+              name: "Mock Lock",
+              baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+              defaultModel: "mock-model",
+            },
+          ],
+        },
+        translation: { providerId: "mock-lock", model: "mock-model" },
+      }),
+    });
+
+    const hash = subtitleCacheName(libId, lessonRel);
+    const sourceStat = await fs.stat(path.join(libDir, lessonRel));
+    const processedDir = path.join(dataDir, "subtitles", "processed");
+    await fs.mkdir(processedDir, { recursive: true });
+    await fs.writeFile(
+      path.join(processedDir, `${hash}.json`),
+      JSON.stringify({
+        version: 1,
+        source: { mtimeMs: sourceStat.mtimeMs, size: sourceStat.size },
+        segments: [
+          { id: "s1", start: 0, end: 2, text: "Olá mundo" },
+          { id: "s2", start: 2, end: 4, text: "Segunda frase" },
+        ],
+        language: "pt",
+      }),
+    );
+
+    const payload = JSON.stringify({ path: lessonRel, targetLang: "en", libId });
+    const [resA, resB] = await Promise.all([
+      fetch(`${srv.base}/api/subtitles/translate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      }),
+      fetch(`${srv.base}/api/subtitles/translate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      }),
+    ]);
+
+    const statuses = [resA.status, resB.status].sort((a, b) => a - b);
+    assert.deepEqual(statuses, [200, 409], "Uma requisição deve suceder (200) e a concorrente receber 409");
+    assert.strictEqual(mockCalls, 1, "Deve disparar apenas 1 chamada ao LLM para requisições simultâneas");
+
+    // Lock deve estar liberado após conclusão (nova chamada com force=1 deve suceder)
+    const resAfter = await fetch(`${srv.base}/api/subtitles/translate?force=1`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+    });
+    assert.strictEqual(resAfter.status, 200, "Lock deve ser liberado após conclusão");
+    assert.strictEqual(mockCalls, 2);
+  } finally {
+    await srv.stop();
+    await new Promise((r) => mockLlmServer.close(r));
+    await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(libDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+
 
 

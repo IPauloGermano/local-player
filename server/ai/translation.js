@@ -61,9 +61,10 @@ function buildTranslatePrompt(sourceLang, targetLang, segments, customPrompt = "
   );
 }
 
-function sanitizeTranslationResult(raw, sourceSegments) {
-  if (!Array.isArray(sourceSegments)) return [];
-  if (!sourceSegments.length) return [];
+function sanitizeTranslationBatch(raw, sourceSegments) {
+  if (!Array.isArray(sourceSegments) || !sourceSegments.length) {
+    return { segments: [], translatedCount: 0, totalCount: 0 };
+  }
 
   let list = [];
   if (Array.isArray(raw)) {
@@ -82,16 +83,19 @@ function sanitizeTranslationResult(raw, sourceSegments) {
     }
   }
 
-  return sourceSegments.map((srcSeg, idx) => {
+  let translatedCount = 0;
+  const segments = sourceSegments.map((srcSeg, idx) => {
     const segId = String(srcSeg.id);
     let item = byId.get(segId);
-    if (!item && list[idx] && typeof list[idx] === "object") {
+    // Só aplica fallback posicional quando o item na posição não carrega ID de outro segmento
+    if (!item && list[idx] && typeof list[idx] === "object" && list[idx].id == null) {
       item = list[idx];
     }
 
     let translatedText = "";
     if (item && typeof item.text === "string" && item.text.trim()) {
       translatedText = item.text.trim();
+      translatedCount += 1;
     } else {
       translatedText = typeof srcSeg.text === "string" ? srcSeg.text : "";
     }
@@ -103,11 +107,18 @@ function sanitizeTranslationResult(raw, sourceSegments) {
       text: translatedText,
     };
   });
+
+  return { segments, translatedCount, totalCount: sourceSegments.length };
+}
+
+function sanitizeTranslationResult(raw, sourceSegments) {
+  return sanitizeTranslationBatch(raw, sourceSegments).segments;
 }
 
 module.exports = {
   SUPPORTED_TARGET_LANGS,
   TARGET_LANG_LABELS,
   buildTranslatePrompt,
+  sanitizeTranslationBatch,
   sanitizeTranslationResult,
 };

@@ -1,5 +1,6 @@
 const path = require("path");
 const fs = require("fs/promises");
+const crypto = require("crypto");
 const state = require("../state");
 const { readJsonFile, writeFileAtomic } = require("../core/fs-atomic");
 const { sanitizeTestError, VIDEO_EXT } = require("../core/scan");
@@ -14,7 +15,7 @@ const {
   SUPPORTED_TARGET_LANGS,
   TARGET_LANG_LABELS,
   buildTranslatePrompt,
-  sanitizeTranslationResult,
+  sanitizeTranslationBatch,
 } = require("../ai/translation");
 
 const {
@@ -76,9 +77,70 @@ function parseRetryAfter(headerValue) {
   return null;
 }
 
-function getTranslateBatchSize() {
-  const envVal = Number(process.env.TRANSLATE_BATCH_SIZE);
-  return !Number.isNaN(envVal) && envVal > 0 ? envVal : 100;
+const activeTranslations = new Set();
+
+function computeSourceFingerprint(segments) {
+  if (!Array.isArray(segments) || segments.length === 0) return "";
+  const h = crypto.createHash("sha256");
+  for (const s of segments) {
+    h.update(`${s.id ?? ""}\0${s.start ?? ""}\0${s.end ?? ""}\0${s.text ?? ""}\n`);
+  }
+  return h.digest("hex");
+}
+
+function isTranslationCacheValid(cachedDoc, sourceStat, sourceFingerprint, sourceDoc) {
+  if (!cachedDoc || !Array.isArray(cachedDoc.segments) || cachedDoc.segments.length === 0) {
+    return false;
+  }
+  if (sourceStat && cachedDoc.source) {
+    if (
+      cachedDoc.source.mtimeMs !== sourceStat.mtimeMs ||
+      cachedDoc.source.size !== sourceStat.size
+    ) {
+      return false;
+    }
+  }
+  if (cachedDoc.sourceFingerprint && sourceFingerprint) {
+    return cachedDoc.sourceFingerprint === sourceFingerprint;
+  }
+  if (sourceDoc) {
+    if (Array.isArray(sourceDoc.segments) && sourceDoc.segments.length !== cachedDoc.segments.length) {
+      return false;
+    }
+    if (sourceDoc.updatedAt && cachedDoc.createdAt) {
+      const srcMs = Date.parse(sourceDoc.updatedAt);
+      const trlMs = Date.parse(cachedDoc.createdAt);
+      if (!Number.isNaN(srcMs) && !Number.isNaN(trlMs) && srcMs > trlMs) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function maskSensitiveError(msg, secret) {
+  let out = String(msg == null ? "" : msg);
+  if (secret && typeof secret === "string" && secret.length >= 4) {
+    out = out.split(secret).join("[REDACTED]");
+  }
+  out = out
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{6,}/gi, "Bearer [REDACTED]")
+    .replace(/\b(?:sk|pk|gsk|xai|hf|or)-[A-Za-z0-9_-]{8,}/g, "[REDACTED]")
+    .replace(/\bAIza[A-Za-z0-9_-]{16,}/g, "[REDACTED]");
+  return sanitizeTestError(out);
+}
+
+function getTranslateBatchSize(cfg) {
+  const envRaw = process.env.TRANSLATE_BATCH_SIZE;
+  if (envRaw !== undefined && envRaw !== "") {
+    const envVal = Number(envRaw);
+    if (!Number.isNaN(envVal) && envVal > 0) return Math.floor(envVal);
+  }
+  const cfgVal = Number(cfg?.translation?.batchSize);
+  if (Number.isFinite(cfgVal) && cfgVal > 0) {
+    return Math.min(200, Math.max(10, Math.floor(cfgVal)));
+  }
+  return 100;
 }
 
 function getTranslateMinIntervalMs() {
@@ -547,12 +609,26 @@ function registerSubtitleRoutes(app) {
       const llmAvailable = !!(provider && provider.baseUrl);
       const configuredModel = trlCfg.model || (provider ? provider.defaultModel : "") || cfg.tutor?.model || "";
 
+      const sourceFingerprint = sourceReady ? computeSourceFingerprint(sourceDoc.segments) : "";
       const available = await Promise.all(
         SUPPORTED_TARGET_LANGS.map(async (lang) => {
           const vttPath = await resolveTranslationVttPath(lib, safe.rel, hash, lang);
+          if (!vttPath) {
+            return { lang, ready: false };
+          }
+          const jsonPath = path.join(getSubtitleDir(), `${hash}-${lang}.json`);
+          const cached = await readJsonFile(jsonPath);
+          if (cached.ok && cached.parsed) {
+            const valid = isTranslationCacheValid(cached.parsed, sourceStat, sourceFingerprint, sourceDoc);
+            return {
+              lang,
+              ready: valid,
+              ...(valid ? {} : { stale: true }),
+            };
+          }
           return {
             lang,
-            ready: !!vttPath,
+            ready: true,
           };
         }),
       );
@@ -594,6 +670,9 @@ function registerSubtitleRoutes(app) {
       return res.status(400).json({ ok: false, error: "Idioma-alvo inválido ou não suportado" });
     }
 
+    const lockKey = `${lib.id}:${safe.rel}:${targetLang}`;
+    let lockAcquired = false;
+
     try {
       const hash = subtitleCacheName(lib.id, safe.rel);
       const sourceStat = await fs.stat(safe.abs).catch(() => null);
@@ -602,6 +681,7 @@ function registerSubtitleRoutes(app) {
         return res.status(409).json({ ok: false, error: "sem legenda original" });
       }
       const sourceSegments = sourceDoc.segments;
+      const sourceFingerprint = computeSourceFingerprint(sourceSegments);
 
       let sourceLang = sourceDoc.language || null;
       if (!sourceLang && sourceSegments.length > 0) {
@@ -646,10 +726,22 @@ function registerSubtitleRoutes(app) {
         });
       }
 
+      if (activeTranslations.has(lockKey)) {
+        return res.status(409).json({
+          ok: false,
+          error: "Tradução já em andamento para este vídeo e idioma.",
+        });
+      }
+      activeTranslations.add(lockKey);
+      lockAcquired = true;
+
       const jsonPath = path.join(getSubtitleDir(), `${hash}-${targetLang}.json`);
       if (!force) {
         const cached = await readJsonFile(jsonPath);
-        if (cached.ok && cached.parsed && Array.isArray(cached.parsed.segments) && cached.parsed.segments.length > 0) {
+        if (
+          cached.ok &&
+          isTranslationCacheValid(cached.parsed, sourceStat, sourceFingerprint, sourceDoc)
+        ) {
           const vttPath = await resolveTranslationVttPath(lib, safe.rel, hash, targetLang);
           if (vttPath) {
             return res.json({
@@ -680,6 +772,9 @@ function registerSubtitleRoutes(app) {
 
       if (!force) {
         const partial = await readJsonFile(partialPath);
+        const partialFingerprintOk =
+          !partial.parsed?.sourceFingerprint ||
+          partial.parsed.sourceFingerprint === sourceFingerprint;
         if (
           partial.ok &&
           partial.parsed &&
@@ -688,6 +783,7 @@ function registerSubtitleRoutes(app) {
           partial.parsed.source &&
           partial.parsed.source.mtimeMs === (sourceStat ? sourceStat.mtimeMs : null) &&
           partial.parsed.source.size === (sourceStat ? sourceStat.size : null) &&
+          partialFingerprintOk &&
           Array.isArray(partial.parsed.segments) &&
           typeof partial.parsed.doneCount === "number" &&
           partial.parsed.doneCount === partial.parsed.segments.length &&
@@ -701,7 +797,7 @@ function registerSubtitleRoutes(app) {
         }
       }
 
-      const BATCH_SIZE = getTranslateBatchSize();
+      const BATCH_SIZE = getTranslateBatchSize(cfg);
       const minIntervalMs = getTranslateMinIntervalMs();
       const backoffBaseMs = getTranslateBackoffBaseMs();
       const backoffMaxMs = getTranslateBackoffMaxMs();
@@ -775,9 +871,39 @@ function registerSubtitleRoutes(app) {
 
           if (resp.ok) {
             const data = await resp.json().catch(() => null);
-            const content = data?.choices?.[0]?.message?.content || "";
+            const choice = data?.choices?.[0];
+            const content = choice?.message?.content || "";
+            const finishReason = choice?.finish_reason || null;
             const parsed = extractAndParseJson(content);
-            const chunkTranslated = sanitizeTranslationResult(parsed, chunk);
+            const { segments: chunkTranslated, translatedCount } = sanitizeTranslationBatch(parsed, chunk);
+
+            const isTruncated = finishReason === "length" && translatedCount < chunk.length;
+            const isTooIncomplete = chunk.length >= 3 && translatedCount < Math.ceil(chunk.length * 0.5);
+            const isInvalidBatch =
+              !parsed || (chunk.length > 0 && translatedCount === 0) || isTruncated || isTooIncomplete;
+
+            if (isInvalidBatch) {
+              lastErrorStatus = 502;
+              if (isTruncated) {
+                lastErrorMessage =
+                  "Resposta do modelo truncada por limite de tokens (reduza o tamanho do lote nas configurações).";
+              } else if (isTooIncomplete) {
+                lastErrorMessage = `Resposta do modelo incompleta (${translatedCount} de ${chunk.length} segmentos traduzidos).`;
+              } else {
+                lastErrorMessage = "Resposta do modelo em formato inválido ou não-JSON.";
+              }
+
+              if (attempt < maxRetries) {
+                const backoff = Math.min(
+                  backoffBaseMs * Math.pow(2, attempt - 1),
+                  backoffMaxMs,
+                );
+                if (backoff > 0) await sleep(backoff);
+                continue;
+              }
+              break;
+            }
+
             translatedSegments.push(...chunkTranslated);
             chunkSuccess = true;
 
@@ -787,6 +913,7 @@ function registerSubtitleRoutes(app) {
               rel: safe.rel,
               lang: targetLang,
               sourceLanguage: sourceDoc.language || null,
+              sourceFingerprint,
               source: {
                 mtimeMs: sourceStat ? sourceStat.mtimeMs : null,
                 size: sourceStat ? sourceStat.size : null,
@@ -817,7 +944,7 @@ function registerSubtitleRoutes(app) {
           }
 
           if (resp.status >= 400 && resp.status < 500 && resp.status !== 429) {
-            return res.status(resp.status).json({ ok: false, error: sanitizeTestError(errMsg) });
+            return res.status(resp.status).json({ ok: false, error: maskSensitiveError(errMsg, provider.apiKey) });
           }
 
           const isTransient = resp.status === 429 || resp.status >= 500;
@@ -838,12 +965,12 @@ function registerSubtitleRoutes(app) {
           if (lastErrorStatus === 429) {
             return res.status(429).json({
               ok: false,
-              error: sanitizeTestError(lastErrorMessage || "Limite de taxa do provedor atingido"),
+              error: maskSensitiveError(lastErrorMessage || "Limite de taxa do provedor atingido", provider.apiKey),
               retryAfterMs: lastRetryAfterMs || 5000,
             });
           }
           const code = lastErrorStatus && lastErrorStatus >= 500 ? lastErrorStatus : 502;
-          return res.status(code).json({ ok: false, error: sanitizeTestError(lastErrorMessage) });
+          return res.status(code).json({ ok: false, error: maskSensitiveError(lastErrorMessage, provider.apiKey) });
         }
       }
 
@@ -857,6 +984,7 @@ function registerSubtitleRoutes(app) {
         rel: safe.rel,
         lang: targetLang,
         sourceLanguage: sourceDoc.language || null,
+        sourceFingerprint,
         source: {
           mtimeMs: sourceStat ? sourceStat.mtimeMs : null,
           size: sourceStat ? sourceStat.size : null,
@@ -879,8 +1007,12 @@ function registerSubtitleRoutes(app) {
         resumed: resumeFrom > 0,
       });
     } catch (err) {
-      console.error("[SUBTITLES] Erro na tradução:", err);
+      console.error("[SUBTITLES] Erro na tradução:", maskSensitiveError(err && err.message ? err.message : err));
       return res.status(500).json({ ok: false, error: "Erro interno na tradução de legendas" });
+    } finally {
+      if (lockAcquired) {
+        activeTranslations.delete(lockKey);
+      }
     }
   });
 
