@@ -38,7 +38,7 @@ function libraryHasActiveJobs(id) {
   for (const job of state.subtitleJobs.values()) {
     if (job.libraryId === id && activeSub.has(job.status)) return true;
   }
-  if (state.scanningLibraryIds.has(id)) return true;
+  if (state.pendingLibraryScans.has(id)) return true;
   return false;
 }
 
@@ -60,7 +60,7 @@ function cancelAllJobsForLibrary(id) {
     }
   }
   if (changed) persistSubtitleJobs().catch(() => {});
-  state.scanningLibraryIds.delete(id);
+  state.pendingLibraryScans.delete(id);
 }
 
 function discardQueuedJobsForLibrary(id) {
@@ -208,7 +208,7 @@ function registerLibraryRoutes(app) {
     cancelAllJobsForLibrary(lib.id);
     state.treeCaches.delete(lib.id);
     fs.rm(libraryTreeCacheFile(lib.id), { force: true }).catch(() => {});
-    state.scanningLibraryIds.delete(lib.id);
+    state.pendingLibraryScans.delete(lib.id);
     removeLibrary(lib.id);
     await persistLibraries();
     console.log(`[LIBRARIES] removida da configuração: ${lib.name} (${lib.id})`);
@@ -219,9 +219,6 @@ function registerLibraryRoutes(app) {
     await loadLibraries();
     const lib = getLibraryById(req.params.id);
     if (!lib) return res.status(404).json({ error: "library not found" });
-    if (state.scanningLibraryIds.has(lib.id)) {
-      return res.status(409).json({ error: "scan já em andamento para esta biblioteca" });
-    }
     res.json(await rescanLibrary(lib));
   });
 }

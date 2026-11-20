@@ -29,6 +29,21 @@ function makeFixture(files) {
   return root;
 }
 
+test("reindexações simultâneas compartilham o resultado da mesma varredura", async () => {
+  const { rescanLibrary } = require("../server/core/tree-cache");
+  const root = makeFixture(["Curso/Aula.mp4"]);
+  const lib = { id: "concurrent", path: root };
+  try {
+    const [first, second] = await Promise.all([rescanLibrary(lib), rescanLibrary(lib)]);
+    assert.strictEqual(first.tree.videoCount, 1);
+    assert.strictEqual(second.tree, first.tree);
+    fs.writeFileSync(path.join(root, "Curso/Outra.mp4"), "x");
+    assert.strictEqual((await rescanLibrary(lib)).tree.videoCount, 2);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("saveLibraryTreeCache e loadLibraryTreeCache: salva e recupera cache da árvore em disco", async () => {
   const root = makeFixture(["Curso A/Aula 01.mp4", "Curso B/Aula 02.mp4"]);
   const libId = "test-cache-" + Date.now();

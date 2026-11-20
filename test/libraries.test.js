@@ -152,7 +152,7 @@ test("validateLibraryPath: symlink é resolvido para o alvo canônico", async ()
   const root = makeFixture(["Curso A/Aula.mp4"]);
   const link = path.join(os.tmpdir(), "lp-libs-link-" + path.basename(root));
   try {
-    fs.symlinkSync(root, link);
+    fs.symlinkSync(root, link, process.platform === "win32" ? "junction" : "dir");
     const r = await validateLibraryPath(link);
     assert.strictEqual(r.ok, true);
     // Canonicalizado: o path aceito é o do alvo real, não o do symlink.
@@ -708,7 +708,7 @@ test("DELETE /api/libraries/:id: cancela jobs ativos e remove com sucesso sem bl
   await registry.persistLibraries();
 
   // Simula jobs ativos na biblioteca
-  state.scanningLibraryIds.add("lib-com-jobs");
+  state.pendingLibraryScans.set("lib-com-jobs", Promise.resolve());
   state.subtitleJobs.set("hash-test-job", {
     libraryId: "lib-com-jobs",
     status: "transcribing",
@@ -732,12 +732,12 @@ test("DELETE /api/libraries/:id: cancela jobs ativos e remove com sucesso sem bl
     assert.strictEqual(data.ok, true);
 
     assert.strictEqual(registry.getLibraryById("lib-com-jobs"), null);
-    assert.strictEqual(state.scanningLibraryIds.has("lib-com-jobs"), false);
+    assert.strictEqual(state.pendingLibraryScans.has("lib-com-jobs"), false);
   } finally {
     server.close();
     process.env.LP_DATA_DIR = prevDataDir;
     registry.librariesCache = prev;
-    state.scanningLibraryIds.delete("lib-com-jobs");
+    state.pendingLibraryScans.delete("lib-com-jobs");
     state.subtitleJobs.delete("hash-test-job");
     fs.rmSync(tmpData, { recursive: true, force: true });
     fs.rmSync(tmpC, { recursive: true, force: true });

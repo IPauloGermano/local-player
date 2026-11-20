@@ -7,7 +7,7 @@ const { scanLibrary } = require("./scan");
 const {
   DATA_DIR,
   treeCaches,
-  scanningLibraryIds,
+  pendingLibraryScans,
   tutorContextCache,
 } = require("../state");
 const { collectCoursesInScope, collectTopicsInScope } = require("../../public/scope.js");
@@ -97,22 +97,24 @@ function librarySummary(lib, cached) {
 // Re-escaneia UMA biblioteca (deduplicado por id) e atualiza o cache dela (em memória e em disco).
 // Retorna o summary com status/lastScanAt/error atuais.
 async function rescanLibrary(lib) {
-  if (scanningLibraryIds.has(lib.id)) {
-    // Scan já em andamento: devolve o estado atual sem duplicar.
-    return librarySummary(lib, treeCaches.get(lib.id) || {});
-  }
-  scanningLibraryIds.add(lib.id);
-  try {
-    tutorContextCache.clear();
-    const scanned = await scanLibrary(lib);
+  const id = lib.id;
+  const pending = pendingLibraryScans.get(id);
+  if (pending) return pending;
+
+  tutorContextCache.clear();
+  const scan = scanLibrary(lib).then(async (scanned) => {
     scanned.lastScanAt = Date.now();
-    treeCaches.set(lib.id, scanned);
-    if (scanned.status === "ok") {
-      await saveLibraryTreeCache(lib, scanned);
+    if (pendingLibraryScans.get(id) === scan) {
+      treeCaches.set(id, scanned);
+      if (scanned.status === "ok") await saveLibraryTreeCache(lib, scanned);
     }
     return librarySummary(lib, scanned);
+  });
+  pendingLibraryScans.set(id, scan);
+  try {
+    return await scan;
   } finally {
-    scanningLibraryIds.delete(lib.id);
+    if (pendingLibraryScans.get(id) === scan) pendingLibraryScans.delete(id);
   }
 }
 
@@ -170,7 +172,7 @@ async function getTree(force, targetLibId = null) {
 }
 
 module.exports = {
-  scanningLibraryIds,
+  pendingLibraryScans,
   treeCaches,
   libraryTreeCacheFile,
   saveLibraryTreeCache,
