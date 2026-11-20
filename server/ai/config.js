@@ -115,6 +115,7 @@ function defaultAiConfig() {
       systemPrompt: "",
       includeTranscription: true,
       includeMaterials: true,
+      toolMode: "auto",
       webSearch: {
         enabled: true,
         provider: "duckduckgo",
@@ -122,6 +123,16 @@ function defaultAiConfig() {
         autoSearch: true,
       },
       maxContextTokens: 16000,
+    },
+    ocr: {
+      enabled: true,
+      engine: "auto", // "auto" | "tesseract-cli" | "tesseract-js" | "vlm" | "docling" | "off"
+      language: "por+eng",
+      maxPagesPerCall: 3,
+      dpi: 200,
+      vlmProviderId: "",
+      vlmModel: "",
+      doclingUrl: "",
     },
     skills: {
       caveman: {
@@ -215,6 +226,7 @@ function sanitizeAiConfig(raw) {
   out.tutor.systemPrompt = clampStr(tu.systemPrompt, 4000);
   out.tutor.includeTranscription = tu.includeTranscription !== false;
   out.tutor.includeMaterials = tu.includeMaterials !== false;
+  out.tutor.toolMode = ["auto", "native", "prompt", "off"].includes(tu.toolMode) ? tu.toolMode : "auto";
   const tws = objOr(tu.webSearch, {});
   out.tutor.webSearch = {
     enabled: tws.enabled !== false,
@@ -222,6 +234,22 @@ function sanitizeAiConfig(raw) {
     maxResults: Number.isFinite(Number(tws.maxResults)) ? Math.min(10, Math.max(1, Math.floor(Number(tws.maxResults)))) : 3,
     autoSearch: tws.autoSearch !== false,
   };
+
+  const oc = objOr(raw.ocr, {});
+  out.ocr.enabled = oc.enabled !== false;
+  out.ocr.engine = ["auto", "tesseract-cli", "tesseract-js", "vlm", "docling", "off"].includes(oc.engine)
+    ? oc.engine
+    : "auto";
+  const rawLang = clampStr(oc.language, 24).toLowerCase().replace(/\s+/g, "");
+  out.ocr.language = /^[a-z]{2,3}(\+[a-z]{2,3}){0,3}$/.test(rawLang) ? rawLang : "por+eng";
+  const mpc = Number(oc.maxPagesPerCall);
+  out.ocr.maxPagesPerCall = Number.isFinite(mpc) ? Math.min(5, Math.max(1, Math.floor(mpc))) : 3;
+  const dpi = Number(oc.dpi);
+  out.ocr.dpi = Number.isFinite(dpi) ? Math.min(300, Math.max(100, Math.floor(dpi))) : 200;
+  out.ocr.vlmProviderId = clampStr(oc.vlmProviderId, 80);
+  out.ocr.vlmModel = clampStr(oc.vlmModel, AI_STR_LIMITS.model);
+  const docUrl = clampStr(oc.doclingUrl, AI_STR_LIMITS.baseUrl);
+  out.ocr.doclingUrl = (docUrl === "" || /^https?:\/\//.test(docUrl)) ? docUrl : "";
 
   const sk = objOr(raw.skills, {});
   const cv = objOr(sk.caveman, {});
@@ -347,6 +375,9 @@ function applyAiPatch(config, patch) {
     if (tu.systemPrompt !== undefined) out.tutor.systemPrompt = clampStr(tu.systemPrompt, 4000);
     if (tu.includeTranscription !== undefined) out.tutor.includeTranscription = tu.includeTranscription === true;
     if (tu.includeMaterials !== undefined) out.tutor.includeMaterials = tu.includeMaterials === true;
+    if (tu.toolMode !== undefined && ["auto", "native", "prompt", "off"].includes(tu.toolMode)) {
+      out.tutor.toolMode = tu.toolMode;
+    }
     if (tu.webSearch !== undefined && typeof tu.webSearch === "object") {
       out.tutor.webSearch = {
         ...out.tutor.webSearch,
@@ -359,6 +390,37 @@ function applyAiPatch(config, patch) {
     if (tu.maxContextTokens !== undefined) {
       const mct = Number(tu.maxContextTokens);
       out.tutor.maxContextTokens = Number.isFinite(mct) ? Math.min(64000, Math.max(1000, Math.floor(mct))) : 16000;
+    }
+  }
+
+  const oc = objOr(src.ocr, {});
+  if (Object.keys(oc).length) {
+    if (!out.ocr) out.ocr = defaultAiConfig().ocr;
+    if (oc.enabled !== undefined) out.ocr.enabled = oc.enabled === true;
+    if (oc.engine !== undefined && ["auto", "tesseract-cli", "tesseract-js", "vlm", "docling", "off"].includes(oc.engine)) {
+      out.ocr.engine = oc.engine;
+    }
+    if (oc.language !== undefined) {
+      const lang = clampStr(oc.language, 24).toLowerCase().replace(/\s+/g, "");
+      if (/^[a-z]{2,3}(\+[a-z]{2,3}){0,3}$/.test(lang)) out.ocr.language = lang;
+    }
+    if (oc.maxPagesPerCall !== undefined) {
+      const mpc = Number(oc.maxPagesPerCall);
+      out.ocr.maxPagesPerCall = Number.isFinite(mpc) ? Math.min(5, Math.max(1, Math.floor(mpc))) : 3;
+    }
+    if (oc.dpi !== undefined) {
+      const dpi = Number(oc.dpi);
+      out.ocr.dpi = Number.isFinite(dpi) ? Math.min(300, Math.max(100, Math.floor(dpi))) : 200;
+    }
+    if (oc.vlmProviderId !== undefined) {
+      const has = out.llm.providers.some(x => x.id === oc.vlmProviderId);
+      if (oc.vlmProviderId !== "" && !has) throw new Error("Provedor VLM de OCR inválido.");
+      out.ocr.vlmProviderId = clampStr(oc.vlmProviderId, 80);
+    }
+    if (oc.vlmModel !== undefined) out.ocr.vlmModel = clampStr(oc.vlmModel, AI_STR_LIMITS.model);
+    if (oc.doclingUrl !== undefined) {
+      const u = clampStr(oc.doclingUrl, AI_STR_LIMITS.baseUrl);
+      if (u === "" || /^https?:\/\//.test(u)) out.ocr.doclingUrl = u;
     }
   }
 
@@ -500,6 +562,7 @@ function maskAiConfig(config) {
     transcription: { ...config.transcription },
     translation: config.translation ? { ...config.translation } : defaultAiConfig().translation,
     tutor: { ...config.tutor },
+    ocr: config.ocr ? { ...config.ocr } : defaultAiConfig().ocr,
     postprocessing: { ...config.postprocessing },
     skills: config.skills ? JSON.parse(JSON.stringify(config.skills)) : defaultAiConfig().skills,
     llm: {

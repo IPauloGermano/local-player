@@ -23,6 +23,9 @@ const {
 const { findNodeByPath, findParentFolder } = require("../../public/scope.js");
 const { buildLessonTutorContext, buildTutorSystemPrompt } = require("./context");
 const { streamLlmChat } = require("./chat");
+const { createLessonToolRuntime } = require("./tools");
+const { runTutorAgentLoop } = require("./agent-loop");
+const { ocrPdfPages } = require("../services/ocr");
 
 function registerTutorRoutes(app) {
   app.get("/api/tutor/context", async (req, res) => {
@@ -241,8 +244,48 @@ function registerTutorRoutes(app) {
 
       const ctx = await buildLessonTutorContext(lib, safe.rel, videoNode, courseNode, cfg, false, lastUserMsg);
       const systemPrompt = buildTutorSystemPrompt(ctx.contextText, cfg.tutor.systemPrompt, cfg.skills, webSourcesResult.content);
+      const toolMode = cfg.tutor.toolMode || "auto";
+      const ocrActive = cfg.ocr?.enabled !== false && cfg.ocr?.engine !== "off";
+      const toolRuntime =
+        toolMode !== "off" && cfg.tutor.includeMaterials !== false
+          ? createLessonToolRuntime({
+              lib,
+              tree,
+              courseNode,
+              videoRel: safe.rel,
+              onOcrPages: ocrActive
+                ? (entry, doc, pages, opts) => ocrPdfPages(entry, doc, pages, cfg, opts)
+                : null,
+            })
+          : null;
 
       if (body.stream === false) {
+        if (toolRuntime && toolRuntime.hasMaterials) {
+          try {
+            const loopRes = await runTutorAgentLoop({
+              provider,
+              model,
+              temperature: cfg.tutor.temperature,
+              systemPrompt,
+              messages,
+              toolRuntime,
+              toolMode,
+              stream: false,
+              req,
+              timeoutMs: (cfg.advanced?.llmTimeoutMs || 15000) * 3,
+            });
+            return res.json({
+              ok: true,
+              content: loopRes.content,
+              model,
+              sources: webSourcesResult.sources,
+              toolMode: loopRes.effectiveMode,
+              toolCalls: loopRes.toolCallsExecuted,
+            });
+          } catch (err) {
+            return res.status(err.status || 500).json({ error: sanitizeTestError(err.message || "Falha na chamada ao LLM.") });
+          }
+        }
         const type =
           AI_LLM_PROVIDER_TYPES.find((t) => t.id === provider.type) ||
           AI_LLM_PROVIDER_TYPES[0];
@@ -296,16 +339,32 @@ function registerTutorRoutes(app) {
         res.flushHeaders?.();
       }
 
-      await streamLlmChat({
-        provider,
-        model,
-        temperature: cfg.tutor.temperature,
-        messages,
-        systemPrompt,
-        res,
-        req,
-        timeoutMs: (cfg.advanced.llmTimeoutMs || 15000) * 3,
-      });
+      if (toolRuntime && toolRuntime.hasMaterials) {
+        await runTutorAgentLoop({
+          provider,
+          model,
+          temperature: cfg.tutor.temperature,
+          systemPrompt,
+          messages,
+          toolRuntime,
+          toolMode,
+          stream: true,
+          res,
+          req,
+          timeoutMs: (cfg.advanced.llmTimeoutMs || 15000) * 3,
+        });
+      } else {
+        await streamLlmChat({
+          provider,
+          model,
+          temperature: cfg.tutor.temperature,
+          messages,
+          systemPrompt,
+          res,
+          req,
+          timeoutMs: (cfg.advanced.llmTimeoutMs || 15000) * 3,
+        });
+      }
     } catch (err) {
       if (!res.headersSent) {
         res.status(500).json({ error: sanitizeTestError(err.message || "tutor chat error") });

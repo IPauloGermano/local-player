@@ -1541,6 +1541,24 @@ function renderAiOverview() {
     ? "Desativada"
     : (trlProv ? `Ativa · ${trlCfg.model || trlProv.defaultModel || "modelo padrão"}` : "Sem provedor LLM configurado");
 
+  const ocrSt = aiState.status?.ocr || null;
+  const ocrEnabled = cfg?.ocr?.enabled !== false && (cfg?.ocr?.engine || "auto") !== "off";
+  const ocrEngineLabelMap = {
+    auto: "Automático (Tesseract)",
+    "tesseract-cli": "Tesseract CLI",
+    "tesseract-js": "Tesseract.js WASM",
+    vlm: "Visão (VLM)",
+    docling: "IBM Docling",
+    off: "Desativado",
+  };
+  const ocrEngineLabel = ocrEngineLabelMap[cfg?.ocr?.engine || "auto"] || "Automático";
+  const ocrDot = !ocrEnabled ? "off" : (ocrSt && ocrSt.canRun ? "ok" : "warn");
+  const ocrSub = !ocrEnabled
+    ? "Desativado"
+    : (ocrSt && ocrSt.canRun
+      ? `Ativo · ${ocrEngineLabel}`
+      : `Pendente · ${ocrEngineLabel}`);
+
   // Resumo do pipeline de legendas (processados / em fila / com erro).
   const s = aiState.subtitles;
   const stat = (n, label, cls) =>
@@ -1562,6 +1580,14 @@ function renderAiOverview() {
         </div>
         <p class="ai-status-sub">${trlSub}</p>
         <p class="ai-status-desc">Tradução multibilíngue on-demand via LLM mantendo sincronia temporal.</p>
+      </div>
+      <div class="ai-status-card">
+        <div class="ai-status-head">
+          <span class="ai-status-dot ${ocrDot}"></span>
+          <span class="ai-status-title">Leitura &amp; OCR de PDFs</span>
+        </div>
+        <p class="ai-status-sub">${escapeHtml(ocrSub)}</p>
+        <p class="ai-status-desc">Leitura paginada sob demanda e OCR para apostilas e slides escaneados.</p>
       </div>
     </div>
     <div class="ai-pipeline-stats">
@@ -1807,7 +1833,20 @@ function renderAiTutor() {
     systemPrompt: "",
     includeTranscription: true,
     includeMaterials: true,
+    toolMode: "auto",
   };
+  const oc = aiState.config.ocr || {
+    enabled: true,
+    engine: "auto",
+    language: "por+eng",
+    maxPagesPerCall: 3,
+    dpi: 200,
+    vlmProviderId: "",
+    vlmModel: "",
+    doclingUrl: "",
+  };
+  const ocrStatus = aiState.status?.ocr || null;
+  const installedLangs = Array.isArray(ocrStatus?.installedLanguages) ? ocrStatus.installedLanguages : [];
   const providers = aiState.config.llm.providers || [];
   const selProvider = providers.find((p) => p.id === tu.providerId) || providers[0] || null;
   const isLocalProvider = selProvider && selProvider.baseUrl && (
@@ -1818,17 +1857,20 @@ function renderAiTutor() {
     selProvider.baseUrl.includes(":8080")
   );
 
-  const tuSwitch = (id, label, on, desc) => `
+  const tuSwitch = (id, label, on, desc) => {
+    const descId = desc ? `${id}-desc` : "";
+    return `
     <div class="ai-field ai-field-switch">
-      <button class="switch ${on ? "on" : ""}" id="${id}" type="button" role="switch" aria-checked="${on}">
+      <button class="switch ${on ? "on" : ""}" id="${id}" type="button" role="switch" aria-checked="${on}" ${descId ? `aria-describedby="${descId}"` : ""}>
         <span class="switch-track"></span>
         <span class="switch-thumb"></span>
       </button>
       <div class="ai-switch-text">
         <label class="ai-label" for="${id}">${label}</label>
-        ${desc ? `<p class="ai-field-desc">${desc}</p>` : ""}
+        ${desc ? `<p class="ai-field-desc" id="${descId}">${desc}</p>` : ""}
       </div>
     </div>`;
+  };
 
   const llmBlock = providers.length ? `
     <div class="ai-field">
@@ -1839,14 +1881,14 @@ function renderAiTutor() {
       </select>
       ${isLocalProvider ? `
         <div style="margin-top: 8px; padding: 8px 12px; background: rgba(51, 201, 111, 0.08); border: 1px solid rgba(51, 201, 111, 0.25); border-radius: 8px; font-size: 12px; color: #86efac; display: flex; align-items: center; gap: 6px;">
-          <span>⚡</span>
+          <span aria-hidden="true">⚡</span>
           <span><strong>Modelo Local ativo (${escapeHtml(selProvider.name)}):</strong> Processamento 100% offline, seguro e sem custos por token.</span>
         </div>
       ` : ""}
     </div>
     <div class="ai-field">
       <label class="ai-label" for="ai-tu-model">Modelo (opcional se definido no provedor)</label>
-      <input class="ai-input" id="ai-tu-model" type="text" value="${escapeHtml(tu.model || "")}" placeholder="ex.: llama3.2, qwen2.5-coder, gpt-4o-mini…">
+      <input class="ai-input" id="ai-tu-model" type="text" autocorrect="off" autocapitalize="none" spellcheck="false" value="${escapeHtml(tu.model || "")}" placeholder="ex.: llama3.2, qwen2.5-coder, gpt-4o-mini…">
     </div>
     <div class="ai-field">
       <label class="ai-label" for="ai-tu-temp">Temperatura / Criatividade: <span id="ai-tu-temp-val">${Number(tu.temperature || 0.3).toFixed(1)}</span></label>
@@ -1860,6 +1902,21 @@ function renderAiTutor() {
       <button class="btn btn--secondary" id="ai-tu-goto-providers" type="button">Ir para Provedores LLM</button>
     </div>`;
 
+  const toolMode = tu.toolMode || "auto";
+  const ocrEngine = oc.engine || "auto";
+  const ocrCapItems = ocrStatus ? [
+    `Tesseract CLI: ${ocrStatus.tesseractCliAvailable ? "disponível" : "não instalado"}`,
+    `Tesseract.js (WASM): ${ocrStatus.tesseractJsAvailable ? "disponível" : "indisponível"}`,
+    `Poppler pdftoppm: ${ocrStatus.pdftoppmAvailable ? "disponível" : "fallback PDF.js"}`,
+    `Idiomas offline: ${installedLangs.length ? installedLangs.join(", ") : "nenhum baixado (baixa sob demanda)"}`,
+  ] : ["Consultando capacidades locais de OCR…"];
+
+  const downloadableLangs = [
+    { code: "por", label: "Português (por)" },
+    { code: "eng", label: "Inglês (eng)" },
+    { code: "spa", label: "Espanhol (spa)" },
+  ];
+
   return `
     <h4 class="ai-block-title">Tutor IA Integrado ao Player</h4>
     <p class="ai-note">Assistente pedagógico contextualizado com o conteúdo da aula atual (transcrição, materiais e notas). Permite tirar dúvidas e interagir diretamente dentro do player.</p>
@@ -1868,9 +1925,75 @@ function renderAiTutor() {
     <h4 class="ai-block-title">Configurações do Modelo</h4>
     ${llmBlock}
     <hr class="ai-sep">
-    <h4 class="ai-block-title">Contexto Automático da Aula</h4>
+    <h4 class="ai-block-title">Contexto Automático e Ferramentas (Tool Calling)</h4>
     ${tuSwitch("ai-tu-inc-trans", "Incluir transcrição completa da aula no contexto", tu.includeTranscription !== false, "Envia as falas transcritas pelo Whisper como fonte primária para as respostas.")}
-    ${tuSwitch("ai-tu-inc-mat", "Incluir documentos e materiais de apoio no contexto", tu.includeMaterials !== false, "Lê e inclui resumos de arquivos de texto (.txt, .md, códigos) e documentos PDF associados à aula.")}
+    ${tuSwitch("ai-tu-inc-mat", "Incluir documentos e materiais de apoio no contexto", tu.includeMaterials !== false, "Lê e inclui resumos de arquivos de texto (.txt, .md, códigos) e documentos PDF/PPTX associados à aula.")}
+    <div class="ai-field">
+      <label class="ai-label" for="ai-tu-tool-mode">Modo de Tool Calling (leitura sob demanda de PDFs)</label>
+      <select class="ai-select" id="ai-tu-tool-mode" aria-describedby="ai-tu-tool-mode-desc">
+        <option value="auto" ${toolMode === "auto" ? "selected" : ""}>Automático — Nativo com fallback universal (recomendado)</option>
+        <option value="native" ${toolMode === "native" ? "selected" : ""}>Nativo — Protocolo OpenAI tool_calls</option>
+        <option value="prompt" ${toolMode === "prompt" ? "selected" : ""}>Compatibilidade universal — Funciona em qualquer modelo</option>
+        <option value="off" ${toolMode === "off" ? "selected" : ""}>Desativado — Apenas contexto estático</option>
+      </select>
+      <p class="ai-field-desc" id="ai-tu-tool-mode-desc">Permite ao Tutor pesquisar e ler páginas específicas de PDFs extensos sob demanda. Em <strong>Automático</strong>, tenta tool calling nativo e cai automaticamente para protocolo universal se o modelo não suportar <code>tools</code>.</p>
+    </div>
+    <hr class="ai-sep">
+    <h4 class="ai-block-title">OCR de PDFs Escaneados</h4>
+    <div class="ai-field" id="ai-ocr-status-summary" style="padding: 10px 12px; background: var(--bg-card-2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; line-height: 1.55;">
+      <div style="font-weight: 600; margin-bottom: 4px;">Status do ambiente OCR</div>
+      <div>${ocrCapItems.map((item) => escapeHtml(item)).join(" · ")}</div>
+    </div>
+    ${tuSwitch("ai-ocr-enabled", "Ativar OCR sob demanda para páginas escaneadas", oc.enabled !== false, "Quando uma página de PDF não possui camada de texto selecionável, o Tutor extrai o texto sob demanda e salva em cache local.")}
+    <div class="ai-field">
+      <label class="ai-label" for="ai-ocr-engine">Motor de OCR</label>
+      <select class="ai-select" id="ai-ocr-engine" aria-describedby="ai-ocr-engine-desc">
+        <option value="auto" ${ocrEngine === "auto" ? "selected" : ""}>Automático (Tesseract CLI → Tesseract.js offline)</option>
+        <option value="tesseract-cli" ${ocrEngine === "tesseract-cli" ? "selected" : ""}>Tesseract CLI nativo (mais rápido, requer instalação)</option>
+        <option value="tesseract-js" ${ocrEngine === "tesseract-js" ? "selected" : ""}>Tesseract.js offline (WASM integrado)</option>
+        <option value="vlm" ${ocrEngine === "vlm" ? "selected" : ""}>Modelo de Visão (VLM — ideal para tabelas e fórmulas LaTeX)</option>
+        <option value="docling" ${ocrEngine === "docling" ? "selected" : ""}>IBM Docling (servidor local docling-serve)</option>
+        <option value="off" ${ocrEngine === "off" ? "selected" : ""}>Desativado</option>
+      </select>
+      <p class="ai-field-desc" id="ai-ocr-engine-desc">O modo <strong>Automático</strong> funciona 100% offline com Tesseract. Para PDFs técnicos com muitas fórmulas matemáticas ou tabelas complexas, use <strong>VLM</strong> ou <strong>IBM Docling</strong>.</p>
+    </div>
+    <div class="ai-field" id="ai-ocr-lang-fields" ${ocrEngine === "vlm" || ocrEngine === "docling" || ocrEngine === "off" ? "hidden" : ""}>
+      <label class="ai-label" for="ai-ocr-lang">Idiomas do Tesseract</label>
+      <input class="ai-input" id="ai-ocr-lang" type="text" autocorrect="off" autocapitalize="none" spellcheck="false" value="${escapeHtml(oc.language || "por+eng")}" placeholder="por+eng" aria-describedby="ai-ocr-lang-desc">
+      <p class="ai-field-desc" id="ai-ocr-lang-desc">Códigos ISO-639-2 separados por <code>+</code> (ex.: <code>por+eng</code>, <code>por</code>, <code>eng</code>, <code>spa+eng</code>).</p>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+        ${downloadableLangs.map((l) => {
+          const has = installedLangs.includes(l.code);
+          return `<button type="button" class="btn btn--secondary btn--sm ai-ocr-dl-btn" data-ocr-lang="${l.code}" aria-label="${has ? `Atualizar idioma ${l.label}` : `Baixar idioma ${l.label}`}">${has ? `✓ ${l.code} (instalado)` : `Baixar ${l.code}`}</button>`;
+        }).join("")}
+      </div>
+      <p class="ai-inline-msg" id="ai-ocr-download-msg" role="status" aria-live="polite" hidden></p>
+    </div>
+    <div id="ai-ocr-vlm-fields" ${ocrEngine === "vlm" ? "" : "hidden"}>
+      <div class="ai-field">
+        <label class="ai-label" for="ai-ocr-vlm-provider">Provedor LLM multimodal (VLM)</label>
+        <select class="ai-select" id="ai-ocr-vlm-provider">
+          <option value="" ${!oc.vlmProviderId ? "selected" : ""}>Usar o mesmo provedor do Tutor IA</option>
+          ${providers.map((p) => `<option value="${p.id}" ${p.id === oc.vlmProviderId ? "selected" : ""}>${escapeHtml(p.name)}${p.defaultModel ? ` (${escapeHtml(p.defaultModel)})` : ""}</option>`).join("")}
+        </select>
+      </div>
+      <div class="ai-field">
+        <label class="ai-label" for="ai-ocr-vlm-model">Modelo multimodal (VLM)</label>
+        <input class="ai-input" id="ai-ocr-vlm-model" type="text" autocorrect="off" autocapitalize="none" spellcheck="false" value="${escapeHtml(oc.vlmModel || "")}" placeholder="ex.: qwen2.5vl:7b, gpt-4o-mini, gemini-2.5-flash" aria-describedby="ai-ocr-vlm-model-desc">
+        <p class="ai-field-desc" id="ai-ocr-vlm-model-desc">Deixe em branco para usar o modelo padrão do provedor escolhido (ele precisa aceitar imagens via <code>image_url</code>).</p>
+      </div>
+    </div>
+    <div id="ai-ocr-docling-fields" ${ocrEngine === "docling" ? "" : "hidden"}>
+      <div class="ai-field">
+        <label class="ai-label" for="ai-ocr-docling-url">URL do servidor IBM Docling (docling-serve)</label>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <input class="ai-input" id="ai-ocr-docling-url" type="url" autocorrect="off" autocapitalize="none" spellcheck="false" value="${escapeHtml(oc.doclingUrl || "")}" placeholder="http://127.0.0.1:5001" aria-describedby="ai-ocr-docling-desc" style="flex: 1; min-width: 220px;">
+          <button class="btn btn--secondary" id="ai-ocr-docling-test" type="button">Testar conexão Docling</button>
+        </div>
+        <p class="ai-field-desc" id="ai-ocr-docling-desc">Endpoint HTTP local do <code>docling-serve</code> (MIT). Ex.: <code>http://127.0.0.1:5001</code>.</p>
+        <p class="ai-inline-msg" id="ai-ocr-docling-msg" role="status" aria-live="polite" hidden></p>
+      </div>
+    </div>
     <hr class="ai-sep">
     <h4 class="ai-block-title">Prompt do Sistema (Opcional)</h4>
     <div class="ai-field">
@@ -1881,7 +2004,7 @@ function renderAiTutor() {
       <button class="btn btn--primary" id="ai-tu-save" type="button">Salvar</button>
       <button class="btn btn--secondary" id="ai-tu-reset-prompt" type="button">Restaurar prompt padrão</button>
     </div>
-    <p class="ai-inline-msg ok" id="ai-tu-msg" hidden></p>`;
+    <p class="ai-inline-msg ok" id="ai-tu-msg" role="status" aria-live="polite" hidden></p>`;
 }
 
 function bindAiTutor(panel) {
@@ -1894,6 +2017,17 @@ function bindAiTutor(panel) {
     systemPrompt: "",
     includeTranscription: true,
     includeMaterials: true,
+    toolMode: "auto",
+  };
+  const oc = cfg.ocr = cfg.ocr || {
+    enabled: true,
+    engine: "auto",
+    language: "por+eng",
+    maxPagesPerCall: 3,
+    dpi: 200,
+    vlmProviderId: "",
+    vlmModel: "",
+    doclingUrl: "",
   };
 
   const gotoBtn = document.getElementById("ai-tu-goto-providers");
@@ -1926,6 +2060,86 @@ function bindAiTutor(panel) {
     });
   }
 
+  const swOcr = document.getElementById("ai-ocr-enabled");
+  if (swOcr) {
+    swOcr.addEventListener("click", () => {
+      oc.enabled = !oc.enabled;
+      swOcr.classList.toggle("on", oc.enabled);
+      swOcr.setAttribute("aria-checked", String(oc.enabled));
+    });
+  }
+
+  const engineSel = document.getElementById("ai-ocr-engine");
+  const langFields = document.getElementById("ai-ocr-lang-fields");
+  const vlmFields = document.getElementById("ai-ocr-vlm-fields");
+  const doclingFields = document.getElementById("ai-ocr-docling-fields");
+  if (engineSel) {
+    engineSel.addEventListener("change", () => {
+      oc.engine = engineSel.value;
+      if (langFields) langFields.hidden = oc.engine === "vlm" || oc.engine === "docling" || oc.engine === "off";
+      if (vlmFields) vlmFields.hidden = oc.engine !== "vlm";
+      if (doclingFields) doclingFields.hidden = oc.engine !== "docling";
+    });
+  }
+
+  panel.querySelectorAll(".ai-ocr-dl-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const lang = btn.dataset.ocrLang;
+      if (!lang) return;
+      const origLabel = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = `Baixando ${lang}…`;
+      try {
+        const res = await fetch("/api/ai/ocr/download-lang", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+          body: JSON.stringify({ lang }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        aiState.status = await (await fetch("/api/ai/status")).json();
+        renderAiPanelInto(panel);
+        aiMsg("ai-ocr-download-msg", "ok", `Idioma ${lang} instalado offline (${aiFormatSize(data.sizeBytes)}).`);
+      } catch (err) {
+        btn.textContent = origLabel;
+        aiMsg("ai-ocr-download-msg", "error", err.message || "Falha ao baixar idioma.");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  const doclingTestBtn = document.getElementById("ai-ocr-docling-test");
+  if (doclingTestBtn) {
+    doclingTestBtn.addEventListener("click", async () => {
+      const urlIn = document.getElementById("ai-ocr-docling-url");
+      const doclingUrl = urlIn ? urlIn.value.trim() : (oc.doclingUrl || "");
+      const origLabel = doclingTestBtn.textContent;
+      doclingTestBtn.disabled = true;
+      doclingTestBtn.textContent = "Testando…";
+      try {
+        const res = await fetch("/api/ai/ocr/test-docling", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" },
+          body: JSON.stringify({ doclingUrl }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) {
+          aiMsg("ai-ocr-docling-msg", "ok", `Docling conectado · HTTP ${data.status} · ${data.latencyMs}ms`);
+        } else {
+          aiMsg("ai-ocr-docling-msg", "error", data.error || `Falha (HTTP ${res.status})`);
+        }
+      } catch (err) {
+        aiMsg("ai-ocr-docling-msg", "error", err.message || "Falha ao testar conexão.");
+      } finally {
+        doclingTestBtn.disabled = false;
+        doclingTestBtn.textContent = origLabel;
+      }
+    });
+  }
+
   const tempInput = document.getElementById("ai-tu-temp");
   const tempVal = document.getElementById("ai-tu-temp-val");
   if (tempInput && tempVal) {
@@ -1951,11 +2165,24 @@ function bindAiTutor(panel) {
       if (provSel) tu.providerId = provSel.value;
       const modelIn = document.getElementById("ai-tu-model");
       if (modelIn) tu.model = modelIn.value.trim();
+      const toolModeSel = document.getElementById("ai-tu-tool-mode");
+      if (toolModeSel) tu.toolMode = toolModeSel.value;
       if (promptInput) tu.systemPrompt = promptInput.value;
 
+      if (engineSel) oc.engine = engineSel.value;
+      const langIn = document.getElementById("ai-ocr-lang");
+      if (langIn) oc.language = langIn.value.trim() || "por+eng";
+      const vlmProvSel = document.getElementById("ai-ocr-vlm-provider");
+      if (vlmProvSel) oc.vlmProviderId = vlmProvSel.value;
+      const vlmModelIn = document.getElementById("ai-ocr-vlm-model");
+      if (vlmModelIn) oc.vlmModel = vlmModelIn.value.trim();
+      const doclingUrlIn = document.getElementById("ai-ocr-docling-url");
+      if (doclingUrlIn) oc.doclingUrl = doclingUrlIn.value.trim();
+
       try {
-        await saveAiPatch({ tutor: tu });
-        aiMsg("ai-tu-msg", "ok", "Configurações do Tutor IA salvas com sucesso.");
+        await saveAiPatch({ tutor: tu, ocr: oc });
+        renderAiPanelInto(panel);
+        aiMsg("ai-tu-msg", "ok", "Configurações do Tutor IA e OCR salvas com sucesso.");
       } catch (err) {
         aiMsg("ai-tu-msg", "error", err.message);
       }

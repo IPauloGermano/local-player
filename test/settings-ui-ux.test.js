@@ -114,3 +114,28 @@ test("Fatia 4: Integridade da UI de bibliotecas (edição inteligente e proteç�
   );
 });
 
+test("Fatia 5: Controles de Tool Calling universal e OCR de PDFs na aba Tutor IA", () => {
+  // Modo de Tool Calling
+  assert.match(SETTINGS_JS, /id="ai-tu-tool-mode"/, "Deve renderizar select #ai-tu-tool-mode");
+  assert.match(SETTINGS_JS, /value="auto"[\s\S]*value="native"[\s\S]*value="prompt"[\s\S]*value="off"/, "Select toolMode deve conter opções auto/native/prompt/off");
+
+  // Controles de OCR
+  assert.match(SETTINGS_JS, /id="ai-ocr-status-summary"/, "Deve exibir resumo de status de OCR #ai-ocr-status-summary");
+  assert.match(SETTINGS_JS, /tuSwitch\("ai-ocr-enabled"/, "Deve renderizar switch #ai-ocr-enabled");
+  assert.match(SETTINGS_JS, /id="ai-ocr-engine"/, "Deve renderizar select #ai-ocr-engine");
+  assert.match(SETTINGS_JS, /id="ai-ocr-lang"/, "Deve renderizar input #ai-ocr-lang");
+  assert.match(SETTINGS_JS, /id="ai-ocr-vlm-fields"/, "Deve renderizar seção condicional #ai-ocr-vlm-fields");
+  assert.match(SETTINGS_JS, /id="ai-ocr-vlm-provider"/, "Deve renderizar select #ai-ocr-vlm-provider");
+  assert.match(SETTINGS_JS, /id="ai-ocr-vlm-model"/, "Deve renderizar input #ai-ocr-vlm-model");
+  assert.match(SETTINGS_JS, /id="ai-ocr-docling-fields"/, "Deve renderizar seção condicional #ai-ocr-docling-fields");
+  assert.match(SETTINGS_JS, /id="ai-ocr-docling-url"/, "Deve renderizar input #ai-ocr-docling-url");
+  assert.match(SETTINGS_JS, /id="ai-ocr-docling-test"/, "Deve renderizar botão #ai-ocr-docling-test");
+  assert.match(SETTINGS_JS, /\/api\/ai\/ocr\/test-docling/, "Deve integrar botão de teste com /api/ai/ocr/test-docling");
+  assert.match(SETTINGS_JS, /\/api\/ai\/ocr\/download-lang/, "Deve integrar download sob demanda com /api/ai/ocr/download-lang");
+
+  // Acessibilidade e persistência conjunta (tutor + ocr)
+  assert.match(SETTINGS_JS, /aria-describedby="ai-tu-tool-mode-desc"/, "Select toolMode deve vincular descrição via aria-describedby");
+  assert.match(SETTINGS_JS, /autocorrect="off"/, "Campos técnicos (idiomas/URL/modelo) devem desativar autocorreção");
+  assert.match(SETTINGS_JS, /saveAiPatch\(\{\s*tutor:\s*tu,\s*ocr:\s*oc\s*\}\)/, "Salvar na aba Tutor IA deve persistir tutor e ocr");
+});
+

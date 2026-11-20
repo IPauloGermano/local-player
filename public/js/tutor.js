@@ -1021,6 +1021,14 @@ async function sendTutorMessage(video, text) {
             if (currentBubble && !accumulatedText) {
               currentBubble.innerHTML = tutorLoadingHtml("Verificando disponibilidade do vídeo...");
             }
+          } else if (parsed.status === "tool_call") {
+            if (currentBubble && !accumulatedText) {
+              currentBubble.innerHTML = tutorLoadingHtml(parsed.label || "Consultando documentos da aula...");
+            }
+          } else if (parsed.status === "ocr_page") {
+            if (currentBubble && !accumulatedText) {
+              currentBubble.innerHTML = tutorLoadingHtml(parsed.label || "Executando OCR na página do PDF...");
+            }
           }
           if (parsed.content) {
             accumulatedText += parsed.content;

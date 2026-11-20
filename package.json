@@ -23,7 +23,9 @@
     "test": "node --test test/*.test.js test/*-smoke.js"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "pdfjs-dist": "^6.5.438",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "electron": "^44.3.0",

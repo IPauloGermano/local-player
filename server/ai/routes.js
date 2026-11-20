@@ -24,6 +24,11 @@ const {
   WHISPER_BIN,
   WHISPER_MODEL_DIR,
 } = require("./status");
+const {
+  OCR_DOWNLOADABLE_LANGUAGES,
+  testDoclingConnection,
+  downloadTrainedData,
+} = require("../services/ocr");
 
 function registerAiRoutes(app) {
   // Status de armazenamento (Fase 6): números REAIS de espaço para a aba
@@ -217,6 +222,54 @@ function registerAiRoutes(app) {
     }
     const result = await requestDesktopIpc("open-models-folder");
     res.json(result);
+  });
+
+  app.post("/api/ai/ocr/test-docling", requireAdminOrLocal, async (req, res) => {
+    try {
+      const body = objOr(req.body, {});
+      let url = clampStr(body.doclingUrl, AI_STR_LIMITS.baseUrl).trim();
+      if (!url) {
+        const cfg = await loadAiConfig();
+        url = clampStr(cfg.ocr && cfg.ocr.doclingUrl, AI_STR_LIMITS.baseUrl).trim();
+      }
+      if (!url) {
+        return res.status(400).json({ ok: false, error: "Informe a URL do servidor Docling." });
+      }
+      const result = await testDoclingConnection(url);
+      if (result.invalidUrl) {
+        return res.status(400).json({ ok: false, error: sanitizeTestError(result.error || "URL inválida.") });
+      }
+      return res.json({
+        ok: result.ok,
+        status: result.status,
+        latencyMs: result.latencyMs,
+        ...(result.error ? { error: sanitizeTestError(result.error) } : {}),
+      });
+    } catch (err) {
+      res.status(400).json({ ok: false, error: sanitizeTestError(err.message || "docling test error") });
+    }
+  });
+
+  app.post("/api/ai/ocr/download-lang", requireAdminOrLocal, async (req, res) => {
+    try {
+      const body = objOr(req.body, {});
+      const lang = clampStr(body.lang, 8).trim().toLowerCase();
+      if (!OCR_DOWNLOADABLE_LANGUAGES.includes(lang)) {
+        return res.status(400).json({
+          ok: false,
+          error: `Idioma OCR não suportado. Permitidos: ${OCR_DOWNLOADABLE_LANGUAGES.join(", ")}.`,
+        });
+      }
+      const result = await downloadTrainedData(lang);
+      return res.json({
+        ok: true,
+        lang: result.lang,
+        sizeBytes: result.sizeBytes,
+        installedLanguages: result.installedLanguages,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: sanitizeTestError(err.message || "Falha ao baixar idioma OCR.") });
+    }
   });
 }
 

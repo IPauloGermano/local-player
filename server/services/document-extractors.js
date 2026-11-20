@@ -2,8 +2,11 @@
 const fs = require("fs/promises");
 const fsSync = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const zlib = require("zlib");
 const { spawn, execFile } = require("child_process");
+const state = require("../state");
+const { readJsonFile, writeFileAtomic } = require("../core/fs-atomic");
 const {
   TUTOR_TEXT_EXTS,
   applyRtkMaterialFiltering,
@@ -12,6 +15,22 @@ const {
 
 const APP_DIR = path.resolve(__dirname, "..", "..");
 const FFMPEG_BIN_DIR = path.join(APP_DIR, "bin", "ffmpeg");
+const COURSE_DOCS_DIR = path.join(".courseplayer", "docs");
+const DOC_CACHE_VERSION = 1;
+const MAX_PDF_SIZE_BYTES = 50 * 1024 * 1024;
+const DEFAULT_READ_MAX_PAGES = 5;
+const DEFAULT_READ_MAX_CHARS = 12000;
+
+let _pdfjsPromise = null;
+function loadPdfJs() {
+  if (!_pdfjsPromise) {
+    _pdfjsPromise = import("pdfjs-dist/legacy/build/pdf.mjs").catch((err) => {
+      _pdfjsPromise = null;
+      throw err;
+    });
+  }
+  return _pdfjsPromise;
+}
 
 function resolveToolBin(exeName, envPath) {
   if (envPath) return envPath;
@@ -690,118 +709,590 @@ function formatDocumentForTutor(baseName, ext, rawText, query = "") {
   );
 }
 
-async function extractTextFromMaterial(absPath, ext, cfg = null, query = "") {
+function normalizePageWhitespace(text) {
+  if (!text) return "";
+  return String(text)
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function classifyPageText(rawText, source) {
+  const clean = normalizePageWhitespace(rawText);
+  const alphaCount = (clean.match(/[a-zA-Z0-9\u00C0-\u024F]/g) || []).length;
+  const isReadable = clean.length >= 10 && alphaCount >= 6;
+  return {
+    text: isReadable ? clean : "",
+    status: isReadable ? "text_ready" : "needs_ocr",
+    source: isReadable ? source : null,
+    chars: isReadable ? clean.length : 0,
+  };
+}
+
+function finalizePagesResult(pages, engine, extra = {}) {
+  const ocrNeededPages = pages.filter((p) => p.status === "needs_ocr").map((p) => p.page);
+  const textPages = pages.filter((p) => p.status === "text_ready").length;
+  return {
+    invalid: false,
+    tooLarge: false,
+    engine,
+    pageCount: pages.length,
+    textPages,
+    ocrNeededPages,
+    scanned: pages.length > 0 && textPages === 0,
+    pages,
+    ...extra,
+  };
+}
+
+async function extractPdfPagesWithBinary(absPath) {
+  const hasTool = await detectPdfToText();
+  if (!hasTool) return null;
   try {
-    const st = await fs.stat(absPath).catch(() => null);
-    if (!st || !st.isFile()) return null;
-    const baseName = path.basename(absPath);
-    let extractedText = null;
-
-    if (ext === ".pdf") {
-      if (st.size > 50 * 1024 * 1024) {
-        return `[Documento PDF: ${baseName} (${Math.round(st.size / 1024)} KB) - arquivo muito grande para leitura completa]`;
+    const { stdout } = await execFileAsync(PDFTOTEXT_BIN, [absPath, "-"]);
+    if (typeof stdout === "string" && stdout.length > 0) {
+      const rawPages = stdout.split("\x0c");
+      if (rawPages.length > 1 && rawPages[rawPages.length - 1].trim() === "") {
+        rawPages.pop();
       }
-      extractedText = await extractPdfTextWithBinary(absPath);
-      if (!extractedText || extractedText.length < 10) {
-        const buf = await fs.readFile(absPath).catch(() => null);
-        if (buf) {
-          const rawJsText = extractTextFromPdfBuffer(buf);
-          const cleanedJsText = cleanExtractedPdfText(rawJsText);
-          if (cleanedJsText && cleanedJsText.length >= 10) {
-            extractedText = cleanedJsText;
+      if (rawPages.length > 0) {
+        const pages = rawPages.map((raw, idx) => ({
+          page: idx + 1,
+          ...classifyPageText(raw, "pdftotext"),
+        }));
+        return finalizePagesResult(pages, "pdftotext");
+      }
+    }
+  } catch {
+    // pdftotext falhou ou retornou código não-zero
+  }
+  return null;
+}
+
+async function extractPdfPagesWithPdfJs(buf) {
+  if (!buf || !Buffer.isBuffer(buf) || buf.length < 8) return null;
+  let doc = null;
+  try {
+    const pdfjs = await loadPdfJs();
+    const loadingTask = pdfjs.getDocument({
+      data: Uint8Array.from(buf),
+      useSystemFonts: true,
+      disableFontFace: true,
+      isEvalSupported: false,
+      verbosity: 0,
+    });
+    doc = await loadingTask.promise;
+    const pages = [];
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const tc = await page.getTextContent();
+      const lines = [];
+      let curLine = "";
+      let prevY = null;
+      for (const item of tc.items || []) {
+        if (!item || typeof item.str !== "string") continue;
+        const y = Array.isArray(item.transform) ? item.transform[5] : null;
+        if (prevY !== null && y !== null && Math.abs(y - prevY) > 3 && curLine.trim()) {
+          lines.push(curLine.trim());
+          curLine = "";
+        }
+        if (item.str) {
+          curLine += (curLine && !curLine.endsWith(" ") && !item.str.startsWith(" ") ? " " : "") + item.str;
+        }
+        if (item.hasEOL) {
+          if (curLine.trim()) lines.push(curLine.trim());
+          curLine = "";
+          prevY = null;
+        } else if (y !== null) {
+          prevY = y;
+        }
+      }
+      if (curLine.trim()) lines.push(curLine.trim());
+      pages.push({
+        page: p,
+        ...classifyPageText(lines.join("\n"), "pdfjs"),
+      });
+    }
+    return finalizePagesResult(pages, "pdfjs");
+  } catch {
+    return null;
+  } finally {
+    if (doc && typeof doc.destroy === "function") {
+      try { await doc.destroy(); } catch {}
+    }
+  }
+}
+
+async function extractPdfPages(absPath, opts = {}) {
+  const st = await fs.stat(absPath).catch(() => null);
+  if (!st || !st.isFile()) return null;
+  if (st.size > MAX_PDF_SIZE_BYTES) {
+    return {
+      invalid: false,
+      tooLarge: true,
+      size: st.size,
+      engine: null,
+      pageCount: 0,
+      textPages: 0,
+      ocrNeededPages: [],
+      scanned: false,
+      pages: [],
+    };
+  }
+
+  if (!opts.skipBinary) {
+    const binRes = await extractPdfPagesWithBinary(absPath);
+    if (binRes && binRes.pageCount > 0) return binRes;
+  }
+
+  const buf = await fs.readFile(absPath).catch(() => null);
+  if (!buf) {
+    return { invalid: true, tooLarge: false, engine: null, pageCount: 0, textPages: 0, ocrNeededPages: [], scanned: false, pages: [] };
+  }
+
+  if (!opts.skipPdfJs) {
+    const pdfJsRes = await extractPdfPagesWithPdfJs(buf);
+    if (pdfJsRes && pdfJsRes.pageCount > 0) return pdfJsRes;
+  }
+
+  // Fallback puro Node.js para PDFs truncados ou sintéticos sem tabela xref completa
+  const info = inspectPdfBuffer(buf);
+  const rawJsText = extractTextFromPdfBuffer(buf);
+  const cleanedJsText = cleanExtractedPdfText(rawJsText);
+  if (cleanedJsText && cleanedJsText.length >= 10) {
+    const total = Math.max(1, info.pages || 1);
+    const pages = [{ page: 1, ...classifyPageText(cleanedJsText, "pdf-fallback") }];
+    for (let p = 2; p <= total; p++) {
+      pages.push({ page: p, text: "", status: "needs_ocr", source: null, chars: 0 });
+    }
+    return finalizePagesResult(pages, "pdf-fallback");
+  }
+
+  if (info.isValid) {
+    const total = Math.max(1, info.pages || 1);
+    const pages = Array.from({ length: total }, (_, idx) => ({
+      page: idx + 1,
+      text: "",
+      status: "needs_ocr",
+      source: null,
+      chars: 0,
+    }));
+    return finalizePagesResult(pages, "pdf-inspect");
+  }
+
+  return { invalid: true, tooLarge: false, engine: null, pageCount: 0, textPages: 0, ocrNeededPages: [], scanned: false, pages: [] };
+}
+
+function docCacheName(libId, relPath) {
+  return crypto
+    .createHash("sha1")
+    .update(`${libId || ""}\0${relPath || ""}`)
+    .digest("hex")
+    .slice(0, 24);
+}
+
+function courseDocCachePath(lib, relPath, hash) {
+  if (!lib || !lib.path || !relPath) return null;
+  const idx = relPath.indexOf("/");
+  if (idx <= 0) return null;
+  const courseName = relPath.slice(0, idx);
+  return path.join(lib.path, courseName, COURSE_DOCS_DIR, hash + ".json");
+}
+
+function mirrorDocCachePath(hash) {
+  return path.join(state.DATA_DIR, "docs", hash + ".json");
+}
+
+async function saveDocumentCache(cachePath, doc) {
+  if (!cachePath || !doc) return false;
+  await fs.mkdir(path.dirname(cachePath), { recursive: true });
+  const toPersist = {
+    version: DOC_CACHE_VERSION,
+    name: doc.name,
+    ext: doc.ext,
+    size: doc.size,
+    mtimeMs: doc.mtimeMs,
+    engine: doc.engine || null,
+    pageCount: doc.pageCount || 0,
+    textPages: doc.textPages || 0,
+    ocrNeededPages: Array.isArray(doc.ocrNeededPages) ? doc.ocrNeededPages : [],
+    scanned: !!doc.scanned,
+    pages: Array.isArray(doc.pages) ? doc.pages : [],
+  };
+  await writeFileAtomic(cachePath, JSON.stringify(toPersist, null, 2));
+  return true;
+}
+
+function extractPptxSlidesBuffer(buf) {
+  try {
+    let offset = 0;
+    const slides = [];
+    const slideRe = /^ppt\/slides\/slide(\d+)\.xml$/;
+    while (offset < buf.length - 30) {
+      if (buf.readUInt32LE(offset) !== 0x04034b50) {
+        const nextPK = buf.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]), offset + 1);
+        if (nextPK === -1) break;
+        offset = nextPK;
+      }
+      const compressionMethod = buf.readUInt16LE(offset + 8);
+      const compressedSize = buf.readUInt32LE(offset + 18);
+      const fileNameLen = buf.readUInt16LE(offset + 26);
+      const extraFieldLen = buf.readUInt16LE(offset + 28);
+      const fileNameStart = offset + 30;
+      const fileName = buf.toString("utf8", fileNameStart, fileNameStart + fileNameLen);
+      const dataStart = fileNameStart + fileNameLen + extraFieldLen;
+      const dataEnd = dataStart + compressedSize;
+
+      const m = slideRe.exec(fileName);
+      if (m) {
+        const fileData = buf.subarray(dataStart, dataEnd);
+        let decompressed = null;
+        if (compressionMethod === 8) {
+          try { decompressed = zlib.inflateRawSync(fileData); } catch {}
+        } else if (compressionMethod === 0) {
+          decompressed = fileData;
+        }
+        if (decompressed) {
+          const xml = decompressed.toString("utf8");
+          const paras = xml.split(/<\/a:p>/gi);
+          const pieces = [];
+          for (const para of paras) {
+            const parts = [];
+            const re = /<a:t[^>]*>([\s\S]*?)<\/a:t>/g;
+            let tm;
+            while ((tm = re.exec(para)) !== null) {
+              const txt = (tm[1] || "")
+                .replace(/<[^>]+>/g, "")
+                .replace(/&lt;/g, "<")
+                .replace(/&gt;/g, ">")
+                .replace(/&quot;/g, '"')
+                .replace(/&apos;/g, "'")
+                .replace(/&amp;/g, "&");
+              if (txt) parts.push(txt);
+            }
+            if (parts.length) pieces.push(parts.join("").trim());
           }
+          slides.push({ num: parseInt(m[1], 10), text: normalizePageWhitespace(pieces.join("\n\n")) });
         }
       }
+      offset = dataEnd;
+    }
+    slides.sort((a, b) => a.num - b.num);
+    return slides.map((s, idx) => ({
+      page: idx + 1,
+      text: s.text,
+      status: s.text.length >= 2 ? "text_ready" : "needs_ocr",
+      source: s.text.length >= 2 ? "pptx-xml" : null,
+      chars: s.text.length,
+    }));
+  } catch {
+    return [];
+  }
+}
 
-      if (!extractedText || extractedText.length < 10) {
-        const buf = await fs.readFile(absPath).catch(() => null);
-        const info = inspectPdfBuffer(buf);
-        if (info.isValid) {
-          const pageLabel = info.pages > 0 ? `, ${info.pages} página${info.pages > 1 ? "s" : ""}` : "";
-          return `[Documento PDF escaneado (sem camada de texto legível, requer OCR): ${baseName} (${Math.round(st.size / 1024)} KB${pageLabel})]`;
-        } else {
-          return `[Documento PDF inválido ou inacessível: ${baseName}]`;
-        }
+async function loadOrExtractDocument(absPath, ext, cacheOpts = null) {
+  const st = await fs.stat(absPath).catch(() => null);
+  if (!st || !st.isFile()) return null;
+  const baseName = path.basename(absPath);
+  const normExt = (ext || path.extname(absPath) || "").toLowerCase();
+
+  let primaryCache = null;
+  let mirrorCache = null;
+  if (cacheOpts && cacheOpts.cacheDirOverride && cacheOpts.relPath) {
+    const hash = docCacheName(cacheOpts.lib?.id || "default", cacheOpts.relPath);
+    primaryCache = path.join(cacheOpts.cacheDirOverride, hash + ".json");
+  } else if (cacheOpts && cacheOpts.lib && cacheOpts.relPath) {
+    const hash = docCacheName(cacheOpts.lib.id, cacheOpts.relPath);
+    primaryCache = courseDocCachePath(cacheOpts.lib, cacheOpts.relPath, hash);
+    mirrorCache = mirrorDocCachePath(hash);
+  }
+
+  // Tenta leitura de cache válido (invalidação automática por versão, mtimeMs e size)
+  if (!cacheOpts?.forceFresh) {
+    for (const candidate of [primaryCache, mirrorCache].filter(Boolean)) {
+      const r = await readJsonFile(candidate).catch(() => ({ ok: false }));
+      if (
+        r.ok &&
+        r.parsed &&
+        r.parsed.version === DOC_CACHE_VERSION &&
+        r.parsed.mtimeMs === st.mtimeMs &&
+        r.parsed.size === st.size &&
+        Array.isArray(r.parsed.pages)
+      ) {
+        return {
+          ...r.parsed,
+          invalid: false,
+          tooLarge: false,
+          fromCache: true,
+          cachePath: candidate,
+        };
       }
-    } else if (ext === ".docx") {
-      if (st.size > 50 * 1024 * 1024) {
-        return `[Documento Word: ${baseName} (${Math.round(st.size / 1024)} KB) - arquivo muito grande]`;
-      }
+    }
+  }
+
+  let doc = null;
+  if (normExt === ".pdf") {
+    const pdfRes = await extractPdfPages(absPath, cacheOpts || {});
+    if (!pdfRes) return null;
+    doc = {
+      version: DOC_CACHE_VERSION,
+      name: baseName,
+      ext: normExt,
+      size: st.size,
+      mtimeMs: st.mtimeMs,
+      ...pdfRes,
+    };
+  } else if (normExt === ".pptx") {
+    if (st.size > MAX_PDF_SIZE_BYTES) {
+      doc = { version: DOC_CACHE_VERSION, name: baseName, ext: normExt, size: st.size, mtimeMs: st.mtimeMs, invalid: false, tooLarge: true, engine: null, pageCount: 0, textPages: 0, ocrNeededPages: [], scanned: false, pages: [] };
+    } else {
       const buf = await fs.readFile(absPath);
-      const docxText = extractTextFromDocxBuffer(buf);
-      if (docxText && docxText.length >= 10) {
-        extractedText = docxText;
-      } else {
-        return `[Documento Word: ${baseName} (${Math.round(st.size / 1024)} KB)]`;
-      }
-    } else if (ext === ".pptx") {
-      if (st.size > 50 * 1024 * 1024) {
-        return `[Slides PowerPoint: ${baseName} (${Math.round(st.size / 1024)} KB) - arquivo muito grande]`;
-      }
-      const buf = await fs.readFile(absPath);
-      const pptxText = extractTextFromPptxBuffer(buf);
-      if (pptxText && pptxText.length >= 10) {
-        extractedText = pptxText;
-      } else {
-        return `[Slides PowerPoint: ${baseName} (${Math.round(st.size / 1024)} KB)]`;
-      }
-    } else if (ext === ".odt") {
-      if (st.size > 50 * 1024 * 1024) {
-        return `[Documento OpenDocument: ${baseName} (${Math.round(st.size / 1024)} KB) - arquivo muito grande]`;
-      }
-      const buf = await fs.readFile(absPath);
-      const odtText = extractTextFromOdtBuffer(buf);
-      if (odtText && odtText.length >= 10) {
-        extractedText = odtText;
-      } else {
-        return `[Documento OpenDocument: ${baseName} (${Math.round(st.size / 1024)} KB)]`;
-      }
-    } else if (ext === ".rtf") {
-      if (st.size > 20 * 1024 * 1024) {
-        return `[Documento RTF: ${baseName} (${Math.round(st.size / 1024)} KB) - arquivo muito grande]`;
-      }
-      const rawRtf = await fs.readFile(absPath, "latin1");
-      const rtfText = extractTextFromRtf(rawRtf);
-      if (rtfText && rtfText.length >= 10) {
-        extractedText = rtfText;
-      } else {
-        return `[Documento RTF: ${baseName} (${Math.round(st.size / 1024)} KB)]`;
-      }
-    } else if (TUTOR_TEXT_EXTS.has(ext)) {
-      if (st.size > 512 * 1024) {
-        const fd = await fs.open(absPath, "r");
-        try {
-          const buf = Buffer.alloc(65536);
-          const { bytesRead } = await fd.read(buf, 0, 65536, 0);
-          extractedText = buf.toString("utf8", 0, bytesRead);
-        } finally {
-          await fd.close();
-        }
-      } else {
-        extractedText = await fs.readFile(absPath, "utf8");
+      const slidePages = extractPptxSlidesBuffer(buf);
+      doc = { version: DOC_CACHE_VERSION, name: baseName, ext: normExt, size: st.size, mtimeMs: st.mtimeMs, ...finalizePagesResult(slidePages, "pptx-xml") };
+    }
+  } else if (normExt === ".docx" || normExt === ".odt" || normExt === ".rtf") {
+    const limit = normExt === ".rtf" ? 20 * 1024 * 1024 : MAX_PDF_SIZE_BYTES;
+    if (st.size > limit) {
+      doc = { version: DOC_CACHE_VERSION, name: baseName, ext: normExt, size: st.size, mtimeMs: st.mtimeMs, invalid: false, tooLarge: true, engine: null, pageCount: 0, textPages: 0, ocrNeededPages: [], scanned: false, pages: [] };
+    } else {
+      let text = "";
+      if (normExt === ".docx") text = extractTextFromDocxBuffer(await fs.readFile(absPath));
+      else if (normExt === ".odt") text = extractTextFromOdtBuffer(await fs.readFile(absPath));
+      else text = extractTextFromRtf(await fs.readFile(absPath, "latin1"));
+      const clean = normalizePageWhitespace(text);
+      const pages = clean.length >= 10
+        ? [{ page: 1, text: clean, status: "text_ready", source: normExt.slice(1), chars: clean.length }]
+        : [];
+      doc = { version: DOC_CACHE_VERSION, name: baseName, ext: normExt, size: st.size, mtimeMs: st.mtimeMs, ...finalizePagesResult(pages, normExt.slice(1)) };
+    }
+  } else if (TUTOR_TEXT_EXTS.has(normExt)) {
+    let text = "";
+    if (st.size > 512 * 1024) {
+      const fd = await fs.open(absPath, "r");
+      try {
+        const buf = Buffer.alloc(65536);
+        const { bytesRead } = await fd.read(buf, 0, 65536, 0);
+        text = buf.toString("utf8", 0, bytesRead);
+      } finally {
+        await fd.close();
       }
     } else {
-      return `[Arquivo de apoio anexado: ${baseName} (${Math.round(st.size / 1024)} KB)]`;
+      text = await fs.readFile(absPath, "utf8");
     }
+    const clean = text.trim();
+    const pages = clean ? [{ page: 1, text: clean, status: "text_ready", source: "utf8", chars: clean.length }] : [];
+    doc = { version: DOC_CACHE_VERSION, name: baseName, ext: normExt, size: st.size, mtimeMs: st.mtimeMs, ...finalizePagesResult(pages, "utf8") };
+  } else {
+    doc = { version: DOC_CACHE_VERSION, name: baseName, ext: normExt, size: st.size, mtimeMs: st.mtimeMs, invalid: false, tooLarge: false, unsupported: true, engine: null, pageCount: 0, textPages: 0, ocrNeededPages: [], scanned: false, pages: [] };
+  }
 
-    if (!extractedText) return null;
-
-    if (cfg?.skills?.rtk?.enabled && cfg?.skills?.rtk?.applyToMaterials !== false) {
-      extractedText = applyRtkMaterialFiltering(extractedText, ext, cfg.skills.rtk);
+  let savedPath = null;
+  if (!doc.tooLarge && !doc.invalid && !doc.unsupported && (primaryCache || mirrorCache)) {
+    for (const target of [primaryCache, mirrorCache].filter(Boolean)) {
+      try {
+        await saveDocumentCache(target, doc);
+        savedPath = target;
+        break;
+      } catch {
+        // Biblioteca pode ser somente-leitura; tenta fallback em data/docs
+      }
     }
-    if (cfg?.skills?.headroom?.enabled && cfg?.skills?.headroom?.applyToContext !== false) {
-      extractedText = applyHeadroomContextCompression(extractedText, ext, cfg.skills.headroom);
-    }
+  }
 
-    return formatDocumentForTutor(baseName, ext, extractedText, query);
-  } catch (err) {
+  return { ...doc, fromCache: false, cachePath: savedPath };
+}
+
+function buildSnippetAroundMatch(text, terms, maxLen = 320) {
+  if (!text) return "";
+  if (text.length <= maxLen) return text;
+  const norm = normalizeSearchTerm(text);
+  let bestPos = -1;
+  for (const term of terms) {
+    const idx = norm.indexOf(term);
+    if (idx !== -1 && (bestPos === -1 || idx < bestPos)) {
+      bestPos = idx;
+    }
+  }
+  if (bestPos <= 40) return text.slice(0, maxLen).trim() + "…";
+  const start = Math.max(0, bestPos - 60);
+  const end = Math.min(text.length, start + maxLen);
+  return (start > 0 ? "…" : "") + text.slice(start, end).trim() + (end < text.length ? "…" : "");
+}
+
+function searchDocumentPages(doc, query, maxResults = 5) {
+  if (!doc || !Array.isArray(doc.pages) || doc.pages.length === 0) return [];
+  const limit = Math.max(1, Math.min(10, Math.floor(Number(maxResults) || 5)));
+  const stopWords = new Set(["de", "da", "do", "em", "para", "com", "que", "como", "qual", "uma", "uns", "por", "sobre", "o", "a", "os", "as", "no", "na", "nos", "nas", "ao", "aos"]);
+  const fullNormQuery = normalizeSearchTerm(query);
+  const terms = fullNormQuery.split(/\s+/).filter((t) => t.length >= 2 && !stopWords.has(t));
+  if (terms.length === 0) return [];
+
+  const scored = [];
+  for (const p of doc.pages) {
+    if (!p || p.status !== "text_ready" || !p.text) continue;
+    const normText = normalizeSearchTerm(p.text);
+    let score = 0;
+    if (fullNormQuery.length > 5 && normText.includes(fullNormQuery)) {
+      score += 100;
+    }
+    for (const term of terms) {
+      let count = 0;
+      let pos = 0;
+      while ((pos = normText.indexOf(term, pos)) !== -1) {
+        count++;
+        pos += term.length;
+      }
+      if (count > 0) score += count * Math.min(term.length, 10);
+    }
+    if (score > 0) {
+      scored.push({
+        page: p.page,
+        score,
+        source: p.source || "text",
+        snippet: buildSnippetAroundMatch(p.text, terms),
+      });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.page - b.page);
+  return scored.slice(0, limit);
+}
+
+function readDocumentPagesRange(doc, startPage = 1, endPage = null, opts = {}) {
+  if (!doc || !Array.isArray(doc.pages) || doc.pages.length === 0) {
+    return { startPage: 0, endPage: 0, pageCount: 0, pages: [], ocrNeededPages: [], clampedByPageLimit: false, truncatedByChars: false };
+  }
+  const maxPages = Math.max(1, Math.min(10, Number(opts.maxPages) || DEFAULT_READ_MAX_PAGES));
+  const maxChars = Math.max(500, Math.min(40000, Number(opts.maxChars) || DEFAULT_READ_MAX_CHARS));
+  const total = doc.pageCount || doc.pages.length;
+
+  const reqStart = Math.max(1, Math.min(total, Math.floor(Number(startPage) || 1)));
+  const reqEndRaw = endPage === null || endPage === undefined ? reqStart : Math.floor(Number(endPage) || reqStart);
+  const reqEnd = Math.max(reqStart, Math.min(total, reqEndRaw));
+  const clampedEnd = Math.min(reqEnd, reqStart + maxPages - 1);
+  const clampedByPageLimit = clampedEnd < reqEnd;
+
+  const selected = [];
+  const ocrNeededPages = [];
+  let charTotal = 0;
+  let truncatedByChars = false;
+
+  for (let pNum = reqStart; pNum <= clampedEnd; pNum++) {
+    const pObj = doc.pages.find((x) => x.page === pNum) || { page: pNum, text: "", status: "needs_ocr", source: null, chars: 0 };
+    if (pObj.status === "needs_ocr") {
+      ocrNeededPages.push(pNum);
+      selected.push({ page: pNum, status: "needs_ocr", source: null, text: "" });
+      continue;
+    }
+    let text = pObj.text || "";
+    if (charTotal + text.length > maxChars) {
+      const remaining = Math.max(0, maxChars - charTotal);
+      text = remaining > 0 ? text.slice(0, remaining) + "\n[... trecho truncado pelo limite de contexto ...]" : "";
+      truncatedByChars = true;
+    }
+    charTotal += text.length;
+    selected.push({ page: pNum, status: "text_ready", source: pObj.source || "text", text });
+    if (truncatedByChars) break;
+  }
+
+  return {
+    startPage: reqStart,
+    endPage: clampedEnd,
+    pageCount: total,
+    pages: selected,
+    ocrNeededPages,
+    clampedByPageLimit,
+    truncatedByChars,
+  };
+}
+
+function formatDocumentStructureForTutor(doc, cfg = null, query = "") {
+  if (!doc) return null;
+  const baseName = doc.name;
+  const ext = doc.ext;
+  const sizeKb = Math.round((doc.size || 0) / 1024);
+
+  if (doc.tooLarge) {
+    const label =
+      ext === ".pdf" ? `Documento PDF: ${baseName} (${sizeKb} KB) - arquivo muito grande para leitura completa` :
+      ext === ".docx" ? `Documento Word: ${baseName} (${sizeKb} KB) - arquivo muito grande` :
+      ext === ".pptx" ? `Slides PowerPoint: ${baseName} (${sizeKb} KB) - arquivo muito grande` :
+      ext === ".odt" ? `Documento OpenDocument: ${baseName} (${sizeKb} KB) - arquivo muito grande` :
+      ext === ".rtf" ? `Documento RTF: ${baseName} (${sizeKb} KB) - arquivo muito grande` :
+      `Arquivo de apoio anexado: ${baseName} (${sizeKb} KB)`;
+    return `[${label}]`;
+  }
+
+  if (doc.unsupported) {
+    return `[Arquivo de apoio anexado: ${baseName} (${sizeKb} KB)]`;
+  }
+
+  if (ext === ".pdf") {
+    if (doc.invalid) return `[Documento PDF inválido ou inacessível: ${baseName}]`;
+    if (doc.scanned || doc.textPages === 0) {
+      const pageLabel = doc.pageCount > 0 ? `, ${doc.pageCount} página${doc.pageCount > 1 ? "s" : ""}` : "";
+      return `[Documento PDF escaneado (sem camada de texto legível, requer OCR): ${baseName} (${sizeKb} KB${pageLabel})]`;
+    }
+  } else if (doc.textPages === 0) {
+    if (ext === ".docx") return `[Documento Word: ${baseName} (${sizeKb} KB)]`;
+    if (ext === ".pptx") return `[Slides PowerPoint: ${baseName} (${sizeKb} KB)]`;
+    if (ext === ".odt") return `[Documento OpenDocument: ${baseName} (${sizeKb} KB)]`;
+    if (ext === ".rtf") return `[Documento RTF: ${baseName} (${sizeKb} KB)]`;
+    return null;
+  }
+
+  const readyPages = doc.pages.filter((p) => p.status === "text_ready" && p.text);
+  let extractedText;
+  if ((ext === ".pdf" || ext === ".pptx") && doc.pageCount > 1) {
+    const unit = ext === ".pptx" ? "Slide" : "Página";
+    extractedText = readyPages.map((p) => `[${unit} ${p.page}]\n${p.text}`).join("\n\n");
+    if (doc.ocrNeededPages && doc.ocrNeededPages.length > 0) {
+      const listed = doc.ocrNeededPages.slice(0, 15).join(", ") + (doc.ocrNeededPages.length > 15 ? "..." : "");
+      extractedText += `\n\n[Nota: ${unit.toLowerCase()}(s) ${listed} sem camada de texto legível — requerem OCR]`;
+    }
+  } else {
+    extractedText = readyPages.map((p) => p.text).join("\n\n");
+  }
+
+  if (!extractedText) return null;
+
+  if (cfg?.skills?.rtk?.enabled && cfg?.skills?.rtk?.applyToMaterials !== false) {
+    extractedText = applyRtkMaterialFiltering(extractedText, ext, cfg.skills.rtk);
+  }
+  if (cfg?.skills?.headroom?.enabled && cfg?.skills?.headroom?.applyToContext !== false) {
+    extractedText = applyHeadroomContextCompression(extractedText, ext, cfg.skills.headroom);
+  }
+
+  return formatDocumentForTutor(baseName, ext, extractedText, query);
+}
+
+async function extractTextFromMaterial(absPath, ext, cfg = null, query = "", cacheOpts = null) {
+  try {
+    const doc = await loadOrExtractDocument(absPath, ext, cacheOpts);
+    if (!doc) return null;
+    return formatDocumentStructureForTutor(doc, cfg, query);
+  } catch {
     return null;
   }
 }
 
 module.exports = {
+  DOC_CACHE_VERSION,
+  COURSE_DOCS_DIR,
   detectPdfToText,
   extractPdfTextWithBinary,
+  extractPdfPagesWithBinary,
+  extractPdfPagesWithPdfJs,
+  extractPdfPages,
+  docCacheName,
+  courseDocCachePath,
+  mirrorDocCachePath,
+  saveDocumentCache,
+  loadOrExtractDocument,
+  searchDocumentPages,
+  readDocumentPagesRange,
+  formatDocumentStructureForTutor,
   inspectPdfBuffer,
   cleanExtractedPdfText,
   parsePdfCMap,

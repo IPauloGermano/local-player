@@ -10,6 +10,7 @@ const {
 const { sanitizeTestError } = require("../core/scan");
 const { resolveWorkspaceDir, getWorkspaceFreeBytes } = require("../subtitles/workspace");
 const { transcriptionAvailability } = require("../subtitles/pipeline");
+const { getOcrStatus } = require("../services/ocr");
 
 const BIN_DIR = path.join(state.APP_DIR, "bin");
 const MODELS_DIR = path.join(state.APP_DIR, "models");
@@ -125,7 +126,13 @@ async function getAiStatus() {
   } catch (err) {
     workspace.error = sanitizeTestError(err.message || "workspace error");
   }
-  return { transcription, llm, advanced: cfg.advanced, workspace, updatedAt: cfg.updatedAt };
+  let ocr = null;
+  try {
+    ocr = await getOcrStatus(cfg);
+  } catch {
+    ocr = { enabled: false, engine: "off", canRunOffline: false, installedLanguages: [] };
+  }
+  return { transcription, llm, ocr, advanced: cfg.advanced, workspace, updatedAt: cfg.updatedAt };
 }
 
 async function dirSize(dir) {

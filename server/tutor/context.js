@@ -3,8 +3,56 @@ const fs = require("fs/promises");
 const state = require("../state");
 const { readJsonFile } = require("../core/fs-atomic");
 const { normalizeDisplayTitle } = require("../core/titles");
-const { findParentFolder } = require("../../public/scope.js");
-const { extractTextFromMaterial } = require("../services/document-extractors");
+const { findParentFolder, findNodeByPath } = require("../../public/scope.js");
+const {
+  loadOrExtractDocument,
+  formatDocumentStructureForTutor,
+} = require("../services/document-extractors");
+
+const MATERIAL_SUBFOLDER_RE = /^(materiais|materials|docs|documentos|slides|apostilas|anexos|recursos)$/i;
+
+function collectLessonMaterialFiles(tree, courseNode, videoRel) {
+  const materialFileMap = new Map();
+  const addDirectFiles = (folder) => {
+    if (!folder || !Array.isArray(folder.children)) return;
+    for (const c of folder.children) {
+      if (c.type === "file") materialFileMap.set(c.path, c);
+    }
+  };
+  const addMaterialSubfolders = (folder) => {
+    if (!folder || !Array.isArray(folder.children)) return;
+    for (const c of folder.children) {
+      if (c.type === "folder" && MATERIAL_SUBFOLDER_RE.test(c.name || "") && Array.isArray(c.children)) {
+        for (const sub of c.children) {
+          if (sub.type === "file") materialFileMap.set(sub.path, sub);
+        }
+      }
+    }
+  };
+
+  const parentFolder =
+    (tree && findParentFolder(tree, videoRel)) ||
+    (courseNode ? findParentFolder(courseNode, videoRel) : null);
+  addDirectFiles(parentFolder);
+  addMaterialSubfolders(parentFolder);
+
+  // Caminha pelas pastas ancestrais entre a aula e o curso (módulos/submódulos)
+  const parts = String(videoRel || "").split("/");
+  for (let i = parts.length - 2; i >= 1; i--) {
+    const ancestorPath = parts.slice(0, i).join("/");
+    const ancestorNode =
+      (tree && findNodeByPath(tree, ancestorPath)) ||
+      (courseNode && findNodeByPath(courseNode, ancestorPath));
+    if (ancestorNode && ancestorNode.type === "folder") {
+      addMaterialSubfolders(ancestorNode);
+    }
+  }
+
+  addDirectFiles(courseNode);
+  addMaterialSubfolders(courseNode);
+
+  return Array.from(materialFileMap.values());
+}
 const { applyCavemanDirectives, applyAdhdDirectives } = require("../ai/skills");
 const {
   subtitleCacheName,
@@ -247,31 +295,7 @@ async function buildLessonTutorContext(lib, videoRel, videoNode, courseNode, cfg
 
   const materialsInfo = [];
   if (cfg.tutor.includeMaterials !== false) {
-    const parentFolder = (tree && findParentFolder(tree, videoRel)) || (courseNode ? findParentFolder(courseNode, videoRel) : null);
-    const materialFileMap = new Map();
-
-    if (parentFolder && Array.isArray(parentFolder.children)) {
-      for (const c of parentFolder.children) {
-        if (c.type === "file") materialFileMap.set(c.path, c);
-      }
-    }
-
-    if (courseNode && Array.isArray(courseNode.children)) {
-      for (const c of courseNode.children) {
-        if (c.type === "file") {
-          materialFileMap.set(c.path, c);
-        } else if (c.type === "folder") {
-          const folderName = (c.name || "").toLowerCase();
-          if (/^(materiais|materials|docs|documentos|slides|apostilas|anexos|recursos)$/i.test(folderName) && Array.isArray(c.children)) {
-            for (const sub of c.children) {
-              if (sub.type === "file") materialFileMap.set(sub.path, sub);
-            }
-          }
-        }
-      }
-    }
-
-    const files = Array.from(materialFileMap.values());
+    const files = collectLessonMaterialFiles(tree, courseNode, videoRel);
 
     if (cfg?.skills?.headroom?.enabled && cfg?.skills?.headroom?.alignCache !== false) {
       files.sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"));
@@ -282,11 +306,21 @@ async function buildLessonTutorContext(lib, videoRel, videoNode, courseNode, cfg
       for (const f of files) {
         const fAbs = f.abs || path.join(lib.path, f.path.split("/").join(path.sep));
         const ext = path.extname(f.name).toLowerCase();
-        const extracted = await extractTextFromMaterial(fAbs, ext, cfg, query);
+        const doc = await loadOrExtractDocument(fAbs, ext, { lib, relPath: f.path });
+        const extracted = formatDocumentStructureForTutor(doc, cfg, query);
         if (extracted) {
           contextLines.push(extracted);
           contextLines.push(``);
-          materialsInfo.push({ name: f.name, path: f.path, ext, size: f.size });
+          materialsInfo.push({
+            name: f.name,
+            path: f.path,
+            ext,
+            size: f.size,
+            pageCount: doc ? doc.pageCount || 0 : 0,
+            textPages: doc ? doc.textPages || 0 : 0,
+            ocrNeededPages: doc && Array.isArray(doc.ocrNeededPages) ? doc.ocrNeededPages : [],
+            scanned: !!(doc && doc.scanned),
+          });
         }
       }
     }
@@ -358,6 +392,8 @@ function buildTutorSystemPrompt(context, customPrompt, skillsCfg = null, webCont
 }
 
 module.exports = {
+  MATERIAL_SUBFOLDER_RE,
+  collectLessonMaterialFiles,
   loadLessonTranscription,
   tutorContextCache,
   TUTOR_CONTEXT_CACHE_MAX,
