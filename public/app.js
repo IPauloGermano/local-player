@@ -1826,7 +1826,17 @@ function renderTree(course, resetExpanded) {
     requestAnimationFrame(() => {
       const activeLesson = slot.querySelector(".tree-lesson.active");
       if (activeLesson) {
-        activeLesson.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        // Rola apenas o container interno #tree-slot, nunca a janela inteira
+        // (scrollIntoView deslocava o window e cortava o topo do player).
+        const slotRect = slot.getBoundingClientRect();
+        const itemRect = activeLesson.getBoundingClientRect();
+        if (itemRect.top < slotRect.top || itemRect.bottom > slotRect.bottom) {
+          const targetTop =
+            slot.scrollTop +
+            (itemRect.top - slotRect.top) -
+            (slotRect.height - itemRect.height) / 2;
+          slot.scrollTop = Math.max(0, Math.round(targetTop));
+        }
       }
     });
   }
@@ -2272,7 +2282,9 @@ function renderTopic(app, topicPath, libId) {
     if (topContinue.length) {
       html += renderContinueSection(topContinue, scopeSummary);
     }
-    if (scopeCourses.length) {
+    // "Seu progresso" agrega múltiplos cursos do tópico; quando há apenas 1
+    // curso, o próprio card já exibe o progresso e o bloco agregado fica redundante.
+    if (scopeCourses.length > 1) {
       html += renderProgressSection(scopeSummary, scopeCourses.length);
     }
     if (!children.length) {
@@ -2391,16 +2403,26 @@ function renderCourse(app, coursePath, lessonPath, editMode, libId) {
     ? `<button class="secondary-btn" id="generate-course-subtitles">Gerar legendas</button>`
     : "";
 
+  const dynamicHeader = localStorage.getItem("course-player-dynamic-header") !== "0";
+  document.body.classList.toggle("has-dynamic-header", dynamicHeader);
+  const topbarEl = document.querySelector(".topbar");
+  if (topbarEl) {
+    const topbarH = Math.ceil(topbarEl.getBoundingClientRect().height);
+    if (topbarH > 0) {
+      document.documentElement.style.setProperty("--topbar-h", `${topbarH}px`);
+    }
+  }
+
   app.innerHTML = `
+    <div class="course-toolbar" id="course-toolbar">
+      <div class="course-toolbar-actions">
+        <button class="secondary-btn" id="toggle-fav-course">${isFavorite(course.path, course.libId) ? "★ Favorito" : "☆ Favoritar"}</button>
+        ${courseSubtitleBtn}
+        <button class="secondary-btn" id="clear-course-progress">Limpar progresso</button>
+      </div>
+    </div>
     <div class="course-view drawer-host ${theater ? "theater" : ""}">
       <div class="player-col">
-        <div class="course-toolbar">
-          <div class="course-toolbar-actions">
-            <button class="secondary-btn" id="toggle-fav-course">${isFavorite(course.path, course.libId) ? "★ Favorito" : "☆ Favoritar"}</button>
-            ${courseSubtitleBtn}
-            <button class="secondary-btn" id="clear-course-progress">Limpar progresso</button>
-          </div>
-        </div>
         <div class="player-wrap" id="player-wrap"></div>
         <div class="lesson-header" id="lesson-header"></div>
         <div id="materials-slot"></div>
@@ -2532,6 +2554,8 @@ function route() {
   }
   detachAudioSource();
   fallbackPreparing = false;
+  if (typeof closeTutorDrawer === "function") closeTutorDrawer();
+  document.body.classList.remove("tutor-open", "player-idle", "has-dynamic-header");
   window.scrollTo(0, 0);
 
   const app = document.getElementById("app");

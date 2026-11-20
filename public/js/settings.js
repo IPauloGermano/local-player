@@ -470,6 +470,22 @@ function renderSettingsReproducao() {
             </button>`;
         })()}
       </div>
+
+      <div class="settings-row" id="dynamic-header-row">
+        <div class="settings-row-text">
+          <div class="settings-row-title">Ocultação dinâmica do cabeçalho do player</div>
+          <div class="settings-row-desc">Mantém o cabeçalho e ações do curso ocultos durante a reprodução, exibindo-os suavemente ao movimentar o cursor sobre o player.</div>
+        </div>
+        ${(() => {
+          const on = localStorage.getItem("course-player-dynamic-header") !== "0";
+          return `
+            <button class="switch ${on ? "on" : ""}" id="toggle-dynamic-header" type="button" role="switch"
+                    aria-checked="${on}" aria-label="Ocultação dinâmica do cabeçalho do player">
+              <span class="switch-track"></span>
+              <span class="switch-thumb"></span>
+            </button>`;
+        })()}
+      </div>
     </section>`;
 }
 
@@ -518,6 +534,27 @@ function bindSettingsReproducao(app) {
     if (autoplayRow) {
       autoplayRow.addEventListener("click", () => {
         applyAutoplay(localStorage.getItem("course-player-autoplay") === "0");
+      });
+    }
+  }
+
+  const dynamicHeaderBtn = app.querySelector("#toggle-dynamic-header");
+  const dynamicHeaderRow = app.querySelector("#dynamic-header-row");
+  if (dynamicHeaderBtn) {
+    const applyDynamicHeader = (next) => {
+      localStorage.setItem("course-player-dynamic-header", next ? "1" : "0");
+      dynamicHeaderBtn.classList.toggle("on", next);
+      dynamicHeaderBtn.setAttribute("aria-checked", String(next));
+      document.body.classList.toggle("has-dynamic-header", next);
+      showSettingsToast(next ? "Ocultação dinâmica do cabeçalho ativada" : "Cabeçalho mantido sempre visível");
+    };
+    dynamicHeaderBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      applyDynamicHeader(localStorage.getItem("course-player-dynamic-header") === "0");
+    });
+    if (dynamicHeaderRow) {
+      dynamicHeaderRow.addEventListener("click", () => {
+        applyDynamicHeader(localStorage.getItem("course-player-dynamic-header") === "0");
       });
     }
   }

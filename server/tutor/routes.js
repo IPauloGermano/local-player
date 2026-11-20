@@ -123,6 +123,7 @@ function registerTutorRoutes(app) {
       if (!provider || !provider.baseUrl) {
         return res.status(400).json({
           error: "Nenhum provedor de IA configurado. Acesse Configurações > Inteligência Artificial > Provedores LLM para configurar.",
+          code: "no_provider",
         });
       }
 
@@ -338,6 +339,7 @@ function registerTutorRoutes(app) {
         return res.status(400).json({
           ok: false,
           error: "Nenhum provedor de IA configurado. Acesse Configurações > Inteligência Artificial > Provedores LLM para configurar.",
+          code: "no_provider",
         });
       }
 
@@ -444,6 +446,7 @@ function registerTutorRoutes(app) {
         return res.status(400).json({
           ok: false,
           error: "Nenhum provedor de IA configurado. Acesse Configurações > Inteligência Artificial > Provedores LLM para configurar.",
+          code: "no_provider",
         });
       }
 

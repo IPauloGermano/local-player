@@ -7,7 +7,7 @@ const appJsPath = path.join(__dirname, "..", "public", "app.js");
 const stylesPath = path.join(__dirname, "..", "public", "styles.css");
 
 const appJsContent = fs.readFileSync(appJsPath, "utf8");
-const stylesContent = fs.readFileSync(stylesPath, "utf8");
+const stylesContent = fs.readFileSync(stylesPath, "utf8").replace(/\r\n/g, "\n");
 
 test("Cabeçalho do player: botão '← Voltar aos cursos' foi removido do DOM do player", () => {
   // Não deve renderizar a div ou id back-link no template do curso

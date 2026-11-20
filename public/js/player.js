@@ -644,7 +644,7 @@ function renderPlayerAndLesson() {
               <button class="pc-btn pc-more-btn" id="pc-more-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Mais opções" title="Mais opções">${ICON_MORE}</button>
               <div class="pc-pop pc-more-menu" id="pc-more-menu" hidden>
                 <button type="button" class="pc-menu-item" data-more="summary" aria-label="Lista de aulas">Lista de aulas</button>
-                <button type="button" class="pc-menu-item pc-more-narrow" data-more="subtitle-style">Aparência da legenda</button>
+                <button type="button" class="pc-menu-item" data-more="subtitle-style">Configuração de legenda</button>
                 <div class="pc-menu-group pc-more-narrow">
                   <span class="pc-menu-label">Velocidade</span>
                   ${speedOptions}
@@ -703,13 +703,6 @@ function renderPlayerAndLesson() {
           </svg>
           <span>Tutor IA</span>
         </button>
-        <button id="subtitle-style-btn" class="subtitle-style-btn" type="button" title="Personalizar a aparência da legenda" aria-label="Personalizar a aparência da legenda">
-          <svg class="sub-style-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="2" y="4" width="20" height="16" rx="3"/>
-            <path d="M7 15h10M7 11h5M15 11h2"/>
-          </svg>
-          <span>Legendas</span>
-        </button>
       </div>
     </div>
     <div class="subtitle-style-panel" id="subtitle-style-panel" hidden></div>`;
@@ -720,13 +713,34 @@ function renderPlayerAndLesson() {
   const files = parentFolder
     ? parentFolder.children.filter((c) => c.type === "file")
     : [];
+  const initialFiles = files.slice(0, 4);
+  const extraFiles = files.slice(4);
   materialsSlot.innerHTML = files.length
     ? `
       <div class="materials">
         <h3>Materiais da aula</h3>
-        ${files.map((f) => `<a href="${mediaUrl(f.path, f.libId)}" target="_blank" rel="noopener">📎 ${escapeHtml(f.name)}</a>`).join("")}
+        <div class="materials-list">
+          ${initialFiles.map((f) => `<a href="${mediaUrl(f.path, f.libId)}" target="_blank" rel="noopener">📎 ${escapeHtml(f.name)}</a>`).join("")}
+        </div>
+        ${extraFiles.length ? `
+          <div class="materials-more" id="materials-more" hidden>
+            ${extraFiles.map((f) => `<a href="${mediaUrl(f.path, f.libId)}" target="_blank" rel="noopener">📎 ${escapeHtml(f.name)}</a>`).join("")}
+          </div>
+          <button type="button" class="materials-toggle-btn" id="materials-toggle-btn" aria-expanded="false">Mostrar mais (+${extraFiles.length})</button>
+        ` : ""}
       </div>`
     : "";
+
+  const toggleMatBtn = document.getElementById("materials-toggle-btn");
+  const moreMatList = document.getElementById("materials-more");
+  if (toggleMatBtn && moreMatList) {
+    toggleMatBtn.addEventListener("click", () => {
+      const isHidden = moreMatList.hidden;
+      moreMatList.hidden = !isHidden;
+      toggleMatBtn.textContent = isHidden ? "Mostrar menos" : `Mostrar mais (+${extraFiles.length})`;
+      toggleMatBtn.setAttribute("aria-expanded", String(isHidden));
+    });
+  }
 
   document
     .getElementById("prev-btn")
@@ -752,11 +766,6 @@ function renderPlayerAndLesson() {
     ?.addEventListener("click", (e) => {
       e.currentTarget?.blur?.();
       toggleTutorDrawer(video);
-    });
-  document
-    .getElementById("subtitle-style-btn")
-    ?.addEventListener("click", (e) => {
-      e.currentTarget?.blur?.();
     });
 
   // Alterna a lista de aulas: drawer no mobile ou painel lateral no desktop.
@@ -794,6 +803,27 @@ function renderPlayerAndLesson() {
     // preview é de responsabilidade do editor (overlayOwnedByEditor) — o
     // setup só cuida do badge/geração e não sobrescreve a cópia de trabalho.
     setupPlayerSubtitles(videoEl, video, { overlayOwnedByEditor: subtitleEditorMode });
+  }
+
+  // Alinha o player abaixo da .topbar sticky, mantendo o sumário nivelado
+  // no mesmo topo e a .course-toolbar acessível ao rolar para cima.
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => {
+      const topbar = document.querySelector(".topbar");
+      const topbarH = topbar ? Math.ceil(topbar.getBoundingClientRect().height) : 0;
+      if (topbarH > 0) {
+        document.documentElement.style.setProperty("--topbar-h", `${topbarH}px`);
+      }
+      const wrapEl = document.getElementById("player-wrap");
+      if (wrapEl) {
+        const gap = 12;
+        const targetY = Math.max(
+          0,
+          Math.round(wrapEl.getBoundingClientRect().top + window.scrollY - topbarH - gap),
+        );
+        window.scrollTo({ top: targetY, behavior: "instant" });
+      }
+    });
   }
 }
 
@@ -907,13 +937,19 @@ function wirePlayerUI(videoEl) {
   // --- autohide (desktop e mobile durante a reprodução; nunca com popover
   // aberto nem pausado) ---
   let hideTimer = null;
-  const isPopoverOpen = () =>
-    (volPop && !volPop.hidden) ||
-    (speedMenu && !speedMenu.hidden) ||
-    (ccMenu && !ccMenu.hidden) ||
-    (moreMenu && !moreMenu.hidden);
+  const isPopoverOpen = () => {
+    const ssp = document.getElementById("subtitle-style-panel");
+    return (
+      (volPop && !volPop.hidden) ||
+      (speedMenu && !speedMenu.hidden) ||
+      (ccMenu && !ccMenu.hidden) ||
+      (moreMenu && !moreMenu.hidden) ||
+      (ssp && !ssp.hidden)
+    );
+  };
   const showControls = () => {
     wrap.classList.remove("pc-idle");
+    document.body.classList.remove("player-idle");
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = null;
   };
@@ -921,7 +957,10 @@ function wirePlayerUI(videoEl) {
     if (videoEl.paused || isPopoverOpen()) return;
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (!videoEl.paused && !isPopoverOpen()) wrap.classList.add("pc-idle");
+      if (!videoEl.paused && !isPopoverOpen()) {
+        wrap.classList.add("pc-idle");
+        document.body.classList.add("player-idle");
+      }
     }, 2500);
   };
   // Interação (mouse, toque, foco) mostra a barra E reinicia o timer de
@@ -1202,6 +1241,9 @@ function wirePlayerUI(videoEl) {
     ensureAudioGraph(videoEl);
     resumeAudio();
   });
+  videoEl.addEventListener("pause", () => {
+    showControls();
+  });
 
   if (speedBtn && speedMenu) {
     speedBtn.addEventListener("click", (e) => {
@@ -1228,6 +1270,7 @@ function wirePlayerUI(videoEl) {
       e.stopPropagation();
       const willOpen = moreMenu.hidden;
       closePopovers();
+      if (typeof subtitleStyleClose === "function") subtitleStyleClose();
       moreMenu.hidden = !willOpen;
       moreBtn.setAttribute("aria-expanded", String(willOpen));
       if (willOpen) constrainPopover(moreMenu);

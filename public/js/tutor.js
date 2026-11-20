@@ -689,6 +689,89 @@ function toggleTutorDrawer(video) {
 }
 
 
+// ---------- Feedback do Tutor: erros/avisos/sucesso/carregando ----------
+// Converte qualquer falha (rede, HTTP, provedor) em uma mensagem amigável,
+// sem expor detalhes técnicos nem configuração interna. O texto bruto fica
+// só no console.
+const TUTOR_SETTINGS_ACTION = { label: "Configurar Tutor AI", href: "#/settings/ia" };
+
+function classifyTutorError(err) {
+  const raw = String((err && err.message) || "");
+  const code = err && err.code;
+  const status = Number(err && err.status) || 0;
+  if (code === "no_provider" || /nenhum provedor/i.test(raw)) {
+    return {
+      kind: "warning",
+      title: "Tutor AI indisponível",
+      text: "O Tutor AI ainda não está configurado. Para começar a utilizá-lo, configure um provedor de inteligência artificial nas configurações do sistema.",
+      action: TUTOR_SETTINGS_ACTION,
+    };
+  }
+  if (status === 401 || status === 403 || /\b(401|403)\b|unauthori[sz]ed|invalid.*(api|key)|api key|forbidden/i.test(raw)) {
+    return {
+      kind: "error",
+      title: "Não foi possível autenticar",
+      text: "O provedor de IA recusou o acesso. Verifique se a chave de acesso está correta e tente novamente.",
+      action: { label: "Revisar provedor", href: TUTOR_SETTINGS_ACTION.href },
+    };
+  }
+  if (status === 429 || /\b429\b|rate.?limit|quota|too many/i.test(raw)) {
+    return {
+      kind: "warning",
+      title: "Muitas solicitações",
+      text: "O provedor de IA atingiu o limite de uso no momento. Aguarde alguns instantes e tente novamente.",
+    };
+  }
+  if (/failed to fetch|networkerror|network|erro de conexão|econn|enotfound|fetch/i.test(raw) || (err && err.name === "TypeError")) {
+    return {
+      kind: "error",
+      title: "Sem conexão com o Tutor AI",
+      text: "Não conseguimos falar com o serviço de IA. Verifique sua conexão e tente novamente.",
+    };
+  }
+  if (/timeout|timed out|tempo/i.test(raw) || status === 408 || status === 504) {
+    return {
+      kind: "warning",
+      title: "O Tutor AI demorou a responder",
+      text: "A resposta levou mais tempo que o esperado. Tente enviar a pergunta novamente.",
+    };
+  }
+  return {
+    kind: "error",
+    title: "Não foi possível obter a resposta",
+    text: "Algo deu errado ao consultar o Tutor AI. Tente novamente em instantes; se o problema continuar, revise o provedor de IA nas configurações.",
+    action: { label: "Abrir configurações de IA", href: TUTOR_SETTINGS_ACTION.href },
+  };
+}
+
+const TUTOR_FEEDBACK_ICONS = {
+  error: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+  warning: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+  success: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+  loading: `<span class="tutor-tool-spinner" aria-hidden="true"></span>`,
+};
+
+// kind: error | warning | success | loading
+function tutorFeedbackHtml({ kind, title, text, action }) {
+  const role = kind === "error" ? "alert" : "status";
+  const body = text ? `<p class="tutor-feedback-text">${escapeHtml(text)}</p>` : "";
+  const act = action
+    ? `<a class="tutor-feedback-action" href="${escapeHtml(action.href)}" data-tutor-settings-link>${escapeHtml(action.label)}</a>`
+    : "";
+  return `
+    <div class="tutor-feedback tutor-feedback--${kind}" role="${role}">
+      <span class="tutor-feedback-icon">${TUTOR_FEEDBACK_ICONS[kind] || ""}</span>
+      <div class="tutor-feedback-body">
+        <div class="tutor-feedback-title">${escapeHtml(title)}</div>
+        ${body}${act}
+      </div>
+    </div>`;
+}
+
+function tutorLoadingHtml(title) {
+  return tutorFeedbackHtml({ kind: "loading", title });
+}
+
 function renderTutorMessages(video) {
   const container = document.getElementById("tutor-messages");
   if (!container || !video) return;
@@ -750,7 +833,9 @@ function renderTutorMessages(video) {
           </div>
         </div>`;
     } else {
-      const formatted = renderMarkdownToHtml(msg.content);
+      const formatted = msg.error && msg.errorInfo
+        ? tutorFeedbackHtml(msg.errorInfo)
+        : renderMarkdownToHtml(msg.content);
       const downloadable = !msg.error && msg.content && msg.content.trim()
         && tutorExplicitDownloadRequest(lastUserText);
       html += `
@@ -761,7 +846,7 @@ function renderTutorMessages(video) {
             </svg>
           </div>
           <div class="tutor-msg-main">
-          <div class="tutor-msg-bubble ${msg.error ? "tutor-msg-error" : ""}">
+          <div class="tutor-msg-bubble ${msg.error ? "tutor-msg-feedback" : ""}">
             ${formatted}
           </div>
           ${!msg.error && msg.content ? `
@@ -845,11 +930,16 @@ async function sendTutorMessage(video, text) {
 
     if (!res.ok) {
       let errDetail = `Erro HTTP ${res.status}`;
+      let errCode;
       try {
         const j = await res.json();
         if (j.error) errDetail = j.error;
+        errCode = j.code;
       } catch {}
-      throw new Error(errDetail);
+      const httpErr = new Error(errDetail);
+      httpErr.status = res.status;
+      httpErr.code = errCode;
+      throw httpErr;
     }
 
     const reader = res.body.getReader();
@@ -874,23 +964,25 @@ async function sendTutorMessage(video, text) {
         try {
           const parsed = JSON.parse(dataStr);
           if (parsed.error) {
-            throw new Error(parsed.error);
+            const sseErr = new Error(parsed.error);
+            sseErr.code = parsed.code;
+            throw sseErr;
           }
           if (parsed.status === "searching") {
             if (currentBubble && !accumulatedText) {
-              currentBubble.innerHTML = `<div class="tutor-tool-status"><span class="tutor-tool-spinner"></span> Pesquisando na Web...</div>`;
+              currentBubble.innerHTML = tutorLoadingHtml("Pesquisando na Web...");
             }
           } else if (parsed.status === "reading") {
             if (currentBubble && !accumulatedText) {
-              currentBubble.innerHTML = `<div class="tutor-tool-status"><span class="tutor-tool-spinner"></span> Consultando fontes da Web...</div>`;
+              currentBubble.innerHTML = tutorLoadingHtml("Consultando fontes da Web...");
             }
           } else if (parsed.status === "searching_video") {
             if (currentBubble && !accumulatedText) {
-              currentBubble.innerHTML = `<div class="tutor-tool-status"><span class="tutor-tool-spinner"></span> Buscando vídeos recomendados...</div>`;
+              currentBubble.innerHTML = tutorLoadingHtml("Buscando vídeos recomendados...");
             }
           } else if (parsed.status === "verifying_video") {
             if (currentBubble && !accumulatedText) {
-              currentBubble.innerHTML = `<div class="tutor-tool-status"><span class="tutor-tool-spinner"></span> Verificando disponibilidade do vídeo...</div>`;
+              currentBubble.innerHTML = tutorLoadingHtml("Verificando disponibilidade do vídeo...");
             }
           }
           if (parsed.content) {
@@ -920,7 +1012,10 @@ async function sendTutorMessage(video, text) {
         assistantMsg.content = "*(Resposta interrompida)*";
       }
     } else {
-      assistantMsg.content = `⚠️ **Não foi possível obter a resposta:** ${escapeHtml(err.message || "Erro de conexão")}`;
+      console.warn("[TUTOR] falha na resposta:", err);
+      const info = classifyTutorError(err);
+      assistantMsg.errorInfo = info;
+      assistantMsg.content = `${info.title}. ${info.text}`;
       assistantMsg.error = true;
     }
     renderTutorMessages(video);

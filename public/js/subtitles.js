@@ -157,6 +157,44 @@ function switchToOriginalSegments() {
   if (v) updateSubtitleOverlay(typeof v.currentTime === "number" ? v.currentTime : 0);
 }
 
+let translationErrorClearTimer = null;
+
+function isNoLlmTranslationError(error) {
+  if (!error) return false;
+  const err = String(error);
+  return err === "no_llm_provider" || /nenhum provedor|configure um provedor/i.test(err);
+}
+
+function clearTranslationError(resync = true) {
+  if (translationErrorClearTimer) {
+    clearTimeout(translationErrorClearTimer);
+    translationErrorClearTimer = null;
+  }
+  if (subtitleState.translationError) {
+    subtitleState.translationError = null;
+    if (resync) syncSubtitleCcUi();
+  }
+}
+
+function setTranslationError(err, autoClearMs = 6000) {
+  if (translationErrorClearTimer) {
+    clearTimeout(translationErrorClearTimer);
+    translationErrorClearTimer = null;
+  }
+  subtitleBadgeDismissedMsg = null;
+  subtitleState.translationError = err;
+  syncSubtitleCcUi();
+  if (autoClearMs > 0) {
+    translationErrorClearTimer = setTimeout(() => {
+      translationErrorClearTimer = null;
+      if (subtitleState.translationError === err) {
+        subtitleState.translationError = null;
+        syncSubtitleCcUi();
+      }
+    }, autoClearMs);
+  }
+}
+
 async function requestSubtitleTranslate(targetLang, force = false) {
   const rel = subtitleState.rel;
   const libId = subtitleState.libId;
@@ -168,22 +206,17 @@ async function requestSubtitleTranslate(targetLang, force = false) {
   // pt→pt passava a ser exibido no lugar da transcrição original.
   if (subtitleState.sourceLanguage && lang === subtitleState.sourceLanguage) {
     const label = SUBTITLE_LANG_LABELS[lang] || lang;
-    subtitleState.translationError = `A legenda original já está em ${label}. Escolha outro idioma em Traduzir para.`;
-    syncSubtitleCcUi();
+    setTranslationError(`A legenda original já está em ${label}. Escolha outro idioma em Traduzir para.`);
     return;
   }
 
   if (!subtitleState.llmAvailable) {
-    if (typeof showToast === "function") {
-      showToast("Configure um provedor LLM em Configurações > Central de IA para traduzir legendas.");
-    }
-    subtitleState.translationError = "Configure um provedor LLM em Configurações > Inteligência Artificial > Provedores LLM.";
-    syncSubtitleCcUi();
+    setTranslationError("no_llm_provider", 6000);
     return;
   }
 
+  clearTranslationError(false);
   subtitleState.translating = true;
-  subtitleState.translationError = null;
   syncSubtitleCcUi();
 
   try {
@@ -206,8 +239,7 @@ async function requestSubtitleTranslate(targetLang, force = false) {
         const secs = Math.ceil(((data && data.retryAfterMs) || 5000) / 1000);
         errStr = `rate_limit_429:${secs}`;
       }
-      subtitleState.translationError = errStr;
-      syncSubtitleCcUi();
+      setTranslationError(errStr, 8000);
       return;
     }
 
@@ -232,8 +264,7 @@ async function requestSubtitleTranslate(targetLang, force = false) {
     syncSubtitleCcUi();
   } catch (err) {
     subtitleState.translating = false;
-    subtitleState.translationError = (err && err.message) || "Erro de conexão ao traduzir legenda";
-    syncSubtitleCcUi();
+    setTranslationError((err && err.message) || "Erro de conexão ao traduzir legenda", 8000);
   }
 }
 
@@ -275,6 +306,7 @@ async function fetchSubtitleTranslations(rel, libId) {
 
 async function onSubtitleTargetLangChange(newLang) {
   if (!SUBTITLE_LANG_LABELS[newLang]) return;
+  clearTranslationError(false);
   setSubtitleTargetLang(newLang);
   const item = subtitleState.translations.find((t) => t.lang === newLang);
   const sameLang = !!subtitleState.sourceLanguage && subtitleState.sourceLanguage === newLang;
@@ -294,6 +326,7 @@ async function onSubtitleTargetLangChange(newLang) {
 }
 
 function selectSubtitleOriginal() {
+  clearTranslationError(false);
   switchToOriginalSegments();
   setSubtitleEnabled(true);
 }
@@ -434,9 +467,9 @@ function syncSubtitleCcUi() {
       .join("");
 
     const targetSelectHtml = `
-      <div class="pc-cc-target-wrap" style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;margin-top:4px;border-top:1px solid rgba(255,255,255,0.08);gap:8px;">
-        <span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">Traduzir para</span>
-        <select class="pc-cc-target-select tutor-study-select" style="font-size:11.5px;padding:2px 6px;height:26px;border-radius:6px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;cursor:pointer;max-width:110px;" aria-label="Idioma de tradução">
+      <div class="pc-cc-target-wrap">
+        <span class="pc-cc-target-label">Traduzir para</span>
+        <select class="pc-cc-target-select" aria-label="Idioma de tradução">
           ${optionsHtml}
         </select>
       </div>
@@ -458,6 +491,9 @@ function syncSubtitleCcUi() {
   function formatSubtitleErrorMessage(error) {
     if (!error) return "Erro ao gerar legenda. Clique em 'Tentar novamente'.";
     const err = String(error).trim();
+    if (isNoLlmTranslationError(err)) {
+      return "Nenhuma IA configurada para traduzir legendas.";
+    }
     if (err.startsWith("rate_limit_429:")) {
       const secs = err.split(":")[1] || "5";
       return `Limite do provedor atingido — aguarde ~${secs}s e tente novamente.`;
@@ -501,7 +537,8 @@ function syncSubtitleCcUi() {
     if (err.includes("não encontrado")) {
       return "Arquivo de vídeo não encontrado no disco.";
     }
-    return `Erro: ${err}. Clique em 'Tentar novamente'.`;
+    const clean = err.replace(/\.+$/, "");
+    return `Não foi possível concluir: ${clean}.`;
   }
 
   // Ação contextual (Gerar/Regenerar/Traduzir) e linha de status.
@@ -526,9 +563,14 @@ function syncSubtitleCcUi() {
     actionHandler = "none";
   } else if (subtitleState.translationError) {
     statusText = formatSubtitleErrorMessage(subtitleState.translationError);
-    actionText = "Tentar novamente";
+    if (isNoLlmTranslationError(subtitleState.translationError)) {
+      actionText = "Configurar IA";
+      actionHandler = "open-ai-settings";
+    } else {
+      actionText = "Tentar novamente";
+      actionHandler = "retry-translate";
+    }
     showAction = true;
-    actionHandler = "retry-translate";
     isError = true;
   } else if (kind === "generating") {
     statusText = "Gerando legenda…";
@@ -600,7 +642,9 @@ function updateSubtitleBadge() {
     msg = "Gerando tradução…";
   } else if (subtitleState.translationError) {
     const err = String(subtitleState.translationError);
-    if (err.startsWith("rate_limit_429:") || err.includes("429") || err.includes("Limite")) {
+    if (isNoLlmTranslationError(err)) {
+      msg = "Tradução indisponível — configure uma IA nas Configurações";
+    } else if (err.startsWith("rate_limit_429:") || err.includes("429") || err.includes("Limite")) {
       msg = "Limite da IA atingido — abra o menu CC";
     } else {
       msg = "Falha na tradução — abra o menu CC para detalhes";
@@ -654,6 +698,7 @@ function updateSubtitleBadge() {
         setTimeout(() => {
           badge.hidden = true;
           badge.classList.remove("fade-out");
+          clearTranslationError(true);
         }, 250);
       }
     });
@@ -677,6 +722,7 @@ function updateSubtitleBadge() {
       setTimeout(() => {
         badge.hidden = true;
         badge.classList.remove("fade-out");
+        if (subtitleState.translationError) clearTranslationError(true);
       }, 250);
       subtitleBadgeDismissTimer = null;
     }, 5000);
@@ -691,7 +737,10 @@ let subtitleGenerateApi = null; // preenchido em setupPlayerSubtitles
 // Re-sondagem do status.
 let subtitleCheckApi = null; // preenchido em setupPlayerSubtitles
 function requestSubtitleGenerate() {
-  if (subtitleState.currentActionHandler === "translate" || subtitleState.currentActionHandler === "retry-translate") {
+  if (subtitleState.currentActionHandler === "open-ai-settings") {
+    clearTranslationError(true);
+    location.hash = "#/settings/ia";
+  } else if (subtitleState.currentActionHandler === "translate" || subtitleState.currentActionHandler === "retry-translate") {
     requestSubtitleTranslate(subtitleState.targetLang, false);
   } else if (subtitleState.currentActionHandler === "force-translate") {
     requestSubtitleTranslate(subtitleState.targetLang, true);
@@ -1135,7 +1184,7 @@ function positionSubtitleStylePanel(panel) {
     panel.style.left = "";
     return;
   }
-  const btn = document.getElementById("subtitle-style-btn");
+  const btn = document.getElementById("subtitle-style-btn") || document.getElementById("pc-more-btn");
   const br = btn && btn.offsetWidth ? btn.getBoundingClientRect() : null;
   const pw = panel.offsetWidth || 300;
   const ph = panel.offsetHeight || 320;
@@ -1179,6 +1228,7 @@ let sspDocListenersAttached = false;
 // estilo YouTube (fonte, cor, tamanho, fundo/opacidade, contorno). Persistido
 // em localStorage; aplicado ao vivo no player. Fecha com clique fora ou Esc.
 function wireSubtitleStylePanel(wrap) {
+  // Não vincula #pc-more-btn aqui: o botão ⋮ abre o menu #pc-more-menu, que oferece "Configuração de legenda".
   const btn = document.getElementById("subtitle-style-btn");
   const panel = document.getElementById("subtitle-style-panel");
   if (!panel) return;
@@ -1765,7 +1815,7 @@ async function setupPlayerSubtitles(videoEl, video, opts) {
   subtitleState.translations = [];
   subtitleState.llmAvailable = false;
   subtitleState.translating = false;
-  subtitleState.translationError = null;
+  clearTranslationError(false);
   subtitleState.targetLangReady = false;
   subtitleState.currentActionHandler = null;
   subtitleState.currentIndex = -1;

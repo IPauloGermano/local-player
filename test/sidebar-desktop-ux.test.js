@@ -10,13 +10,13 @@ test("Sidebar Desktop UX: css rules and mobile isolation", () => {
   // 1. Desktop sidebar rules
   assert.match(
     css,
-    /\.sidebar\s*\{[^}]*position:\s*sticky;[^}]*top:\s*16px;/s,
-    "Sidebar base/desktop should have position: sticky; top: 16px;",
+    /\.sidebar\s*\{[^}]*position:\s*sticky;[^}]*top:\s*calc\(var\(--topbar-h,\s*72px\)\s*\+\s*12px\);/s,
+    "Sidebar base/desktop should have position: sticky below the sticky topbar",
   );
   assert.match(
     css,
-    /\.sidebar\s*\{[^}]*max-height:\s*calc\(100vh - 32px\);/s,
-    "Sidebar desktop should have fluid max-height accounting for sticky top margin",
+    /\.sidebar\s*\{[^}]*max-height:\s*calc\(100vh\s*-\s*var\(--topbar-h,\s*72px\)\s*-\s*24px\);/s,
+    "Sidebar desktop should have fluid max-height accounting for topbar and sticky margins",
   );
   assert.match(
     css,
@@ -50,7 +50,7 @@ test("Sidebar Desktop UX: app.js active lesson auto-scroll", () => {
 
   assert.match(
     appJs,
-    /function renderTree\([^)]*\)\s*\{[\s\S]*?scrollIntoView\(\{\s*block:\s*"nearest",\s*behavior:\s*"smooth"\s*\}\)/s,
-    "renderTree should trigger smooth nearest scrollIntoView for active lesson when resetExpanded is true",
+    /function renderTree\([^)]*\)\s*\{[\s\S]*?slot\.scrollTop\s*=/s,
+    "renderTree should scroll #tree-slot internally (slot.scrollTop) without scrolling the outer window",
   );
 });

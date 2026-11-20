@@ -2284,6 +2284,10 @@ body {
   min-width: 44px;
   height: 44px;
 }
+.player-wrap:fullscreen #pc-theater-btn,
+:fullscreen #pc-theater-btn {
+  display: none !important;
+}
 .player-wrap:fullscreen .pc-bottom {
   padding: 28px 16px 12px;
   /* iPhone em landscape fullscreen: home indicator pode encostar nos
@@ -2528,6 +2532,42 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+.pc-cc-target-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 8px;
+}
+.pc-cc-target-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.pc-cc-target-select {
+  color-scheme: dark;
+  font-size: 11.5px;
+  padding: 2px 8px;
+  height: 26px;
+  border-radius: 6px;
+  background-color: #161d2b;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f1f5fb;
+  cursor: pointer;
+  max-width: 120px;
+}
+.pc-cc-target-select:hover,
+.pc-cc-target-select:focus-visible {
+  background-color: #1e2738;
+  border-color: var(--accent);
+  outline: none;
+}
+.pc-cc-target-select option {
+  background-color: #141a26;
+  color: #f1f5fb;
 }
 .pc-menu-sep {
   height: 1px;
@@ -3668,6 +3708,12 @@ body {
   gap: 14px;
   flex-wrap: wrap;
   margin-bottom: 12px;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+body.has-dynamic-header.player-idle .course-toolbar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
 }
 .course-toolbar-title {
   font-size: 15.5px;
@@ -3951,6 +3997,32 @@ body {
 .materials a:last-child {
   border-bottom: none;
 }
+.materials-more {
+  margin-top: 0;
+}
+.materials-toggle-btn {
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.18s ease;
+}
+.materials-toggle-btn:hover {
+  color: var(--accent);
+  border-color: var(--border-strong);
+  background: rgba(255, 138, 61, 0.08);
+}
+.materials-toggle-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .materials a:hover {
   color: var(--accent);
 }
@@ -3958,6 +4030,7 @@ body {
 /* ---------- Sidebar de módulos ---------- */
 .sidebar {
   min-width: 0;
+  align-self: start;
   background: linear-gradient(
     180deg,
     rgba(18, 24, 35, 0.96),
@@ -3966,18 +4039,15 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius);
   padding: 10px;
-  height: calc(100vh - 32px);
-  height: calc(100dvh - 32px);
-  max-height: calc(100vh - 32px);
-  max-height: calc(100dvh - 32px);
+  height: auto;
+  max-height: calc(100vh - var(--topbar-h, 72px) - 24px);
+  max-height: calc(100dvh - var(--topbar-h, 72px) - 24px);
   overflow: hidden;
   position: sticky;
-  top: 16px;
+  top: calc(var(--topbar-h, 72px) + 12px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
     0 12px 28px rgba(0, 0, 0, 0.25);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   z-index: 10;
   margin-top: 0;
   display: flex;
@@ -8098,6 +8168,7 @@ body {
 }
 
 .tutor-study-select {
+  color-scheme: dark;
   background: #0f131a;
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: #ffffff;
@@ -8106,6 +8177,10 @@ body {
   font-size: 13.5px;
   outline: none;
   cursor: pointer;
+}
+.tutor-study-select option {
+  background-color: #141a26;
+  color: #f1f5fb;
 }
 
 .tutor-study-gen-btn {
@@ -8687,14 +8762,6 @@ body {
     display: none;
   }
 
-  /* Landscape largo: sem itens sobrando no ⋮ (teatro/sumário ocultos acima e
-     grupos estreitos só até 640px), o botão some junto — sem popover vazio. */
-  @media (min-width: 641px) {
-    .pc-group-more {
-      display: none;
-    }
-  }
-
   /* Título/breadcrumb e Anterior/Concluir/Próxima/Tutor ficam no fluxo de
      rolagem ABAIXO do player (nunca competem pelo viewport inicial); a
      barra inferior não é fixa — acessível via scroll suave. */
@@ -8951,4 +9018,93 @@ body {
     animation: none;
     opacity: 0.7;
   }
+}
+
+/* ---------- Tutor: cartões de feedback (erro/aviso/sucesso/carregando) ---------- */
+.tutor-msg-bubble.tutor-msg-feedback {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  box-shadow: none;
+}
+.tutor-feedback {
+  --fb-color: var(--text-dim);
+  --fb-bg: rgba(255, 255, 255, 0.04);
+  --fb-border: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--fb-border);
+  background: var(--fb-bg);
+  color: var(--text);
+  max-width: 100%;
+}
+.tutor-feedback-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--fb-color);
+}
+.tutor-feedback-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tutor-feedback-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--fb-color);
+}
+.tutor-feedback-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.tutor-feedback-action {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--fb-border);
+  background: var(--fb-bg);
+  color: var(--fb-color);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.tutor-feedback-action:hover {
+  border-color: var(--fb-color);
+  background: rgba(255, 255, 255, 0.08);
+}
+.tutor-feedback-action:focus-visible {
+  outline: 2px solid var(--fb-color);
+  outline-offset: 2px;
+}
+.tutor-feedback--error {
+  --fb-color: #f87171;
+  --fb-bg: rgba(248, 113, 113, 0.08);
+  --fb-border: rgba(248, 113, 113, 0.35);
+}
+.tutor-feedback--warning {
+  --fb-color: #fbbf24;
+  --fb-bg: rgba(251, 191, 36, 0.08);
+  --fb-border: rgba(251, 191, 36, 0.35);
+}
+.tutor-feedback--success {
+  --fb-color: #4ade80;
+  --fb-bg: rgba(74, 222, 128, 0.08);
+  --fb-border: rgba(74, 222, 128, 0.35);
+}
+.tutor-feedback--loading {
+  --fb-color: var(--accent);
+  --fb-bg: rgba(255, 138, 61, 0.08);
+  --fb-border: rgba(255, 138, 61, 0.3);
+  align-items: center;
+  padding: 10px 14px;
 }
