@@ -128,7 +128,8 @@ if (require.main === module) {
     .then(() => {
       server = app.listen(state.PORT, state.HOST, () => {
         state.server = server;
-        console.log(`Local Player rodando em http://${state.HOST}:${state.PORT}`);
+        core.recordActivity();
+        console.log(`Local Player rodando em http://${state.HOST}:${server.address().port}`);
         if (state.HOST === "0.0.0.0" || state.HOST === "::") {
           console.log("[SECURITY] Escutando em todas as interfaces. Operações administrativas destrutivas restritas a localhost.");
         }

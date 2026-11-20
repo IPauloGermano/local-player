@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const stylesPath = path.join(__dirname, "..", "public", "styles.css");
-const stylesContent = fs.readFileSync(stylesPath, "utf8");
+const stylesContent = fs.readFileSync(stylesPath, "utf8").replace(/\r\n/g, "\n");
 
 test("Espaçamento de 'Seu progresso' compactado: margem inferior reduzida", () => {
   // Quando compactado, a margem inferior da seção não deve ser 52px (clamp de home-section padrão),

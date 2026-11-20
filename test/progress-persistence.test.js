@@ -17,70 +17,13 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { once } = require("node:events");
+const { startTestServer: startServer } = require("./helpers/local-server");
 
-const SERVER = path.resolve(__dirname, "..", "server.js");
 const K = (libId, rel) => libId + "\0" + rel;
 
 function tmpDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
-// Sobe o servidor real com LP_DATA_DIR em diretório temporário. `stop` derruba
-// com SIGTERM (drena a fila). `kill9` derruba bruscamente (crash).
-async function startServer(dataDir, { port = null } = {}) {
-  const basePort = port || 35000 + Math.floor(Math.random() * 15000);
-  let lastErr = null;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const p = basePort + attempt * 7;
-    const proc = spawn(process.execPath, [SERVER], {
-      env: { ...process.env, LP_DATA_DIR: dataDir, PORT: String(p), HOST: "127.0.0.1" },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let out = "";
-    let errOut = "";
-    proc.stdout.on("data", (d) => (out += d));
-    proc.stderr.on("data", (d) => (errOut += d));
-    const ready = await new Promise((resolve) => {
-      const t0 = Date.now();
-      const poll = () => {
-        if (proc.exitCode !== null) return resolve(false);
-        if (out.includes("rodando em") || errOut.includes("rodando em")) return resolve(true);
-        if (Date.now() - t0 > 15000) { lastErr = new Error(`timeout: ${out}\n${errOut}`); return resolve(false); }
-        setTimeout(poll, 100);
-      };
-      poll();
-    });
-    if (ready) {
-      const stop = () =>
-        new Promise((resolve) => {
-          if (proc.exitCode !== null) return resolve();
-          proc.kill("SIGTERM");
-          const t0 = Date.now();
-          const poll = () => {
-            if (proc.exitCode !== null) return resolve();
-            if (Date.now() - t0 > 8000) { proc.kill("SIGKILL"); return resolve(); }
-            setTimeout(poll, 50);
-          };
-          poll();
-        });
-      const kill9 = () =>
-        new Promise((resolve) => {
-          if (proc.exitCode !== null) return resolve();
-          proc.kill("SIGKILL");
-          const t0 = Date.now();
-          const poll = () => {
-            if (proc.exitCode !== null) return resolve();
-            if (Date.now() - t0 > 5000) return resolve();
-            setTimeout(poll, 50);
-          };
-          poll();
-        });
-      return { base: `http://127.0.0.1:${p}`, proc, dataDir, stop, kill9, output: () => out + errOut };
-    }
-    try { proc.kill("SIGKILL"); } catch {}
-  }
-  throw lastErr || new Error("falha ao subir servidor");
 }
 
 const postJson = async (base, url, body) => {
@@ -119,7 +62,9 @@ test("P1 crash (SIGKILL) no meio de saves → restart preserva tudo ack", async 
     // O .catch é anexado na hora para a rejeição (ECONNRESET do kill) nunca
     // ficar sem handler.
     const inflight = saveProgress(srv.base, "default", "Curso A/Aula 06.mp4", 600).catch(() => {});
-    await srv.kill9();
+    const closed = once(srv.proc, "close");
+    srv.proc.kill("SIGKILL");
+    await closed;
     await inflight;
     srv = null;
 

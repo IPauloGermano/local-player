@@ -4,9 +4,8 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { startTestServer: startServer } = require("./helpers/local-server");
 
-const SERVER = path.join(__dirname, "..", "server.js");
 const {
   probeMedia,
   isBrowserCompatibleVideo,
@@ -22,51 +21,6 @@ const {
 
 function tmpDir(prefix) {
   return fsSync.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
-async function startServer(dataDir) {
-  const p = 33000 + Math.floor(Math.random() * 20000);
-  const proc = spawn(process.execPath, [SERVER], {
-    env: {
-      ...process.env,
-      LP_DATA_DIR: dataDir,
-      PORT: String(p),
-      HOST: "127.0.0.1",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let out = "";
-  let errOut = "";
-  proc.stdout.on("data", (d) => (out += d));
-  proc.stderr.on("data", (d) => (errOut += d));
-  const ready = await new Promise((resolve) => {
-    const t0 = Date.now();
-    const poll = () => {
-      if (proc.exitCode !== null) return resolve(false);
-      if (out.includes("rodando em") || errOut.includes("rodando em")) return resolve(true);
-      if (Date.now() - t0 > 15000) return resolve(false);
-      setTimeout(poll, 50);
-    };
-    poll();
-  });
-  if (!ready) throw new Error("Falha ao subir servidor de teste");
-  const stop = async () => {
-    if (proc.exitCode !== null) return;
-    proc.kill("SIGTERM");
-    await new Promise((resolve) => {
-      const t0 = Date.now();
-      const poll = () => {
-        if (proc.exitCode !== null) return resolve();
-        if (Date.now() - t0 > 5000) {
-          proc.kill("SIGKILL");
-          return resolve();
-        }
-        setTimeout(poll, 50);
-      };
-      poll();
-    });
-  };
-  return { base: `http://127.0.0.1:${p}`, proc, stop };
 }
 
 test("transcode: isBrowserCompatibleVideo valida contêineres e codecs suportados", () => {

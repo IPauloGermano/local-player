@@ -6,7 +6,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
 const http = require("node:http");
-const { spawn } = require("node:child_process");
+const { startTestServer: startLocalServer } = require("./helpers/local-server");
 
 const {
   SUPPORTED_TARGET_LANGS,
@@ -134,42 +134,14 @@ function extractSegmentsFromRequestBody(body) {
   return [];
 }
 
-async function startTestServer(dataDir, extraEnv = {}) {
-  const port = 37000 + Math.floor(Math.random() * 8000);
-  const proc = spawn("node", ["server.js"], {
-    cwd: path.resolve(__dirname, ".."),
-    env: {
-      ...process.env,
-      LP_DATA_DIR: dataDir,
-      PORT: String(port),
-      HOST: "127.0.0.1",
-      TRANSLATE_BATCH_SIZE: "50",
-      TRANSLATE_MIN_INTERVAL_MS: "5",
-      TRANSLATE_BACKOFF_BASE_MS: "10",
-      TRANSLATE_BACKOFF_MAX_MS: "50",
-      ...extraEnv,
-    },
-    stdio: ["ignore", "pipe", "pipe"],
+function startTestServer(dataDir, extraEnv) {
+  return startLocalServer(dataDir, {
+    TRANSLATE_BATCH_SIZE: "50",
+    TRANSLATE_MIN_INTERVAL_MS: "5",
+    TRANSLATE_BACKOFF_BASE_MS: "10",
+    TRANSLATE_BACKOFF_MAX_MS: "50",
+    ...extraEnv,
   });
-
-  const base = `http://127.0.0.1:${port}`;
-  const started = Date.now();
-  while (Date.now() - started < 8000) {
-    try {
-      const res = await fetch(`${base}/api/tree`);
-      if (res.ok) break;
-    } catch {}
-    await new Promise((r) => setTimeout(r, 100));
-  }
-
-  return {
-    base,
-    proc,
-    stop: async () => {
-      proc.kill("SIGTERM");
-      await new Promise((r) => proc.on("close", r));
-    },
-  };
 }
 
 test("Tradução: fluxo integrado HTTP de traduções com Mock LLM, rotas, VTT e clear", async () => {
@@ -1940,7 +1912,4 @@ test("Tradução: bloqueia requisições concorrentes duplicadas com 409 e liber
     await fs.rm(libDir, { recursive: true, force: true }).catch(() => {});
   }
 });
-
-
-
 
