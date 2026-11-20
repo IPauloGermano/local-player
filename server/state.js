@@ -84,7 +84,7 @@ const transcodeQueue = [];
 const subtitleJobs = new Map(); // hash -> job
 const subtitleQueue = [];
 const logBuffer = []; // { ts, level, tag, msg }
-const scanningLibraryIds = new Set(); // bibliotecas com scan em andamento
+const pendingLibraryScans = new Map(); // bibliotecas com scan em andamento
 const tutorContextCache = new Map(); // lessonKey -> context
 
 module.exports = {
@@ -122,7 +122,7 @@ module.exports = {
   acquireHeavySlot,
   releaseHeavySlot,
   refreshHeavyMax,
-  scanningLibraryIds,
+  pendingLibraryScans,
   tutorContextCache,
 
   get heavyMax() { return heavyMax; },

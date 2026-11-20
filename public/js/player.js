@@ -39,9 +39,7 @@ async function prepareTranscoded(video, el, saved) {
     if (data.error) return fail(data.message);
     if (data.compatible) {
       // O servidor (ffprobe) diz que o original é reproduzível: tenta de novo.
-      hidePreparingBadge();
-      el.src = mediaUrl(video.path, video.libId);
-      el.load();
+      retryOriginal(el, video);
       return;
     }
 

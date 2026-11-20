@@ -376,7 +376,8 @@ function updateProgress(mutator, opts = {}) {
       try {
         const libSerialized = JSON.stringify(libData, null, 2);
         const currentLib = await readJsonFile(libFile);
-        if (currentLib.ok && currentLib.raw !== libSerialized) {
+        if (currentLib.ok && currentLib.raw === libSerialized) continue;
+        if (currentLib.ok) {
           const bak1 = libraryProgressBackupFile(lib);
           const bak2 = libraryProgressBackup2File(lib);
           if (bak1 && bak2) {

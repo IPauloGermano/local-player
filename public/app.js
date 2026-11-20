@@ -1957,7 +1957,7 @@ function setupVideoTracking(video) {
     );
   }
 
-  let lastSaved = 0;
+  let lastPeriodicSaveAt = performance.now();
   let wasPlaying = false;
   // Computa o payload de progresso com as mesmas regras de não-perda (posição
   // zerada não apaga progresso válido, auto-conclusão >95%, reassistir não
@@ -2048,8 +2048,9 @@ function setupVideoTracking(video) {
   currentVideoBeacon = persistBeacon;
 
   el.addEventListener("timeupdate", () => {
-    if (el.currentTime - lastSaved > 5) {
-      lastSaved = el.currentTime;
+    const now = performance.now();
+    if (now - lastPeriodicSaveAt >= 5000) {
+      lastPeriodicSaveAt = now;
       persist(false);
       updateProgressUI();
     }

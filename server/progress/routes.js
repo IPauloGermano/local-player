@@ -63,7 +63,7 @@ function registerProgressRoutes(app) {
       typeof req.body.requestId === "string" ? req.body.requestId : undefined;
 
     const hasCoursePath = "coursePath" in req.body;
-    if (!hasCoursePath && all !== true) {
+    if (coursePath == null && all !== true) {
       return res.status(400).json({
         error: "Payload ambíguo: para apagar todo o progresso envie { all: true }, ou informe { coursePath }.",
       });

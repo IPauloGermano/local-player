@@ -4,7 +4,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
 const http = require("node:http");
-const { spawn } = require("node:child_process");
+const { startTestServer } = require("./helpers/local-server");
 
 const {
   defaultAiConfig,
@@ -267,39 +267,6 @@ test("Skill ADHD: buildTutorSystemPrompt injeta diretiva quando ativa", () => {
   });
   assert.ok(!notApplied.includes("DIRETIVA SKILL ADHD ATIVA"));
 });
-
-async function startTestServer(dataDir) {
-  const port = 39000 + Math.floor(Math.random() * 8000);
-  const proc = spawn("node", ["server.js"], {
-    cwd: path.resolve(__dirname, ".."),
-    env: {
-      ...process.env,
-      LP_DATA_DIR: dataDir,
-      PORT: String(port),
-      HOST: "127.0.0.1",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
-  const base = `http://127.0.0.1:${port}`;
-  const started = Date.now();
-  while (Date.now() - started < 5000) {
-    try {
-      const res = await fetch(`${base}/api/tree`);
-      if (res.ok) break;
-    } catch {}
-    await new Promise((r) => setTimeout(r, 100));
-  }
-
-  return {
-    base,
-    proc,
-    stop: async () => {
-      proc.kill("SIGTERM");
-      await new Promise((r) => proc.on("close", r));
-    },
-  };
-}
 
 test("Tutor IA: funciona com modelo local (Ollama/LM Studio sem chave de API)", async () => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "lp-local-llm-data-"));
