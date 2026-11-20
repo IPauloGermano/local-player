@@ -66,6 +66,10 @@
     },
     "files": [
       "**/*",
+      "!docs/images/**",
+      "!docs/media/**",
+      "!docs/presentation.mp4",
+      "!video-presentation/**",
       "!test/**",
       "!data/**",
       "!models/**",
