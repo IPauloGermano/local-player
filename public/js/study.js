@@ -40,7 +40,7 @@ function renderTutorQuiz(video) {
     container.innerHTML = `
       <div class="tutor-quiz-hero">
         <div class="tutor-quiz-hero-badge">
-          <span>📝</span>
+          ${typeof TUTOR_ICONS !== "undefined" ? TUTOR_ICONS.quiz : ""}
         </div>
         <h4 class="tutor-quiz-hero-title">Quiz de Fixação da Aula</h4>
         <p class="tutor-quiz-hero-desc">Teste seus conhecimentos respondendo a questões de múltipla escolha geradas automaticamente a partir desta aula.</p>
@@ -310,7 +310,7 @@ function renderTutorFlashcards(video) {
     container.innerHTML = `
       <div class="tutor-quiz-hero">
         <div class="tutor-quiz-hero-badge">
-          <span>🗂️</span>
+          ${typeof TUTOR_ICONS !== "undefined" ? TUTOR_ICONS.flashcards : ""}
         </div>
         <h4 class="tutor-quiz-hero-title">Flashcards Interativos</h4>
         <p class="tutor-quiz-hero-desc">Pratique memorização ativa com cartões 3D baseados nos conceitos e códigos essenciais desta aula.</p>

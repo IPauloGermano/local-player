@@ -986,16 +986,18 @@ function openConfirmDialog({
 function applyViewModeToDOM() {
   const view = document.querySelector(".course-view");
   const theater = getViewMode() === "theater";
+  const tutorOpen = !!(window.tutorState && window.tutorState.open);
+  const theaterBtnActive = theater && !tutorOpen;
   if (view) {
     view.classList.toggle("theater", theater);
     view.classList.remove("summary-open");
   }
   const theaterBtn = document.getElementById("pc-theater-btn");
   if (theaterBtn) {
-    theaterBtn.classList.toggle("is-active", theater);
-    theaterBtn.setAttribute("aria-pressed", String(theater));
-    theaterBtn.title = theater ? "Sair do modo teatro (t)" : "Modo teatro (t)";
-    theaterBtn.setAttribute("aria-label", theater ? "Sair do modo teatro (t)" : "Modo teatro (t)");
+    theaterBtn.classList.toggle("is-active", theaterBtnActive);
+    theaterBtn.setAttribute("aria-pressed", String(theaterBtnActive));
+    theaterBtn.title = theaterBtnActive ? "Sair do modo teatro (t)" : "Modo teatro (t)";
+    theaterBtn.setAttribute("aria-label", theaterBtnActive ? "Sair do modo teatro (t)" : "Modo teatro (t)");
   }
   const summaryItem = document.querySelector('[data-more="summary"]');
   if (summaryItem) {
@@ -1026,6 +1028,12 @@ function applyViewModeToDOM() {
 }
 
 function toggleTheaterMode() {
+  if (typeof closeTutorDrawer === "function" && window.tutorState && window.tutorState.open) {
+    closeTutorDrawer();
+    setViewMode("theater");
+    applyViewModeToDOM();
+    return;
+  }
   setViewMode(getViewMode() === "theater" ? "normal" : "theater");
   applyViewModeToDOM();
 }

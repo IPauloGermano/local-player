@@ -100,9 +100,15 @@ function downloadTutorMessage(video, index, format) {
   }
 }
 
-var tutorState = {
+const TUTOR_ICONS = {
+  chat: `<svg class="tutor-tab-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5A2.5 2.5 0 0 1 7 4h10a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 17 16H9.5L5.2 19.6a.45.45 0 0 1-.7-.37V6.5Z"/><path d="M8.5 9h7"/><path d="M8.5 12h4.5"/></svg>`,
+  quiz: `<svg class="tutor-tab-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 6.8 1.7 1.7 3.3-3.5"/><path d="M12.5 6.8h7"/><circle cx="6.8" cy="12.2" r="1.7"/><path d="M12.5 12.2h7"/><circle cx="6.8" cy="17.6" r="1.7"/><path d="M12.5 17.6h4.5"/></svg>`,
+  flashcards: `<svg class="tutor-tab-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 8.5V6.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-2"/><rect x="3.5" y="8.5" width="13" height="11" rx="2"/><path d="M7 13h6"/><path d="M7 16h3.5"/></svg>`,
+};
 
+var tutorState = {
   open: false,
+  expanded: false,
   loadingContext: false,
   streaming: false,
   currentVideo: null,
@@ -149,47 +155,60 @@ function getTutorFlashcardsState(videoPath) {
   return tutorState.flashcardsByPath.get(videoPath);
 }
 
+function setTutorExpanded(expanded) {
+  tutorState.expanded = !!expanded;
+  const drawer = document.getElementById("tutor-drawer");
+  const expandBtn = document.getElementById("tutor-expand");
+  if (drawer) {
+    drawer.classList.toggle("is-expanded", tutorState.expanded);
+  }
+  if (document.body) {
+    document.body.classList.toggle("tutor-expanded", tutorState.open && tutorState.expanded);
+  }
+  if (expandBtn) {
+    const action = tutorState.expanded ? "Recolher painel" : "Expandir painel";
+    expandBtn.setAttribute("aria-expanded", String(tutorState.expanded));
+    expandBtn.setAttribute("aria-label", action);
+    expandBtn.title = action;
+  }
+}
+
 function initTutorDrawer(video) {
   const slot = document.getElementById("tutor-drawer-slot");
   if (!slot) return;
 
   const currentLessonTitle = video ? escapeHtml(lessonTitle(video)) : "Aula atual";
+  const expandLabel = tutorState.expanded ? "Recolher painel" : "Expandir painel";
 
   slot.innerHTML = `
-    <aside class="tutor-drawer" id="tutor-drawer" hidden aria-label="Tutor IA">
+    <aside class="tutor-drawer${tutorState.expanded ? " is-expanded" : ""}" id="tutor-drawer" hidden aria-label="Tutor IA">
       <div class="tutor-drag-handle" aria-hidden="true"></div>
       <div class="tutor-header">
-        <div class="tutor-header-main">
-          <div class="tutor-sparkle-badge" aria-hidden="true">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2z"/>
-            </svg>
-          </div>
-          <div class="tutor-header-meta">
-            <div class="tutor-header-title-row">
-              <span class="tutor-title-main">Tutor IA</span>
-              <span class="tutor-status-badge" id="tutor-context-chip" title="Contexto da aula">
-                <span class="tutor-context-dot"></span>
-                <span class="tutor-context-label" id="tutor-context-label">Contexto</span>
-              </span>
-            </div>
-            <div class="tutor-lesson-badge" id="tutor-lesson-badge" title="${currentLessonTitle}">
-              ${currentLessonTitle}
-            </div>
-          </div>
+        <div class="tutor-header-meta">
+          <div class="tutor-lesson-badge" id="tutor-lesson-badge" title="${currentLessonTitle}">${currentLessonTitle}</div>
+          <span class="tutor-status-badge" id="tutor-context-chip" title="Contexto da aula">
+            <span class="tutor-context-label" id="tutor-context-label">Contexto</span>
+          </span>
         </div>
         <div class="tutor-header-actions">
-          <button type="button" class="tutor-icon-btn" id="tutor-new-chat" title="Limpar e reiniciar" aria-label="Limpar">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button type="button" class="tutor-icon-btn tutor-expand-btn" id="tutor-expand" aria-controls="tutor-drawer"
+            aria-expanded="${tutorState.expanded}" aria-label="${expandLabel}" title="${expandLabel}">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m18 7-5 5 5 5"/>
+              <path d="m11 7-5 5 5 5"/>
+            </svg>
+          </button>
+          <button type="button" class="tutor-icon-btn" id="tutor-new-chat" title="Limpar e reiniciar" aria-label="Limpar e reiniciar">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
               <path d="M3 3v5h5"/>
             </svg>
             <span class="tutor-btn-label" id="tutor-reset-btn-label">Novo</span>
           </button>
           <button type="button" class="tutor-icon-btn tutor-close-btn" id="tutor-close" aria-label="Fechar Tutor IA" title="Fechar (Esc)">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18"/>
+              <path d="m6 6 12 12"/>
             </svg>
           </button>
         </div>
@@ -198,13 +217,16 @@ function initTutorDrawer(video) {
       <!-- Barra de Abas -->
       <div class="tutor-tab-bar" role="tablist">
         <button type="button" class="tutor-tab-btn ${tutorState.activeTab === 'chat' ? 'active' : ''}" data-tab="chat" role="tab" aria-selected="${tutorState.activeTab === 'chat'}">
-          <span>💬</span> <span>Chat</span>
+          ${TUTOR_ICONS.chat}
+          <span>Chat</span>
         </button>
         <button type="button" class="tutor-tab-btn ${tutorState.activeTab === 'quiz' ? 'active' : ''}" data-tab="quiz" role="tab" aria-selected="${tutorState.activeTab === 'quiz'}">
-          <span>📝</span> <span>Quiz</span>
+          ${TUTOR_ICONS.quiz}
+          <span>Quiz</span>
         </button>
         <button type="button" class="tutor-tab-btn ${tutorState.activeTab === 'flashcards' ? 'active' : ''}" data-tab="flashcards" role="tab" aria-selected="${tutorState.activeTab === 'flashcards'}">
-          <span>🗂️</span> <span>Flashcards</span>
+          ${TUTOR_ICONS.flashcards}
+          <span>Flashcards</span>
         </button>
       </div>
 
@@ -213,17 +235,18 @@ function initTutorDrawer(video) {
         <div class="tutor-messages" id="tutor-messages" role="log" aria-live="polite"></div>
         <div class="tutor-input-container">
           <div class="tutor-input-wrap">
-            <textarea class="tutor-textarea" id="tutor-input" rows="1" placeholder="Tire sua dúvida sobre esta aula…"></textarea>
+            <label for="tutor-input" class="visually-hidden">Tire sua dúvida sobre esta aula</label>
+            <textarea class="tutor-textarea" id="tutor-input" rows="1" placeholder="Tire sua dúvida sobre esta aula…" aria-describedby="tutor-input-hint"></textarea>
             <button type="button" class="tutor-send-btn" id="tutor-send-btn" title="Enviar pergunta" aria-label="Enviar pergunta">
               <span id="tutor-send-icon">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <line x1="22" y1="2" x2="11" y2="13"></line>
                   <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                 </svg>
               </span>
             </button>
           </div>
-          <div class="tutor-input-footer">
+          <div class="tutor-input-footer" id="tutor-input-hint">
             <span>Shift + Enter para quebrar linha · Enter para enviar</span>
           </div>
         </div>
@@ -297,6 +320,11 @@ function wireTutorDrawerEvents(video) {
   const input = document.getElementById("tutor-input");
   const messagesEl = document.getElementById("tutor-messages");
 
+  const expandBtn = document.getElementById("tutor-expand");
+  expandBtn?.addEventListener("click", () => {
+    setTutorExpanded(!tutorState.expanded);
+  });
+
   if (closeBtn) closeBtn.addEventListener("click", () => closeTutorDrawer());
   if (backdrop) backdrop.addEventListener("click", () => closeTutorDrawer());
   document.addEventListener("keydown", (e) => {
@@ -342,14 +370,23 @@ function wireTutorDrawerEvents(video) {
   }
 
   if (input) {
-    input.addEventListener("input", () => {
-      input.style.height = "auto";
-      const minH = window.innerWidth <= 640 ? 40 : 38;
-      input.style.height = Math.min(180, Math.max(minH, input.scrollHeight)) + "px";
-    });
+    const supportsFieldSizing =
+      typeof CSS !== "undefined" &&
+      typeof CSS.supports === "function" &&
+      CSS.supports("field-sizing", "content");
+
+    if (!supportsFieldSizing) {
+      input.addEventListener("input", () => {
+        input.style.height = "auto";
+        const isLowLandscape = window.innerHeight <= 550 && window.innerWidth > window.innerHeight;
+        const minH = isLowLandscape ? 30 : (window.innerWidth <= 640 ? 40 : 36);
+        input.style.height = Math.min(160, Math.max(minH, input.scrollHeight)) + "px";
+      });
+    }
 
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
+        if (e.isComposing || e.keyCode === 229) return;
         e.preventDefault();
         triggerTutorSend(tutorState.currentVideo || video);
       }
@@ -467,9 +504,6 @@ function wireTutorDrawerEvents(video) {
 
           timeBtn.classList.add("clicked");
           setTimeout(() => timeBtn.classList.remove("clicked"), 800);
-
-          // Fecha o chat automaticamente para dar foco total ao vídeo
-          closeTutorDrawer();
         }
         return;
       }
@@ -655,6 +689,8 @@ function openTutorDrawer(video) {
   }
   document.body.classList.add("tutor-open");
   tutorState.open = true;
+  setTutorExpanded(tutorState.expanded);
+  if (typeof applyViewModeToDOM === "function") applyViewModeToDOM();
 
   switchTutorTab(tutorState.activeTab || "chat", video);
   updateTutorContextMeta(video);
@@ -676,8 +712,9 @@ function closeTutorDrawer() {
     backdrop.hidden = true;
     backdrop.setAttribute("hidden", "");
   }
-  document.body.classList.remove("tutor-open");
+  document.body.classList.remove("tutor-open", "tutor-expanded");
   tutorState.open = false;
+  if (typeof applyViewModeToDOM === "function") applyViewModeToDOM();
 }
 
 function toggleTutorDrawer(video) {
@@ -877,7 +914,7 @@ function triggerTutorSend(video) {
   const text = input.value.trim();
   if (!text) return;
   input.value = "";
-  input.style.height = "auto";
+  input.style.height = "";
   sendTutorMessage(video, text);
 }
 
@@ -898,7 +935,7 @@ async function sendTutorMessage(video, text) {
   if (sendBtn && sendIcon) {
     sendBtn.classList.add("streaming");
     sendIcon.innerHTML = `
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <rect x="4" y="4" width="16" height="16" rx="2"/>
       </svg>`;
     sendBtn.title = "Interromper resposta";
@@ -1025,7 +1062,7 @@ async function sendTutorMessage(video, text) {
     if (sendBtn && sendIcon) {
       sendBtn.classList.remove("streaming");
       sendIcon.innerHTML = `
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="22" y1="2" x2="11" y2="13"></line>
           <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
         </svg>`;
@@ -1043,7 +1080,9 @@ function stopTutorStreaming() {
   }
 }
 
+window.TUTOR_ICONS = TUTOR_ICONS;
 window.tutorState = tutorState;
+window.setTutorExpanded = setTutorExpanded;
 window.renderMarkdownToHtml = renderMarkdownToHtml;
 window.getTutorHistory = getTutorHistory;
 window.getTutorQuizState = getTutorQuizState;

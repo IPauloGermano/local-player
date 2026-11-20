@@ -88,3 +88,100 @@ test("Modo Teatro no Desktop: sidebar e botão 'Aulas' não aparecem na UI deskt
     "No desktop, a sidebar deve estar com display: none no modo teatro"
   );
 });
+
+test("Modo Teatro com Tutor IA aberto: fecha o Tutor IA e ativa o Modo Teatro em qualquer modo prévio", () => {
+  const vm = require("node:vm");
+  const tutorJs = fs.readFileSync(path.join(ROOT, "public", "js", "tutor.js"), "utf8");
+
+  // Extrai applyViewModeToDOM e toggleTheaterMode do app.js para teste comportamental isolado
+  const fnMatch = APP_JS.match(
+    /function applyViewModeToDOM\(\)[\s\S]*?function toggleTheaterMode\(\)[\s\S]*?\r?\n\}/,
+  );
+  assert.ok(fnMatch, "applyViewModeToDOM e toggleTheaterMode devem existir em app.js");
+
+  let viewMode = "normal";
+  let closeCalls = 0;
+  const viewClasses = new Set();
+  const btnClasses = new Set();
+  const btnAttrs = new Map();
+  const makeClassList = (set) => ({
+    toggle: (cls, force) => {
+      if (force === undefined) {
+        if (set.has(cls)) { set.delete(cls); return false; }
+        set.add(cls); return true;
+      }
+      if (force) set.add(cls); else set.delete(cls);
+      return !!force;
+    },
+    remove: (cls) => set.delete(cls),
+    contains: (cls) => set.has(cls),
+  });
+
+  const courseView = { classList: makeClassList(viewClasses) };
+  const theaterBtn = {
+    title: "",
+    classList: makeClassList(btnClasses),
+    setAttribute: (k, v) => btnAttrs.set(k, String(v)),
+  };
+
+  const sandbox = {
+    getViewMode: () => viewMode,
+    setViewMode: (m) => { viewMode = m === "normal" ? "normal" : "theater"; },
+    isMobileDrawer: () => false,
+    window: { tutorState: { open: true } },
+    closeTutorDrawer: () => {
+      closeCalls++;
+      sandbox.window.tutorState.open = false;
+    },
+    document: {
+      querySelector: (sel) => (sel === ".course-view" ? courseView : null),
+      getElementById: (id) => (id === "pc-theater-btn" ? theaterBtn : null),
+    },
+  };
+  vm.runInNewContext(fnMatch[0], sandbox);
+
+  // Enquanto Tutor IA está aberto (mesmo com viewMode === "theater"), botão exibe estado inativo "Modo teatro (t)"
+  viewMode = "theater";
+  sandbox.applyViewModeToDOM();
+  assert.equal(btnClasses.has("is-active"), false);
+  assert.equal(btnAttrs.get("aria-pressed"), "false");
+  assert.equal(theaterBtn.title, "Modo teatro (t)");
+
+  // Caso 1: Tutor IA aberto + viewMode === "theater" -> fecha Tutor IA e MANTÉM Modo Teatro ativo (não alterna para normal)
+  sandbox.toggleTheaterMode();
+  assert.equal(closeCalls, 1);
+  assert.equal(sandbox.window.tutorState.open, false);
+  assert.equal(viewMode, "theater");
+  assert.equal(viewClasses.has("theater"), true);
+  assert.equal(btnClasses.has("is-active"), true);
+  assert.equal(btnAttrs.get("aria-pressed"), "true");
+
+  // Caso 2: Tutor IA fechado -> alterna normalmente para "normal"
+  sandbox.toggleTheaterMode();
+  assert.equal(closeCalls, 1);
+  assert.equal(viewMode, "normal");
+  assert.equal(viewClasses.has("theater"), false);
+  assert.equal(btnClasses.has("is-active"), false);
+
+  // Caso 3: Tutor IA aberto + viewMode === "normal" -> fecha Tutor IA e ATIVA Modo Teatro
+  sandbox.window.tutorState.open = true;
+  sandbox.toggleTheaterMode();
+  assert.equal(closeCalls, 2);
+  assert.equal(sandbox.window.tutorState.open, false);
+  assert.equal(viewMode, "theater");
+  assert.equal(viewClasses.has("theater"), true);
+  assert.equal(btnClasses.has("is-active"), true);
+  assert.equal(btnAttrs.get("aria-pressed"), "true");
+
+  // tutor.js sincroniza o botão do modo teatro ao abrir/fechar o drawer
+  assert.match(
+    tutorJs,
+    /function openTutorDrawer[\s\S]*?applyViewModeToDOM/,
+    "openTutorDrawer deve chamar applyViewModeToDOM para atualizar o botão de modo teatro",
+  );
+  assert.match(
+    tutorJs,
+    /function closeTutorDrawer[\s\S]*?applyViewModeToDOM/,
+    "closeTutorDrawer deve chamar applyViewModeToDOM para restaurar o estado do botão de modo teatro",
+  );
+});
