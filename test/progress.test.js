@@ -23,6 +23,8 @@ const fsSync = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { once } = require("node:events");
+const { requestGracefulShutdown } = require("../server/core/platform");
 
 const SERVER = path.join(__dirname, "..", "server.js");
 // Chave de progresso: "<libraryId>\0<rel>" (mesmo contrato do server/app.js).
@@ -33,7 +35,7 @@ function tmpDir(prefix) {
 }
 
 // Sobe o servidor num diretório de dados temporário. Retorna {base, proc,
-// dataDir, stop}. `stop` derruba com SIGTERM (que exercita o dreno da fila).
+// dataDir, stop}. Usa o encerramento do desktop no Windows e SIGTERM no POSIX.
 async function startServer(dataDir, { port = null } = {}) {
   const basePort = port || 30000 + Math.floor(Math.random() * 20000);
   let lastErr = null;
@@ -46,7 +48,7 @@ async function startServer(dataDir, { port = null } = {}) {
         PORT: String(p),
         HOST: "127.0.0.1",
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: process.platform === "win32" ? ["ignore", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe"],
     });
     let out = "";
     let errOut = "";
@@ -75,20 +77,10 @@ async function startServer(dataDir, { port = null } = {}) {
     });
     if (ready) {
       const stop = async () => {
-        if (proc.exitCode !== null) return;
-        proc.kill("SIGTERM");
-        await new Promise((resolve) => {
-          const t0 = Date.now();
-          const poll = () => {
-            if (proc.exitCode !== null) return resolve();
-            if (Date.now() - t0 > 8000) {
-              proc.kill("SIGKILL");
-              return resolve();
-            }
-            setTimeout(poll, 50);
-          };
-          poll();
-        });
+        if (proc.exitCode !== null || proc.signalCode !== null) return;
+        const exited = once(proc, "exit");
+        requestGracefulShutdown(proc, { timeoutMs: 8000 });
+        await exited;
       };
       return {
         base: `http://127.0.0.1:${p}`,
@@ -303,6 +295,12 @@ test("progresso: clear de curso é delimitado e escopado; clear global limpa tud
       { path: "Curso A/Aula 01.mp4", position: 4, duration: 100, completed: false },
     );
 
+    const before = await getJson(srv.base, "/api/progress");
+    assert.strictEqual(Object.keys(before.data).length, 4);
+    const ambiguous = await postJson(srv.base, "/api/progress/clear", { coursePath: null });
+    assert.strictEqual(ambiguous.status, 400);
+    assert.deepStrictEqual((await getJson(srv.base, "/api/progress")).data, before.data);
+
     // Clear de "Curso A": apaga Curso A (padrão), NÃO apaga Curso A2 nem a externa.
     let r = await postJson(srv.base, "/api/progress/clear", { coursePath: "Curso A" });
     assert.strictEqual(r.status, 200);
@@ -431,7 +429,7 @@ test("progresso: corrupção do main recupera do bak; main+bak recupera do bak.1
 });
 
 // T6 — shutdown drena a fila: o último save chega ao disco antes do exit.
-test("progresso: SIGTERM drena a fila e o último save chega ao disco", async () => {
+test("progresso: encerramento gracioso preserva o último save no disco", async () => {
   const dataDir = tmpDir("lp-prog-t6-");
   const srv = await startServer(dataDir);
   try {
@@ -441,7 +439,6 @@ test("progresso: SIGTERM drena a fila e o último save chega ao disco", async ()
       duration: 500,
       completed: false,
     });
-    // SIGTERM → shutdownNow → drena progressWriteQueue antes do exit.
     await srv.stop();
     const onDisk = JSON.parse(await fs.readFile(path.join(dataDir, "progress.json"), "utf8"));
     assert.strictEqual(onDisk[K("default", "Curso Final/Aula.mp4")].position, 321);

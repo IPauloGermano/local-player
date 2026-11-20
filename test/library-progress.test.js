@@ -160,6 +160,15 @@ test("progresso na biblioteca: salvar aula via API grava em <lib.path>/.coursepl
     const compositeKey = `${libId}\0Curso React/Aula 01.mp4`;
     assert.ok(getRes.data[compositeKey], "API deve retornar chave composta");
     assert.strictEqual(getRes.data[compositeKey].position, 145);
+
+    const fixedTime = new Date("2020-01-01T00:00:00Z");
+    await fs.utimes(targetFile, fixedTime, fixedTime);
+    const before = await fs.stat(targetFile);
+    const defaultSave = await postJson(srv.base, "/api/progress", {
+      path: "Curso B/Aula.mp4", position: 10, duration: 90, completed: false,
+    });
+    assert.strictEqual(defaultSave.status, 200);
+    assert.strictEqual((await fs.stat(targetFile)).mtimeMs, before.mtimeMs);
   } finally {
     await srv.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
