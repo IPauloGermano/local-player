@@ -22,77 +22,14 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { startTestServer: startServer } = require("./helpers/local-server");
 const { once } = require("node:events");
-const { requestGracefulShutdown } = require("../server/core/platform");
 
-const SERVER = path.join(__dirname, "..", "server.js");
 // Chave de progresso: "<libraryId>\0<rel>" (mesmo contrato do server/app.js).
 const K = (libId, rel) => libId + "\0" + rel;
 
 function tmpDir(prefix) {
   return fsSync.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
-// Sobe o servidor num diretório de dados temporário. Retorna {base, proc,
-// dataDir, stop}. Usa o encerramento do desktop no Windows e SIGTERM no POSIX.
-async function startServer(dataDir, { port = null } = {}) {
-  const basePort = port || 30000 + Math.floor(Math.random() * 20000);
-  let lastErr = null;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const p = basePort + attempt * 7;
-    const proc = spawn(process.execPath, [SERVER], {
-      env: {
-        ...process.env,
-        LP_DATA_DIR: dataDir,
-        PORT: String(p),
-        HOST: "127.0.0.1",
-      },
-      stdio: process.platform === "win32" ? ["ignore", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe"],
-    });
-    let out = "";
-    let errOut = "";
-    proc.stdout.on("data", (d) => (out += d));
-    proc.stderr.on("data", (d) => (errOut += d));
-    const ready = await new Promise((resolve) => {
-      const t0 = Date.now();
-      const poll = () => {
-        if (proc.exitCode !== null) {
-          // EADDRINUSE → exit(1) com mensagem clara; tenta outra porta.
-          resolve(false);
-          return;
-        }
-        if (out.includes("rodando em") || errOut.includes("rodando em")) {
-          resolve(true);
-          return;
-        }
-        if (Date.now() - t0 > 15000) {
-          lastErr = new Error(`timeout subindo servidor: ${out}\n${errOut}`);
-          resolve(false);
-          return;
-        }
-        setTimeout(poll, 100);
-      };
-      poll();
-    });
-    if (ready) {
-      const stop = async () => {
-        if (proc.exitCode !== null || proc.signalCode !== null) return;
-        const exited = once(proc, "exit");
-        requestGracefulShutdown(proc, { timeoutMs: 8000 });
-        await exited;
-      };
-      return {
-        base: `http://127.0.0.1:${p}`,
-        proc,
-        dataDir,
-        stop,
-        output: () => out + errOut,
-      };
-    }
-    try { proc.kill("SIGKILL"); } catch {}
-  }
-  throw lastErr || new Error("falha ao subir servidor");
 }
 
 const postJson = async (base, url, body) => {
@@ -439,7 +376,13 @@ test("progresso: encerramento gracioso preserva o último save no disco", async 
       duration: 500,
       completed: false,
     });
-    await srv.stop();
+    if (process.platform === "win32") {
+      await srv.stop();
+    } else {
+      const closed = once(srv.proc, "close");
+      srv.proc.kill("SIGTERM");
+      await closed;
+    }
     const onDisk = JSON.parse(await fs.readFile(path.join(dataDir, "progress.json"), "utf8"));
     assert.strictEqual(onDisk[K("default", "Curso Final/Aula.mp4")].position, 321);
     assert.strictEqual(srv.proc.exitCode, 0, "exit limpo após drenar a fila");
